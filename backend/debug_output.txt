@@ -1,0 +1,10 @@
+Checking Activity Types...
+Exact match for 'Imprimir ID Visual': None
+Similar types: []
+
+Searching Activities...
+Found 1 activities matching 'Imprimir' or 'Visual':
+ - Activity ID: 13127
+   Summary: 'Imprimir ID Visual'
+   Anatomy: Type=[1, 'Email'] | Active=True
+   -> Linked MO: 1352 (WH/FAB/01217) | State='draft'
