@@ -6,7 +6,6 @@ from sqlmodel import Field, SQLModel, Relationship, JSON, Column
 from enum import Enum
 
 # --- Enums ---
-print("DEBUG: IMPORTING ID_REQUEST WITH MONTADO --------------------------------")
 class IDRequestStatus(str, Enum):
     NOVA = "nova"
     TRIAGEM = "triagem"
@@ -70,7 +69,6 @@ class IDRequest(SQLModel, table=True):
     # Transfer to Standard Queue fields
     transferred_to_queue: bool = Field(default=False)
     transferred_at: Optional[datetime] = None
-    odoo_activity_id: Optional[int] = None
     odoo_activity_id: Optional[int] = None
     transfer_note: Optional[str] = None
 
