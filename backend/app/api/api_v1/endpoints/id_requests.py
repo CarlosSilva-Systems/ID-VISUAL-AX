@@ -11,48 +11,111 @@ from app.models.id_request import IDRequest, IDRequestStatus, OPEN_STATUSES
 from app.models.manufacturing import ManufacturingOrder
 from app.models.audit import HistoryLog
 from app.services.odoo_client import OdooClient
+from app.services.odoo_utils import normalize_many2one_display
+from app.services.status_mappers import map_mrp_state
 
 router = APIRouter()
 
 @router.get("/manual", response_model=List[Dict[str, Any]])
 async def get_manual_requests(
-    session: AsyncSession = Depends(deps.get_session)
+    session: AsyncSession = Depends(deps.get_session),
+    current_user: Any = Depends(deps.get_current_user)
 ) -> Any:
     """
     List open manual requests that are NOT yet transferred to standard queue.
     """
     stmt = (
         select(IDRequest, ManufacturingOrder)
-        .join(ManufacturingOrder)
+        .join(ManufacturingOrder, IDRequest.mo_id == ManufacturingOrder.id)
         .where(
             IDRequest.source == "manual",
             IDRequest.transferred_to_queue == False,
-            col(IDRequest.status).in_(OPEN_STATUSES)
+            col(IDRequest.status).in_([s.value for s in OPEN_STATUSES])
         )
         .order_by(IDRequest.created_at.desc())
     )
-    results = await session.exec(stmt)
+    results = (await session.exec(stmt)).all()
+    
+    # ── Real-time Odoo Fetch for Fresh Status ──
+    # Collect IDs to fetch
+    req_mo_map = {req.id: mo for req, mo in results}
+    odoo_ids = [mo.odoo_id for req, mo in results if mo.odoo_id]
+    
+    # Map for fresh states
+    fresh_states = {} 
+    
+    if odoo_ids:
+        try:
+            client = OdooClient(
+                url=settings.ODOO_URL,
+                db=settings.ODOO_DB,
+                auth_type="jsonrpc_password",
+                login=settings.ODOO_LOGIN,
+                secret=settings.ODOO_PASSWORD
+            )
+            # Read 'state' for these IDs
+            fresh_data = await client.search_read(
+                'mrp.production',
+                domain=[['id', 'in', odoo_ids]],
+                fields=['id', 'state']
+            )
+            await client.close()
+            
+            # Update local map and DB
+            for item in fresh_data:
+                fresh_states[item['id']] = item['state']
+            
+            # Optional: Update DB in background or now? 
+            # Ideally we update the local MOs to keep them synced.
+            # We already have the MO objects in session (from join).
+            for req, mo in results:
+                if mo.odoo_id in fresh_states:
+                    new_state = fresh_states[mo.odoo_id]
+                    if mo.state != new_state:
+                         mo.state = new_state
+                         mo.last_sync_at = datetime.now(timezone.utc)
+                         session.add(mo)
+            
+            # Commit updates to local DB so next read is fast/correct
+            await session.commit()
+            
+        except Exception as e:
+            import traceback
+            print(f"Warning: Failed to fetch fresh Odoo states: {e}")
+            traceback.print_exc()
+            # Fallback to local state if Odoo fails
     
     response = []
     for req, mo in results:
+        # Use fresh state if available, else local
+        current_state = fresh_states.get(mo.odoo_id, mo.state)
+        
+        # Map to UI
+        status_info = map_mrp_state(current_state)
+        
         response.append({
             "request_id": req.id,
             "odoo_mo_id": mo.odoo_id,
             "mo_number": mo.name,
-            "obra_nome": mo.x_studio_nome_da_obra,
+            "obra_nome": normalize_many2one_display(mo.x_studio_nome_da_obra),
             "product_qty": mo.product_qty,
             "date_start": mo.date_start,
             "requester_name": req.requester_name,
             "notes": req.notes,
             "priority": req.priority,
             "status": req.status,
-            "created_at": req.created_at
+            "created_at": req.created_at,
+            # New Fields
+            "mo_state": current_state,
+            "mo_state_label": status_info["label"],
+            "mo_state_variant": status_info["variant"]
         })
     return response
 
 @router.get("/manual/count", response_model=Dict[str, int])
 async def count_manual_requests(
-    session: AsyncSession = Depends(deps.get_session)
+    session: AsyncSession = Depends(deps.get_session),
+    current_user: Any = Depends(deps.get_current_user)
 ) -> Any:
     """
     Count open manual requests not transferred.
@@ -71,7 +134,8 @@ async def count_manual_requests(
 @router.post("/manual/{request_id}/transfer", response_model=Dict[str, Any])
 async def transfer_manual_request(
     request_id: str,
-    session: AsyncSession = Depends(deps.get_session)
+    session: AsyncSession = Depends(deps.get_session),
+    current_user: Any = Depends(deps.get_current_user)
 ) -> Any:
     """
     Transfer a manual request to the Standard Queue (Odoo Activity).
