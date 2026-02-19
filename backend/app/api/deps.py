@@ -1,9 +1,10 @@
 from typing import Generator, Optional
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, status, Query
 from fastapi.security import OAuth2PasswordBearer
 from jose import jwt, JWTError
 from pydantic import ValidationError
 from sqlmodel.ext.asyncio.session import AsyncSession
+import uuid
 
 from app.core import security
 from app.core.config import settings
@@ -11,30 +12,41 @@ from app.db.session import get_session
 from app.models.user import User
 
 reusable_oauth2 = OAuth2PasswordBearer(
-    tokenUrl=f"{settings.API_V1_STR}/auth/login"
+    tokenUrl=f"{settings.API_V1_STR}/auth/login",
+    auto_error=False
 )
 
 async def get_current_user(
     session: AsyncSession = Depends(get_session),
-    token: str = Depends(reusable_oauth2)
-) -> User:
+    token_header: Optional[str] = Depends(reusable_oauth2),
+    token_query: Optional[str] = Query(None, alias="token")
+) -> Optional[User]:
+    token = token_header or token_query
+    if not token:
+        return None
     try:
         payload = jwt.decode(
             token, settings.SECRET_KEY, algorithms=[security.ALGORITHM]
         )
         token_data = payload.get("sub")
         if token_data is None:
-            raise HTTPException(status_code=403, detail="Could not validate credentials")
-    except (JWTError, ValidationError):
-        raise HTTPException(status_code=403, detail="Could not validate credentials")
+            return None
+            
+        # Ensure token_data is a valid UUID to avoid SQLAlchemy errors
+        user_id = uuid.UUID(str(token_data))
+    except (JWTError, ValidationError, ValueError, TypeError):
+        return None
     
-    # In a real app we might query the user here. For now, we trust the sub or query DB.
-    # Note: token_data should be user_id or username
-    user = await session.get(User, token_data)
-    if not user:
-         raise HTTPException(status_code=404, detail="User not found")
-    
-    if not user.is_active:
-        raise HTTPException(status_code=400, detail="Inactive user")
+    from sqlmodel import select
+    try:
+        stmt = select(User).where(User.id == user_id)
+        result = await session.execute(stmt)
+        user = result.scalars().first()
+    except Exception as e:
+        logger.error(f"User lookup failed: {e}")
+        return None
+        
+    if not user or not user.is_active:
+        return None
         
     return user
