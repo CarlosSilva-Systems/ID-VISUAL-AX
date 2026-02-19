@@ -19,9 +19,11 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.api import deps
 from app.core.config import settings
 from app.models.audit import HistoryLog
-from app.models.id_request import IDRequest, IDRequestStatus, IDRequestTask
+from app.models.id_request import IDRequest, IDRequestStatus, IDRequestTask, PackageType
 from app.models.manufacturing import ManufacturingOrder
 from app.services.odoo_client import OdooClient
+from app.services.odoo_utils import normalize_many2one_display
+from app.services.status_mappers import map_mrp_state
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -89,7 +91,10 @@ class ManualRequestResponse(BaseModel):
 
 # ── GET /production/search ────────────────────────────────────────
 @router.get("/search", response_model=List[MOSearchResult])
-async def search_mos(q: str = "") -> Any:
+async def search_mos(
+    q: str = "",
+    current_user: Any = Depends(deps.get_current_user)
+) -> Any:
     """
     Search Odoo MOs by fabrication number. Filters out cancel/done.
     Returns has_id_activity flag per MO.
@@ -128,7 +133,7 @@ async def search_mos(q: str = "") -> Any:
         mo_ids = [m["id"] for m in mos]
         activity_type_id = await client.get_activity_type_id("Imprimir ID Visual")
 
-        activity_mo_ids: set = set()
+        id_activity_map: set = set()
         if activity_type_id:
             act_domain = [
                 ["res_model", "=", "mrp.production"],
@@ -142,33 +147,41 @@ async def search_mos(q: str = "") -> Any:
                 fields=["res_id"],
                 limit=200,
             )
-            activity_mo_ids = {a["res_id"] for a in activities}
+            id_activity_map = {a["res_id"] for a in activities}
 
-        # Build response — Odoo returns False for empty fields instead of None
-        results = []
+        # ── Step 4: Map Results ──
+        final_list = []
         for mo in mos:
-            ds = mo.get("date_start")
-            obra_raw = mo.get("x_studio_nome_da_obra")
-            state_raw = mo.get("state")
+            try:
+                # Check if this MO already has a pending ID activity (from Step 2)
+                mid = mo['id']
+                has_act = (mid in id_activity_map)
+                
+                # Helper: Normalization
+                obra_raw = mo.get('x_studio_nome_da_obra')
+                obra_clean = normalize_many2one_display(obra_raw) or "Sem Obra"
 
-            results.append(MOSearchResult(
-                odoo_mo_id=mo["id"],
-                mo_number=str(mo.get("name", "")),
-                obra=str(obra_raw) if obra_raw and obra_raw is not False else None,
-                product_qty=float(mo.get("product_qty") or 0),
-                date_start=str(ds)[:10] if ds and ds is not False else None,
-                state=str(state_raw) if state_raw and state_raw is not False else "unknown",
-                has_id_activity=mo["id"] in activity_mo_ids,
-            ))
-
-        return results
+                final_list.append(MOSearchResult(
+                    odoo_mo_id=mid,
+                    mo_number=mo['name'],
+                    obra=obra_clean,
+                    product_qty=mo.get('product_qty', 0.0),
+                    date_start=mo.get('date_start'),
+                    state=mo.get('state', ''),
+                    has_id_activity=has_act
+                ))
+            except Exception as e:
+                logger.error(f"Error processing MO {mo.get('id')}: {e}")
+                continue
+            
+        return final_list
 
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Odoo MO search error: {e}")
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Odoo search error: {str(e)}")
+        raise HTTPException(status_code=502, detail=f"Falha ao consultar Odoo: {str(e)}")
     finally:
         await client.close()
 
@@ -178,6 +191,7 @@ async def search_mos(q: str = "") -> Any:
 async def create_manual_request(
     payload: ManualRequestPayload,
     session: AsyncSession = Depends(deps.get_session),
+    current_user: Any = Depends(deps.get_current_user)
 ) -> Any:
     """
     Create a manual ID Visual request from the production floor.
@@ -304,6 +318,14 @@ async def create_manual_request(
             return None
         return str(val)
 
+    def safe_int(val: Any) -> Optional[int]:
+        if val is None or val is False:
+            return None
+        try:
+            return int(val)
+        except (ValueError, TypeError):
+            return None
+
     def safe_float(val: Any) -> float:
         try:
             return float(val) if val else 0.0
@@ -323,31 +345,32 @@ async def create_manual_request(
         if existing_mo:
             mo = existing_mo
             mo.name = safe_str(odoo_mo.get("name")) or mo.name
-            mo.x_studio_nome_da_obra = safe_str(odoo_mo.get("x_studio_nome_da_obra")) or mo.x_studio_nome_da_obra
+            mo.x_studio_nome_da_obra = normalize_many2one_display(odoo_mo.get("x_studio_nome_da_obra")) or mo.x_studio_nome_da_obra
             mo.product_qty = safe_float(odoo_mo.get("product_qty"))
             mo.state = safe_str(odoo_mo.get("state")) or mo.state
             mo.last_sync_at = datetime.utcnow()
             mo.date_start = parse_date(odoo_mo.get("date_start"))
         else:
-            company_raw = odoo_mo.get("company_id")
-            company_int = None
-            if isinstance(company_raw, list) and len(company_raw) > 0:
-                company_int = company_raw[0]
-            elif isinstance(company_raw, int):
-                company_int = company_raw
+            # 4b. Create Local MO (Snapshot)
+            # Use safe fields from Odoo or Payload? 
+            # Payload has minimal info. Odoo has full info. 
+            # Let's use Odoo data if available, else blank/payload.
+            
+            # Normalization
+            obra_clean = normalize_many2one_display(odoo_mo.get('x_studio_nome_da_obra'))
 
             mo = ManufacturingOrder(
-                odoo_id=payload.odoo_mo_id,
-                name=safe_str(odoo_mo.get("name")) or f"MO/{payload.odoo_mo_id}",
-                x_studio_nome_da_obra=safe_str(odoo_mo.get("x_studio_nome_da_obra")),
-                product_qty=safe_float(odoo_mo.get("product_qty")),
-                date_start=parse_date(odoo_mo.get("date_start")),
-                state=safe_str(odoo_mo.get("state")) or "progress",
-                company_id=company_int,
+                odoo_id=odoo_mo['id'],
+                name=odoo_mo['name'],
+                x_studio_nome_da_obra=obra_clean,
+                product_qty=odoo_mo.get('product_qty', 0),
+                date_start=parse_date(odoo_mo.get('date_start')),
+                state=odoo_mo.get('state', 'unknown'),
+                company_id=safe_int(odoo_mo.get('company_id'))
             )
-
-        session.add(mo)
-        await session.flush()  # Get mo.id
+            session.add(mo)
+            await session.commit()
+            await session.refresh(mo)
 
         # ── 5. Create IDRequest ──
         # Use raw notes as requested
@@ -430,6 +453,9 @@ class ProductionRequestResponse(BaseModel):
     status: str
     production_status: str  # waiting, in_progress, done
     notes: Optional[str] = None
+    obra: Optional[str] = None
+    product_qty: float = 0
+    priority: str = "normal"
 
 
 @router.get("/requests", response_model=List[ProductionRequestResponse])
@@ -474,7 +500,10 @@ async def get_production_requests(
             created_at=req.created_at,
             status=s,
             production_status=p_status,
-            notes=req.notes
+            notes=req.notes,
+            obra=mo.x_studio_nome_da_obra or "Sem Obra",
+            product_qty=mo.product_qty,
+            priority=req.priority or "normal"
         ))
         
     return response
