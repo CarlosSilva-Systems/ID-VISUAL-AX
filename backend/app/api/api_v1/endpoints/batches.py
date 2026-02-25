@@ -1,12 +1,14 @@
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional as Opt
 from uuid import UUID
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel import select, col, SQLModel
+from pydantic import BaseModel
+from sqlalchemy import func, case, text
 
 from app.api import deps
-from app.models.batch import Batch
+from app.models.batch import Batch, BatchStatus
 from app.models.id_request import IDRequest, IDRequestTask
 from app.models.manufacturing import ManufacturingOrder
 from app.schemas.matrix_view import (
@@ -27,6 +29,109 @@ FIXED_COLUMNS = [
     MatrixColumn(task_code="WAGO_210_855", label="Adesivo 210-855", order=60),
     MatrixColumn(task_code="QA_FINAL", label="QA Final", order=99),
 ]
+
+# --- Active Batches ---
+
+class ActiveBatchSummary(BaseModel):
+    batch_id: str
+    batch_name: str
+    items_count: int
+    progress_pct: float
+    is_complete: bool
+    created_at: datetime
+    last_activity_at: datetime
+
+@router.get("/active", response_model=List[ActiveBatchSummary])
+async def get_active_batches(
+    session: AsyncSession = Depends(deps.get_session)
+) -> Any:
+    """
+    Lista lotes com status ACTIVE, com progresso calculado e data da última atividade.
+    Ordenados por last_activity_at DESC (mais recente primeiro).
+    Usa 2 queries fixas (sem N+1).
+    """
+    # Query 1: Fetch all active batches
+    batch_stmt = select(Batch).where(Batch.status == BatchStatus.ACTIVE).order_by(Batch.created_at.desc())
+    batch_result = await session.exec(batch_stmt)
+    batches = batch_result.all()
+
+    if not batches:
+        return []
+
+    batch_ids = [b.id for b in batches]
+    batch_map = {b.id: b for b in batches}
+
+    # Query 2: Aggregated stats per batch (items_count, progress, last_activity)
+    # JOIN: IDRequest -> IDRequestTask, GROUP BY batch_id
+    agg_stmt = (
+        select(
+            IDRequest.batch_id,
+            func.count(func.distinct(IDRequest.id)).label("items_count"),
+            func.count(
+                case(
+                    (IDRequestTask.status != "nao_aplicavel", 1),
+                    else_=None
+                )
+            ).label("total_applicable"),
+            func.count(
+                case(
+                    (IDRequestTask.status == "impresso", 1),
+                    else_=None
+                )
+            ).label("total_completed"),
+            func.max(IDRequestTask.updated_at).label("last_task_update"),
+        )
+        .join(IDRequestTask, IDRequestTask.request_id == IDRequest.id, isouter=True)
+        .where(col(IDRequest.batch_id).in_(batch_ids))
+        .group_by(IDRequest.batch_id)
+    )
+    agg_result = await session.exec(agg_stmt)
+    agg_rows = agg_result.all()
+
+    # Build lookup map
+    stats_map: Dict[UUID, dict] = {}
+    for row in agg_rows:
+        bid = row[0]  # batch_id
+        items = row[1] or 0
+        applicable = row[2] or 0
+        completed = row[3] or 0
+        last_update = row[4]
+        
+        pct = round((completed / applicable * 100), 1) if applicable > 0 else 0.0
+        stats_map[bid] = {
+            "items_count": items,
+            "progress_pct": pct,
+            "is_complete": pct == 100.0,
+            "last_activity_at": last_update,
+        }
+
+    # Build response, ordered by last_activity_at DESC
+    results = []
+    for batch in batches:
+        stats = stats_map.get(batch.id, {
+            "items_count": 0,
+            "progress_pct": 0.0,
+            "is_complete": False,
+            "last_activity_at": None,
+        })
+        
+        last_activity = stats["last_activity_at"] or batch.created_at
+
+        results.append(ActiveBatchSummary(
+            batch_id=str(batch.id),
+            batch_name=batch.name,
+            items_count=stats["items_count"],
+            progress_pct=stats["progress_pct"],
+            is_complete=stats["is_complete"],
+            created_at=batch.created_at,
+            last_activity_at=last_activity,
+        ))
+
+    # Sort by last_activity_at DESC
+    results.sort(key=lambda x: x.last_activity_at, reverse=True)
+
+    return results
+
 
 @router.get("/{batch_id}/matrix", response_model=BatchMatrixResponse)
 async def get_batch_matrix(
