@@ -129,6 +129,7 @@ async def get_batch_matrix(
              
         rows.append(MatrixRow(
             request_id=req.id,
+            odoo_mo_id=mo.odoo_id,
             mo_number=mo.name,
             obra_nome=mo.x_studio_nome_da_obra,
             package_code=req.package_code,
@@ -331,7 +332,7 @@ async def create_batch(
             
             # Handle x_studio_nome_da_obra which can be a list [id, name]
             raw_obra = mo_data.get('x_studio_nome_da_obra')
-            # print(f"DEBUG: raw_obra={raw_obra} type={type(raw_obra)}") 
+            # print(f"DEBUG: raw_obra={raw_obra} type={type(raw_obra)}.") 
             obra_name = raw_obra
             if isinstance(raw_obra, list) and len(raw_obra) > 1:
                 obra_name = raw_obra[1] # [id, "Name"]
@@ -419,7 +420,6 @@ async def get_finished_batches(
     from app.models.batch import BatchStatus
     
     # 1. Fetch all concluded batches
-    # 1. Fetch all concluded or finalized batches
     from sqlalchemy import or_
     stmt = select(Batch).where(
         or_(Batch.status == BatchStatus.CONCLUDED, Batch.status == BatchStatus.FINALIZED)

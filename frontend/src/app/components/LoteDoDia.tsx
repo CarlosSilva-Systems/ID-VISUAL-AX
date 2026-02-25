@@ -1,19 +1,22 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  ChevronLeft, 
-  Play, 
-  Plus, 
-  Trash2, 
-  Edit3, 
+import {
+  ChevronLeft,
+  Play,
+  Plus,
+  Trash2,
+  Edit3,
   Info,
   CheckCircle2,
   Clock,
   AlertCircle,
   Package,
-  FileText
+  FileText,
+  Tag,
+  Check
 } from 'lucide-react';
 import { Fabrication, PACKAGES_CONFIG, Caixinha, PackageType } from '../types';
 import { DrawerCaixinha } from './DrawerCaixinha';
+import { DocumentPreviewModal } from './DocumentPreviewModal';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { toast } from 'sonner';
@@ -24,79 +27,173 @@ function cn(...inputs: ClassValue[]) {
 
 interface LoteDoDiaProps {
   initialFabrications: Fabrication[];
+  batchId?: string | null;
   onBack: () => void;
 }
 
-export function LoteDoDia({ initialFabrications, onBack }: LoteDoDiaProps) {
+export function LoteDoDia({ initialFabrications, batchId, onBack }: LoteDoDiaProps) {
   const [view, setView] = useState<'pre-inicio' | 'matriz'>('pre-inicio');
   const [items, setItems] = useState<Fabrication[]>([]);
   const [selectedTask, setSelectedTask] = useState<{ fabId: string; task: Caixinha } | null>(null);
 
+  // Document preview modal state
+  const [docModalMoId, setDocModalMoId] = useState<string | null>(null);
+  const [docModalMoNumber, setDocModalMoNumber] = useState<string | null>(null);
+
   useEffect(() => {
-    // Initialize tasks based on packageType for each fabrication
-    const initializedItems = initialFabrications.map(fab => {
-      const packageType = fab.packageType || 'COMANDO';
-      const taskLabels = PACKAGES_CONFIG[packageType];
-      const tasks: Caixinha[] = taskLabels.map(label => ({
-        id: `${fab.id}-${label}`,
-        label,
-        status: 'Neutro',
-        type: label === 'Diagrama+Legenda' ? 'Epson' : label === 'QA Final' ? 'QA' : 'SmartScript'
-      }));
-      
-      // Always add QA Final if not present
-      if (!tasks.find(t => t.label === 'QA Final')) {
-        tasks.push({
-          id: `${fab.id}-QA`,
-          label: 'QA Final',
-          status: 'Neutro',
-          type: 'QA'
-        });
+    const initialize = async () => {
+      // If we have a batchId, we should fetch the latest status from the server
+      let baseItems = initialFabrications;
+
+      if (batchId) {
+        try {
+          const api = await import('../../services/api').then(m => m.api);
+          const matrix = await api.getBatchMatrix(batchId);
+
+          // Use view to Matriz if it's already an existing batch
+          // (optional logic, for now let's keep it consistent)
+
+          // Map Matrix data into Fabrication objects with Tasks
+          baseItems = matrix.rows.map((row: any) => {
+            const tasks: Caixinha[] = matrix.columns.map((col: any) => {
+              const cell = row.cells[col.task_code];
+              return {
+                id: `${row.request_id}-${col.task_code}`,
+                label: col.label,
+                status: cell.status === 'nao_iniciado' ? 'Neutro' :
+                  cell.status === 'montado' ? 'Em Andamento' :
+                    cell.status === 'impresso' ? 'Concluído' :
+                      cell.status === 'bloqueado' ? 'Bloqueado' : 'Neutro',
+                type: col.task_code === 'DOCS_Epson' ? 'Epson' : col.task_code === 'QA_FINAL' ? 'QA' : 'SmartScript',
+                blockedReason: cell.blocked_reason,
+                version: cell.version
+              };
+            });
+
+            return {
+              id: row.request_id,
+              odoo_mo_id: row.odoo_mo_id ? String(row.odoo_mo_id) : undefined,
+              mo_number: row.mo_number,
+              obra: row.obra_nome || 'Sem Obra',
+              product_qty: row.quantity,
+              date_start: row.date_start ? new Date(row.date_start).toLocaleDateString('pt-BR') : '-',
+              sla: row.sla_text || '24h',
+              status: 'Em Lote',
+              mrp_state: 'Em Produção',
+              tasks: tasks,
+              docs: { diagrama: false, legenda: false }
+            };
+          });
+
+          setItems(baseItems);
+          // If it's a batch from DB, we can skip pre-inicio if desired
+          // setView('matriz'); 
+          return;
+        } catch (error) {
+          console.error('Failed to fetch batch matrix:', error);
+        }
       }
 
-      return { ...fab, packageType, tasks };
-    });
-    setItems(initializedItems);
-  }, [initialFabrications]);
+      // Fallback/Initial Logic for newly selected items
+      const initializedItems = baseItems.map(fab => {
+        const packageType = fab.packageType || 'COMANDO';
+        const taskLabels = PACKAGES_CONFIG[packageType];
+        const tasks: Caixinha[] = taskLabels.map(label => ({
+          id: `${fab.id}-${label}`,
+          label,
+          status: 'Neutro',
+          type: label === 'Diagrama+Legenda' ? 'Epson' : label === 'QA Final' ? 'QA' : 'SmartScript'
+        }));
+
+        if (!tasks.find(t => t.label === 'QA Final')) {
+          tasks.push({
+            id: `${fab.id}-QA`,
+            label: 'QA Final',
+            status: 'Neutro',
+            type: 'QA'
+          });
+        }
+
+        return { ...fab, packageType, tasks };
+      });
+      setItems(initializedItems);
+    };
+
+    initialize();
+  }, [initialFabrications, batchId]);
 
   const handleStartBatch = () => {
     setView('matriz');
     toast.success('Lote iniciado com sucesso! Bom trabalho.');
   };
 
-  const handleUpdateTaskStatus = (fabId: string, taskId: string, status: Caixinha['status'], blockedReason?: string) => {
+  const handleUpdateTaskStatus = async (fabId: string, taskId: string, status: Caixinha['status'], blockedReason?: string) => {
+    // 1. Local Update for responsiveness
     setItems(prev => prev.map(fab => {
       if (fab.id !== fabId) return fab;
       return {
         ...fab,
-        tasks: fab.tasks.map(task => 
-          task.id === taskId 
-            ? { ...task, status, blockedReason, lastUpdate: new Date().toLocaleTimeString() } 
+        tasks: fab.tasks.map(task =>
+          task.id === taskId
+            ? { ...task, status, blockedReason, lastUpdate: new Date().toLocaleTimeString() }
             : task
         )
       };
     }));
-    
-    // Auto-update the selected task in drawer if open
+
     if (selectedTask && selectedTask.task.id === taskId) {
-      setSelectedTask(prev => prev ? { 
-        ...prev, 
-        task: { ...prev.task, status, blockedReason } 
+      setSelectedTask(prev => prev ? {
+        ...prev,
+        task: { ...prev.task, status, blockedReason }
       } : null);
+    }
+
+    // 2. Remote Sync if batch exists
+    if (batchId) {
+      try {
+        const api = await import('../../services/api').then(m => m.api);
+
+        // Map status to Backend Enum
+        const backendStatus = status === 'Concluído' ? 'impresso' :
+          status === 'Em Andamento' ? 'montado' :
+            status === 'Bloqueado' ? 'bloqueado' : 'nao_iniciado';
+
+        // Extract task_code from taskId (format: fabricationId-taskCode)
+        const taskCodeRaw = taskId.split('-').pop(); // Simple mapping for now
+
+        // More robust mapping based on labels if code is label-based
+        const labelToCode: Record<string, string> = {
+          'Diagrama+Legenda': 'DOCS_Epson',
+          'Documentos Epson': 'DOCS_Epson',
+          '210-804': 'WAGO_210_804',
+          '210-805': 'WAGO_210_805',
+          'EFZ Tag Cabo': 'ELESYS_EFZ',
+          '2009-110': 'WAGO_2009_110',
+          '210-855': 'WAGO_210_855',
+          'QA Final': 'QA_FINAL'
+        };
+
+        const currentFab = items.find(f => f.id === fabId);
+        const currentTask = currentFab?.tasks.find(t => t.id === taskId);
+        const taskCode = labelToCode[currentTask?.label || ''] || taskCodeRaw || '';
+
+        await api.updateBatchTask(batchId, {
+          request_id: fabId,
+          task_code: taskCode,
+          new_status: backendStatus,
+          blocked_reason: blockedReason,
+          version: (currentTask as any).version || 1
+        });
+
+        toast.info(`Status atualizado: ${currentTask?.label}`);
+      } catch (error: any) {
+        console.error('Remote sync failed:', error);
+        toast.error('Erro ao sincronizar com servidor: ' + (error.message || 'Erro desconhecido'));
+        // Revert local state or show error badge is recommended in production
+      }
     }
   };
 
-  const handleMarkAllEpsonPrinting = () => {
-    setItems(prev => prev.map(fab => ({
-      ...fab,
-      tasks: fab.tasks.map(t => 
-        t.type === 'Epson' && t.status === 'Neutro' 
-          ? { ...t, status: 'Imprimindo' as const, lastUpdate: new Date().toLocaleTimeString() } 
-          : t
-      )
-    })));
-    toast.info('Todos os documentos foram marcados como "Imprimindo"');
-  };
 
   if (view === 'pre-inicio') {
     return (
@@ -118,7 +215,7 @@ export function LoteDoDia({ initialFabrications, onBack }: LoteDoDiaProps) {
             <button className="px-4 py-2 border border-slate-300 rounded-lg text-sm font-bold text-slate-600 hover:bg-white transition-colors flex items-center gap-2">
               <Plus size={18} /> Adicionar Fabricações
             </button>
-            <button 
+            <button
               onClick={handleStartBatch}
               className="px-8 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold hover:bg-blue-700 transition-all shadow-lg active:scale-95 flex items-center gap-2"
             >
@@ -151,6 +248,14 @@ export function LoteDoDia({ initialFabrications, onBack }: LoteDoDiaProps) {
                   </div>
                 </div>
                 <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <button
+                    onClick={() => { const moId = item.odoo_mo_id || item.id; setDocModalMoId(moId); setDocModalMoNumber(item.mo_number); }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-blue-600 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors"
+                    title="Ver documentos"
+                  >
+                    <FileText size={14} />
+                    Docs
+                  </button>
                   <button className="p-2 text-slate-400 hover:text-blue-600 transition-colors" title="Editar Pacote">
                     <Edit3 size={18} />
                   </button>
@@ -171,21 +276,21 @@ export function LoteDoDia({ initialFabrications, onBack }: LoteDoDiaProps) {
       {/* Visual Management Bar */}
       <div className="bg-white border-b border-gray-200 px-8 py-4 flex items-center justify-between gap-6 shadow-sm z-20">
         <div className="flex items-center gap-6 overflow-x-auto">
-          <IndicatorCard 
-            label="Documentos (Epson)" 
+          <IndicatorCard
+            label="Documentos (Epson)"
             value={items.reduce((acc, f) => acc + (f.tasks.find(t => t.type === 'Epson')?.status === 'Neutro' ? 1 : 0), 0)}
             total={items.length}
             icon={FileText}
             color="amber"
           />
-          <IndicatorCard 
-            label="Hoje" 
+          <IndicatorCard
+            label="Hoje"
             value={items.length} // Simplified
             icon={Clock}
             color="blue"
           />
-          <IndicatorCard 
-            label="Bloqueios" 
+          <IndicatorCard
+            label="Bloqueios"
             value={items.reduce((acc, f) => acc + f.tasks.filter(t => t.status === 'Bloqueado').length, 0)}
             icon={AlertCircle}
             color="red"
@@ -193,14 +298,8 @@ export function LoteDoDia({ initialFabrications, onBack }: LoteDoDiaProps) {
         </div>
 
         <div className="flex items-center gap-3 shrink-0">
-          <button 
-            onClick={handleMarkAllEpsonPrinting}
-            className="px-4 py-2 bg-amber-50 text-amber-700 border border-amber-200 rounded-lg text-xs font-bold hover:bg-amber-100 transition-all flex items-center gap-2"
-          >
-            <Printer size={16} /> Marcar Documentos como Imprimindo
-          </button>
           <div className="h-8 w-[1px] bg-gray-200 mx-2" />
-          <button 
+          <button
             onClick={onBack}
             className="px-4 py-2 text-xs font-bold text-slate-500 hover:text-slate-800 transition-colors"
           >
@@ -233,6 +332,14 @@ export function LoteDoDia({ initialFabrications, onBack }: LoteDoDiaProps) {
                         <span className="px-1.5 py-0.5 bg-indigo-100 text-indigo-700 rounded text-[9px] font-black uppercase tracking-tighter">
                           {fab.packageType}
                         </span>
+                        <button
+                          onClick={() => { const moId = fab.odoo_mo_id || fab.id; setDocModalMoId(moId); setDocModalMoNumber(fab.mo_number); }}
+                          className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-bold text-blue-600 bg-blue-50 border border-blue-200 rounded hover:bg-blue-100 transition-colors"
+                          title="Ver documentos"
+                        >
+                          <FileText size={11} />
+                          Docs
+                        </button>
                       </div>
                       <div className="text-[11px] font-bold text-slate-700 truncate w-56">{fab.obra}</div>
                       <div className="flex items-center gap-3 text-[10px] text-slate-500">
@@ -252,17 +359,12 @@ export function LoteDoDia({ initialFabrications, onBack }: LoteDoDiaProps) {
                           onClick={() => setSelectedTask({ fabId: fab.id, task })}
                           className={cn(
                             "relative w-20 h-20 rounded-xl border-2 flex flex-col items-center justify-center gap-1.5 transition-all group/box",
-                            task.status === 'Neutro' && "bg-white border-slate-200 hover:border-slate-300 text-slate-400",
-                            task.status === 'Imprimindo' && "bg-amber-50 border-amber-300 text-amber-600 animate-pulse ring-4 ring-amber-500/10",
-                            task.status === 'Em Andamento' && "bg-blue-50 border-blue-400 text-blue-600 shadow-sm",
                             task.status === 'Concluído' && "bg-emerald-50 border-emerald-500 text-emerald-700 shadow-sm",
                             task.status === 'Bloqueado' && "bg-rose-50 border-rose-400 text-rose-600 shadow-sm"
                           )}
                         >
                           {task.status === 'Concluído' ? (
                             <CheckCircle2 size={24} />
-                          ) : task.status === 'Imprimindo' ? (
-                            <Printer size={24} className="animate-bounce" />
                           ) : task.status === 'Bloqueado' ? (
                             <AlertCircle size={24} />
                           ) : task.type === 'Epson' ? (
@@ -275,7 +377,7 @@ export function LoteDoDia({ initialFabrications, onBack }: LoteDoDiaProps) {
                           <span className="text-[9px] font-black uppercase text-center px-1 leading-tight tracking-tight">
                             {task.label}
                           </span>
-                          
+
                           {/* Tooltip on hover */}
                           <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-32 bg-slate-800 text-white text-[10px] rounded p-2 opacity-0 group-hover/box:opacity-100 transition-opacity pointer-events-none z-50 shadow-xl">
                             <p className="font-bold">{task.label}</p>
@@ -295,11 +397,19 @@ export function LoteDoDia({ initialFabrications, onBack }: LoteDoDiaProps) {
 
       {/* Drawer */}
       {selectedTask && (
-        <DrawerCaixinha 
+        <DrawerCaixinha
           fabrication={items.find(f => f.id === selectedTask.fabId)!}
           task={selectedTask.task}
           onClose={() => setSelectedTask(null)}
           onUpdateStatus={(status, reason) => handleUpdateTaskStatus(selectedTask.fabId, selectedTask.task.id, status, reason)}
+        />
+      )}
+
+      {docModalMoId && docModalMoNumber && (
+        <DocumentPreviewModal
+          moId={docModalMoId}
+          moNumber={docModalMoNumber}
+          onClose={() => { setDocModalMoId(null); setDocModalMoNumber(null); }}
         />
       )}
     </div>
@@ -312,7 +422,7 @@ function IndicatorCard({ label, value, total, icon: Icon, color }: { label: stri
     amber: 'text-amber-600 bg-amber-50 border-amber-100',
     red: 'text-rose-600 bg-rose-50 border-rose-100',
   };
-  
+
   return (
     <div className={cn("px-4 py-2 rounded-lg border flex items-center gap-3 shrink-0", styles[color])}>
       <Icon size={18} />
@@ -326,23 +436,3 @@ function IndicatorCard({ label, value, total, icon: Icon, color }: { label: stri
   );
 }
 
-function Printer({ size, className }: { size: number, className?: string }) {
-  return (
-    <svg 
-      xmlns="http://www.w3.org/2000/svg" 
-      width={size} 
-      height={size} 
-      viewBox="0 0 24 24" 
-      fill="none" 
-      stroke="currentColor" 
-      strokeWidth="2" 
-      strokeLinecap="round" 
-      strokeLinejoin="round" 
-      className={className}
-    >
-      <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
-      <path d="M6 9V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v5" />
-      <rect x="6" y="14" width="12" height="8" rx="2" />
-    </svg>
-  );
-}
