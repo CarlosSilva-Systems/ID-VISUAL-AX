@@ -53,6 +53,19 @@ export const api = {
     getActiveBatches: async () => {
         return api.get('/batches/active');
     },
+    cancelBatch: async (batchId: string) => {
+        const response = await fetch(`${API_URL}/batches/${batchId}/cancel`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            const error = new Error(data.detail?.message || data.detail || `API Error: ${response.statusText}`);
+            (error as any).status = response.status;
+            throw error;
+        }
+        return data;
+    },
     createBatch: async (moIds: number[]) => {
         try {
             const response = await fetch(`${API_URL}/batches/`, {

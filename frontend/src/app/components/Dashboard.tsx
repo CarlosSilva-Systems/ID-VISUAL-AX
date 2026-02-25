@@ -14,7 +14,9 @@ import {
   RefreshCw,
   FileText,
   Play,
-  CheckCircle
+  CheckCircle,
+  Trash2,
+  X
 } from 'lucide-react';
 import { Fabrication, PackageType } from '../types';
 import { ModalPacote } from './ModalPacote';
@@ -62,6 +64,10 @@ export function Dashboard({ onCreateBatch }: DashboardProps) {
   }
   const [activeBatches, setActiveBatches] = useState<ActiveBatch[]>([]);
   const [activeBatchesError, setActiveBatchesError] = useState<string | null>(null);
+
+  // Batch action confirmation state
+  const [confirmAction, setConfirmAction] = useState<{ batchId: string; type: 'finalize' | 'delete' } | null>(null);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
 
   useEffect(() => {
     loadData();
@@ -160,6 +166,37 @@ export function Dashboard({ onCreateBatch }: DashboardProps) {
       ));
       setIsModalOpen(false);
       setItemToConfigure(null);
+    }
+  };
+
+  const handleFinalizeBatch = async (batchId: string) => {
+    setActionLoading(batchId);
+    try {
+      await api.finalizeBatch(batchId);
+      toast.success('Lote finalizado com sucesso!');
+      setActiveBatches(prev => prev.filter(b => b.batch_id !== batchId));
+    } catch (err: any) {
+      if (err.data?.pendencies) {
+        const count = err.data.pendencies.length;
+        toast.error(`Não é possível finalizar: ${count} pendência(s). Retome o lote para completar.`);
+      } else {
+        toast.error(`Erro ao finalizar: ${err.message}`);
+      }
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleCancelBatch = async (batchId: string) => {
+    setActionLoading(batchId);
+    try {
+      await api.cancelBatch(batchId);
+      toast.success('Lote apagado com sucesso.');
+      setActiveBatches(prev => prev.filter(b => b.batch_id !== batchId));
+    } catch (err: any) {
+      toast.error(`Erro ao apagar lote: ${err.message}`);
+    } finally {
+      setActionLoading(null);
     }
   };
 
@@ -273,12 +310,81 @@ export function Dashboard({ onCreateBatch }: DashboardProps) {
                       </div>
                     )}
 
-                    <button
-                      onClick={() => onCreateBatch(batch.batch_id)}
-                      className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg font-bold text-sm hover:bg-blue-700 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
-                    >
-                      Retomar <ChevronRight size={16} />
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => onCreateBatch(batch.batch_id)}
+                        className="flex-1 px-3 py-2 bg-blue-600 text-white rounded-lg font-bold text-xs hover:bg-blue-700 active:scale-[0.98] transition-all flex items-center justify-center gap-1.5"
+                      >
+                        Retomar <ChevronRight size={14} />
+                      </button>
+                      <button
+                        onClick={() => {
+                          if (!batch.is_complete) {
+                            setConfirmAction({ batchId: batch.batch_id, type: 'finalize' });
+                          } else {
+                            handleFinalizeBatch(batch.batch_id);
+                          }
+                        }}
+                        disabled={actionLoading === batch.batch_id}
+                        className="px-3 py-2 bg-emerald-600 text-white rounded-lg font-bold text-xs hover:bg-emerald-700 active:scale-[0.98] transition-all flex items-center justify-center gap-1.5 disabled:opacity-50"
+                        title="Concluir lote"
+                      >
+                        {actionLoading === batch.batch_id ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle size={14} />}
+                      </button>
+                      <button
+                        onClick={() => setConfirmAction({ batchId: batch.batch_id, type: 'delete' })}
+                        disabled={actionLoading === batch.batch_id}
+                        className="px-3 py-2 bg-rose-100 text-rose-600 rounded-lg font-bold text-xs hover:bg-rose-200 active:scale-[0.98] transition-all flex items-center justify-center gap-1.5 disabled:opacity-50"
+                        title="Apagar lote"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+
+                    {/* Confirmation Alert */}
+                    {confirmAction?.batchId === batch.batch_id && (
+                      <div className={cn(
+                        "mt-3 p-3 rounded-lg border text-xs",
+                        confirmAction.type === 'delete'
+                          ? "bg-rose-50 border-rose-200"
+                          : "bg-amber-50 border-amber-200"
+                      )}>
+                        <div className="flex items-start gap-2 mb-2">
+                          <AlertTriangle size={14} className={confirmAction.type === 'delete' ? 'text-rose-500 shrink-0 mt-0.5' : 'text-amber-500 shrink-0 mt-0.5'} />
+                          <span className={cn("font-bold", confirmAction.type === 'delete' ? 'text-rose-700' : 'text-amber-700')}>
+                            {confirmAction.type === 'delete'
+                              ? 'Tem certeza que deseja apagar este lote? Esta ação não pode ser desfeita.'
+                              : 'Este lote possui tarefas pendentes. Tem certeza que deseja tentar concluir?'}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2 justify-end">
+                          <button
+                            onClick={() => setConfirmAction(null)}
+                            className="px-3 py-1.5 text-xs font-bold text-slate-500 hover:text-slate-700 transition-colors"
+                          >
+                            Cancelar
+                          </button>
+                          <button
+                            onClick={() => {
+                              if (confirmAction.type === 'delete') {
+                                handleCancelBatch(batch.batch_id);
+                              } else {
+                                handleFinalizeBatch(batch.batch_id);
+                              }
+                              setConfirmAction(null);
+                            }}
+                            className={cn(
+                              "px-3 py-1.5 text-xs font-bold text-white rounded-lg transition-all",
+                              confirmAction.type === 'delete'
+                                ? "bg-rose-600 hover:bg-rose-700"
+                                : "bg-amber-600 hover:bg-amber-700"
+                            )}
+                          >
+                            {confirmAction.type === 'delete' ? 'Sim, Apagar' : 'Sim, Concluir'}
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 );
               })}
