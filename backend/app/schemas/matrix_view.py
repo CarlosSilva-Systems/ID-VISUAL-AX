@@ -26,6 +26,7 @@ class MatrixCell(BaseModel):
 
 class MatrixRow(BaseModel):
     request_id: UUID
+    odoo_mo_id: Optional[int] = None
     mo_number: str
     obra_nome: Optional[str] = None
     package_code: Optional[str] = None

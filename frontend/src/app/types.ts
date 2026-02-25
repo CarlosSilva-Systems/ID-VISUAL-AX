@@ -1,4 +1,4 @@
-import { LucideIcon, FileText, Tag, Layers, ClipboardCheck, Box, Settings, Printer, ShieldCheck } from "lucide-react";
+import { LucideIcon, FileText, Tag, Layers, ClipboardCheck, Box, Settings, ShieldCheck } from "lucide-react";
 
 export type StatusID = "Nova" | "Triagem" | "Em Lote" | "Bloqueada" | "Concluída" | "Sem Solicitação";
 export type Priority = "Normal" | "Alta" | "Urgente";
@@ -18,7 +18,7 @@ export interface HistoryLog {
 export interface Caixinha {
   id: string;
   label: string;
-  status: "Neutro" | "Em Andamento" | "Concluído" | "Bloqueado" | "Imprimindo";
+  status: "Neutro" | "Em Andamento" | "Concluído" | "Bloqueado";
   type: "Epson" | "SmartScript" | "Elesys" | "QA";
   blockedReason?: string;
   lastUpdate?: string;
@@ -47,6 +47,7 @@ export interface Fabrication {
   request_id?: string;
   from_production?: boolean;
   production_requester?: string;
+  odoo_mo_id?: string; // Odoo MO ID for document lookups
 }
 
 export const PACKAGES_CONFIG: Record<PackageType, string[]> = {
