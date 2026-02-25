@@ -50,6 +50,9 @@ export const api = {
     getFinishedBatches: async () => {
         return api.get('/batches/finished');
     },
+    getActiveBatches: async () => {
+        return api.get('/batches/active');
+    },
     createBatch: async (moIds: number[]) => {
         try {
             const response = await fetch(`${API_URL}/batches/`, {
@@ -146,7 +149,10 @@ export const api = {
         return data;
     },
 
-    getProductionRequests: async (limit: number = 50, offset: number = 0) => {
+    async getProductionRequests(limit: number = 50, offset: number = 0) {
         return api.get(`/production/requests?limit=${limit}&offset=${offset}`);
+    },
+    getMODocuments: async (moId: number, limit: number = 50, offset: number = 0) => {
+        return api.get(`/odoo/mos/${moId}/documents?limit=${limit}&offset=${offset}`);
     },
 };
