@@ -723,3 +723,33 @@ async def finalize_batch(
         "errors": odoo_errors
     }
 
+
+@router.patch("/{batch_id}/cancel", response_model=Dict[str, Any])
+async def cancel_batch(
+    batch_id: UUID,
+    session: AsyncSession = Depends(deps.get_session)
+) -> Any:
+    """
+    Cancela (apaga) um lote ativo.
+    Define o status como CANCELED. Apenas lotes com status ACTIVE podem ser cancelados.
+    """
+    batch = await session.get(Batch, batch_id)
+    if not batch:
+        raise HTTPException(status_code=404, detail="Lote não encontrado")
+
+    if batch.status != BatchStatus.ACTIVE:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Apenas lotes ativos podem ser cancelados. Status atual: {batch.status.value}"
+        )
+
+    batch.status = BatchStatus.CANCELED
+    batch.updated_at = datetime.now(timezone.utc)
+    session.add(batch)
+    await session.commit()
+
+    return {
+        "batch_id": str(batch.id),
+        "batch_status": batch.status.value,
+    }
+
