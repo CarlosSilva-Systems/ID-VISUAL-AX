@@ -11,12 +11,15 @@ import {
   ChevronRight,
   Info,
   Loader2,
-  RefreshCw
+  RefreshCw,
+  FileText
 } from 'lucide-react';
 import { Fabrication, PackageType } from '../types';
 import { ModalPacote } from './ModalPacote';
+import { DocumentPreviewModal } from './DocumentPreviewModal';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import { formatObraDisplayName } from '../../lib/utils';
 import { api } from '../../services/api';
 import { toast } from 'sonner';
 
@@ -40,6 +43,10 @@ export function Dashboard({ onCreateBatch }: DashboardProps) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [itemToConfigure, setItemToConfigure] = useState<Fabrication | null>(null);
   const [isCreatingBatch, setIsCreatingBatch] = useState(false);
+
+  // Document preview modal state
+  const [docModalMoId, setDocModalMoId] = useState<string | null>(null);
+  const [docModalMoNumber, setDocModalMoNumber] = useState<string | null>(null);
 
   useEffect(() => {
     loadData();
@@ -65,15 +72,19 @@ export function Dashboard({ onCreateBatch }: DashboardProps) {
           id: String(mo.odoo_mo_id),
           mo_number: mo.mo_number,
           obra: mo.obra || 'Sem Obra',
-          status: mo.state === 'confirmed' ? 'Nova' : (mo.state === 'progress' ? 'Em Progresso' : mo.state),
+          status: mo.state === 'confirmed' ? 'Nova' : (mo.state === 'progress' ? 'Em Lote' : mo.state),
           priority: sla === 'Vencida' ? 'Urgente' : 'Normal',
           date_start: mo.date_start ? new Date(mo.date_start).toLocaleDateString('pt-BR') : '-',
           product_qty: mo.product_qty,
           sla: sla,
-          packageType: null,
+          packageType: undefined,
           activity_summary: mo.activity_summary,
           from_production: mo.from_production,
-          production_requester: mo.production_requester
+          production_requester: mo.production_requester,
+          // Support for full Fabrication type
+          mrp_state: mo.state === 'done' ? 'Concluído' : 'Em Produção',
+          tasks: [],
+          docs: { diagrama: false, legenda: false }
         };
       });
       setItems(mappedItems);
@@ -268,7 +279,7 @@ export function Dashboard({ onCreateBatch }: DashboardProps) {
                   )}
                 </div>
                 <div className="text-sm font-medium text-slate-700 truncate mb-1">
-                  Obra: {item.obra}
+                  Obra: {formatObraDisplayName(item.obra)}
                 </div>
                 <div className="flex items-center gap-4 text-xs text-slate-500">
                   <span className="flex items-center gap-1"><Package size={12} /> Qtd: {item.product_qty}</span>
@@ -287,6 +298,14 @@ export function Dashboard({ onCreateBatch }: DashboardProps) {
                 </button>
                 */}
                 <div className="flex items-center gap-3">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setDocModalMoId(item.id); setDocModalMoNumber(item.mo_number); }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-blue-600 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors"
+                    title="Ver documentos"
+                  >
+                    <FileText size={14} />
+                    Docs
+                  </button>
                   <button
                     onClick={() => toggleSelect(item.id)}
                     className={cn(
@@ -316,6 +335,14 @@ export function Dashboard({ onCreateBatch }: DashboardProps) {
           fabrication={itemToConfigure}
           onClose={() => setIsModalOpen(false)}
           onSave={handleSavePackage}
+        />
+      )}
+
+      {docModalMoId && docModalMoNumber && (
+        <DocumentPreviewModal
+          moId={docModalMoId}
+          moNumber={docModalMoNumber}
+          onClose={() => { setDocModalMoId(null); setDocModalMoNumber(null); }}
         />
       )}
     </div>
