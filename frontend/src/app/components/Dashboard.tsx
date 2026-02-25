@@ -12,7 +12,9 @@ import {
   Info,
   Loader2,
   RefreshCw,
-  FileText
+  FileText,
+  Play,
+  CheckCircle
 } from 'lucide-react';
 import { Fabrication, PackageType } from '../types';
 import { ModalPacote } from './ModalPacote';
@@ -47,6 +49,19 @@ export function Dashboard({ onCreateBatch }: DashboardProps) {
   // Document preview modal state
   const [docModalMoId, setDocModalMoId] = useState<string | null>(null);
   const [docModalMoNumber, setDocModalMoNumber] = useState<string | null>(null);
+
+  // Active batches state (isolated from main load)
+  interface ActiveBatch {
+    batch_id: string;
+    batch_name: string;
+    items_count: number;
+    progress_pct: number;
+    is_complete: boolean;
+    created_at: string;
+    last_activity_at: string;
+  }
+  const [activeBatches, setActiveBatches] = useState<ActiveBatch[]>([]);
+  const [activeBatchesError, setActiveBatchesError] = useState<string | null>(null);
 
   useEffect(() => {
     loadData();
@@ -93,6 +108,16 @@ export function Dashboard({ onCreateBatch }: DashboardProps) {
       setError("Falha ao carregar dados do Odoo");
     } finally {
       setLoading(false);
+    }
+
+    // Isolated: Load active batches (failure does NOT affect main queue)
+    try {
+      const batchesData = await api.getActiveBatches();
+      setActiveBatches(batchesData);
+      setActiveBatchesError(null);
+    } catch (err: any) {
+      console.error('Active batches load failed:', err);
+      setActiveBatchesError('Não foi possível carregar lotes em andamento');
     }
   };
 
@@ -190,6 +215,77 @@ export function Dashboard({ onCreateBatch }: DashboardProps) {
         <StatCard label="Atrasadas" value="0" icon={Clock} color="red" />
         <StatCard label="Bloqueadas" value="0" icon={AlertTriangle} color="red" />
       </div>
+
+      {/* Active Batches Section */}
+      {activeBatches.length > 0 && (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+          <div className="px-6 py-4 border-b border-gray-100 bg-slate-50">
+            <div className="flex items-center gap-2">
+              <Play size={18} className="text-blue-600" />
+              <h2 className="text-lg font-bold text-slate-800">Lotes em Andamento</h2>
+              <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs font-bold rounded-full">{activeBatches.length}</span>
+            </div>
+          </div>
+          <div className="p-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {activeBatches.map((batch) => {
+                const timeDiff = Date.now() - new Date(batch.last_activity_at).getTime();
+                const minutes = Math.floor(timeDiff / 60000);
+                const hours = Math.floor(minutes / 60);
+                const days = Math.floor(hours / 24);
+                const timeAgo = days > 0 ? `${days}d atrás` : hours > 0 ? `${hours}h atrás` : minutes > 1 ? `${minutes}min atrás` : 'Agora';
+
+                return (
+                  <div
+                    key={batch.batch_id}
+                    className="p-5 border border-slate-200 rounded-xl hover:border-blue-300 hover:shadow-md transition-all group bg-white"
+                  >
+                    <div className="flex items-start justify-between mb-3">
+                      <div>
+                        <h3 className="font-bold text-slate-800 text-sm">{batch.batch_name}</h3>
+                        <p className="text-xs text-slate-500 mt-0.5">{batch.items_count} fabricação(ões)</p>
+                      </div>
+                      <span className="text-[10px] text-slate-400 font-medium shrink-0">{timeAgo}</span>
+                    </div>
+
+                    {batch.is_complete ? (
+                      <div className="flex items-center gap-2 px-3 py-2 bg-emerald-50 border border-emerald-200 rounded-lg mb-3">
+                        <CheckCircle size={16} className="text-emerald-600" />
+                        <span className="text-xs font-bold text-emerald-700">Pronto para finalizar</span>
+                      </div>
+                    ) : (
+                      <div className="mb-3">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Progresso</span>
+                          <span className="text-xs font-bold text-slate-700">{batch.progress_pct}%</span>
+                        </div>
+                        <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
+                          <div
+                            className={cn(
+                              "h-full rounded-full transition-all duration-500",
+                              batch.progress_pct >= 75 ? "bg-gradient-to-r from-blue-500 to-emerald-500" :
+                                batch.progress_pct >= 40 ? "bg-gradient-to-r from-blue-500 to-blue-400" :
+                                  "bg-blue-500"
+                            )}
+                            style={{ width: `${batch.progress_pct}%` }}
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    <button
+                      onClick={() => onCreateBatch(batch.batch_id)}
+                      className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg font-bold text-sm hover:bg-blue-700 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+                    >
+                      Retomar <ChevronRight size={16} />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Main Block: Fila de IDs */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 flex flex-col overflow-hidden">
