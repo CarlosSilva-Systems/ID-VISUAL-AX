@@ -201,7 +201,7 @@ export function LoteDoDia({ initialFabrications, batchId, onBack }: LoteDoDiaPro
         {/* Header */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <button onClick={onBack} className="p-2 hover:bg-white rounded-full transition-colors text-slate-500">
+            <button onClick={() => { toast.success('Lote salvo automaticamente. Retome pelo Dashboard quando quiser.'); onBack(); }} className="p-2 hover:bg-white rounded-full transition-colors text-slate-500">
               <ChevronLeft size={24} />
             </button>
             <div>
@@ -300,10 +300,10 @@ export function LoteDoDia({ initialFabrications, batchId, onBack }: LoteDoDiaPro
         <div className="flex items-center gap-3 shrink-0">
           <div className="h-8 w-[1px] bg-gray-200 mx-2" />
           <button
-            onClick={onBack}
+            onClick={() => { toast.success('Lote salvo automaticamente. Retome pelo Dashboard quando quiser.'); onBack(); }}
             className="px-4 py-2 text-xs font-bold text-slate-500 hover:text-slate-800 transition-colors"
           >
-            Sair do Lote
+            Sair e Salvar
           </button>
         </div>
       </div>
