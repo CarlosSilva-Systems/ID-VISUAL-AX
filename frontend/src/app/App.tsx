@@ -1,89 +1,118 @@
 import React, { useState } from 'react';
 import { Toaster } from 'sonner';
+import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { Layout } from './components/Layout';
 import { Dashboard } from './components/Dashboard';
 import { Solicitacoes } from './components/Solicitacoes';
 import { Fabricacoes } from './components/Fabricacoes';
 import { VisaoProducao } from './components/VisaoProducao';
 import { Configuracoes } from './components/Configuracoes';
-import { Padroes5S } from './components/Padroes5S';
 import { LoteDoDia } from './components/LoteDoDia';
+import { Padroes5S } from './components/Padroes5S';
+import { Login } from './components/Login';
+import { AndonGrid } from './components/AndonGrid';
+import { AndonTV } from './components/AndonTV';
 import { Fabrication } from './types';
+import { api } from '../services/api';
 
-export default function App() {
-  const [activePage, setActivePage] = useState('dashboard');
+import { DataProvider } from './contexts/DataContext';
+
+function AppContent() {
+  const navigate = useNavigate();
   const [currentBatchItems, setCurrentBatchItems] = useState<Fabrication[]>([]);
-  const [activeBatchId, setActiveBatchId] = useState<string | null>(null);
+
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [username, setUsername] = useState('');
+
+  React.useEffect(() => {
+    const checkAuth = async () => {
+      const token = localStorage.getItem('id_visual_token');
+      if (!token) {
+        setAuthLoading(false);
+        return;
+      }
+      try {
+        const me = await api.getMe();
+        handleLoginSuccess(me);
+      } catch (e) {
+        console.error('Sessão inválida', e);
+        localStorage.removeItem('id_visual_token');
+      } finally {
+        setAuthLoading(false);
+      }
+    };
+    checkAuth();
+  }, []);
+
+  const handleLoginSuccess = (meData: any) => {
+    setIsAuthenticated(true);
+    setIsAdmin(meData.is_admin);
+    setUsername(meData.user);
+  };
 
   const handleCreateBatch = async (items: Fabrication[] | string) => {
     if (Array.isArray(items)) {
+      // For new batch from selection
       setCurrentBatchItems(items);
-      setActiveBatchId(null);
-      setActivePage('batch');
+      navigate('/id-visual/batch/new');
     } else {
-      // If it's a batchId string (from Dashboard)
-      try {
-        const batchId = items;
-        setActiveBatchId(batchId);
-
-        // Fetch the batch matrix to populate currentBatchItems
-        const api = await import('../services/api').then(m => m.api);
-        const matrix = await api.getBatchMatrix(batchId);
-
-        // Map MatrixRow to Fabrication
-        const mappedItems: Fabrication[] = matrix.rows.map((row: any) => ({
-          id: row.request_id,
-          odoo_mo_id: row.odoo_mo_id ? String(row.odoo_mo_id) : undefined,
-          mo_number: row.mo_number,
-          obra: row.obra_nome || 'Sem Obra',
-          status: 'Em Lote', // Default for items in a batch
-          priority: 'Normal',
-          date_start: row.date_start ? new Date(row.date_start).toLocaleDateString('pt-BR') : '-',
-          product_qty: row.quantity,
-          sla: row.sla_text || '24h',
-          mrp_state: 'Em Produção',
-          tasks: [], // LoteDoDia will initialize/manage these
-          docs: { diagrama: false, legenda: false }
-        }));
-
-        setCurrentBatchItems(mappedItems);
-        setActivePage('batch');
-      } catch (error) {
-        console.error('Failed to load created batch:', error);
-      }
+      // For existing batch by ID
+      navigate(`/id-visual/batch/${items}`);
     }
   };
 
-  const renderPage = () => {
-    switch (activePage) {
-      case 'dashboard':
-        // The type in Dashboard.tsx says batchId: string, 
-        // while Solicitacoes says items: Fabrication[].
-        // We'll cast to any or handle both if we want to be clean.
-        return <Dashboard onCreateBatch={(id: any) => handleCreateBatch(id)} />;
-      case 'requests':
-        return <Solicitacoes onCreateBatch={handleCreateBatch} />;
-      case 'mrp':
-        return <Fabricacoes />;
-      case 'production':
-        return <VisaoProducao />;
-      case 'templates':
-        return <Padroes5S />;
-      case 'admin':
-        return <Configuracoes />;
-      case 'batch':
-        return <LoteDoDia initialFabrications={currentBatchItems} batchId={activeBatchId} onBack={() => setActivePage('dashboard')} />;
-      default:
-        return <Dashboard onCreateBatch={(id: any) => handleCreateBatch(id)} />;
-    }
-  };
+  if (authLoading) {
+    return <div className="h-screen flex items-center justify-center text-slate-500 font-medium">Carregando ID Visual...</div>;
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <>
+        <Toaster position="top-right" richColors />
+        <Login onLoginSuccess={handleLoginSuccess} />
+      </>
+    );
+  }
 
   return (
     <>
       <Toaster position="top-right" richColors />
-      <Layout activePage={activePage} setActivePage={setActivePage}>
-        {renderPage()}
-      </Layout>
+      <Routes>
+        <Route path="/andon-tv" element={<AndonTV />} />
+        <Route path="/*" element={
+          <Layout isAdmin={isAdmin} username={username}>
+            <Routes>
+              <Route path="/" element={<Navigate to="/id-visual/dashboard" replace />} />
+              <Route path="/id-visual/dashboard" element={<Dashboard onCreateBatch={handleCreateBatch} />} />
+              <Route path="/id-visual/solicitacoes" element={<Solicitacoes onCreateBatch={handleCreateBatch} />} />
+              <Route path="/id-visual/producao" element={<VisaoProducao />} />
+              <Route path="/andon/painel" element={<AndonGrid username={username} />} />
+              <Route path="/mrp" element={<Fabricacoes />} />
+              <Route path="/templates" element={<Padroes5S />} />
+              {isAdmin && <Route path="/admin" element={<Configuracoes />} />}
+              <Route path="/id-visual/batch/:batchId" element={
+                <LoteDoDia
+                  initialFabrications={currentBatchItems}
+                  onBack={() => navigate('/id-visual/dashboard')}
+                />
+              } />
+              <Route path="*" element={<Navigate to="/id-visual/dashboard" replace />} />
+            </Routes>
+          </Layout>
+        } />
+      </Routes>
     </>
+  );
+}
+
+export default function App() {
+  return (
+    <BrowserRouter>
+      <DataProvider>
+        <AppContent />
+      </DataProvider>
+    </BrowserRouter>
   );
 }

@@ -15,6 +15,8 @@ import {
 import { Fabrication, Priority, StatusID } from '../types';
 import { api } from '../../services/api';
 import { toast } from 'sonner';
+import { useData } from '../contexts/DataContext';
+import { formatObraDisplayName } from '../../lib/utils';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
@@ -27,53 +29,20 @@ interface SolicitacoesProps {
 }
 
 export function Solicitacoes({ onCreateBatch }: SolicitacoesProps) {
-  const [items, setItems] = useState<Fabrication[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { manualRequests, loadingRequests, refreshManualRequests } = useData();
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   React.useEffect(() => {
-    loadData();
-  }, []);
-
-  const loadData = async () => {
-    setLoading(true);
-    try {
-      const data = await api.getManualRequests();
-
-      const mapped: Fabrication[] = data.map((req: any) => {
-        return {
-          id: req.request_id, // Use request_id as primary key here
-          mo_number: req.mo_number,
-          obra: req.obra_nome || 'Sem Obra',
-          product_qty: req.product_qty,
-          date_start: req.date_start ? String(req.date_start).split('T')[0] : '',
-          sla: 'Urgente', // Manual requests are urgent
-          priority: req.priority,
-          status: req.status.charAt(0).toUpperCase() + req.status.slice(1), // Capitalize
-          mrp_state: 'Em Produção', // Mock or fetch?
-          tasks: [],
-          docs: { diagrama: true, legenda: true },
-          requester_name: req.requester_name,
-          notes: req.notes,
-          request_id: req.request_id
-        };
-      });
-
-      setItems(mapped);
-    } catch (err) {
-      console.error(err);
-      toast.error('Erro ao carregar solicitações manuais');
-    } finally {
-      setLoading(false);
-    }
-  };
+    refreshManualRequests();
+  }, [refreshManualRequests]);
 
   const handleTransfer = async (item: Fabrication) => {
     if (!item.request_id) return;
     try {
       await api.transferManualRequest(item.request_id);
       toast.success(`Solicitação ${item.mo_number} transferida para fila de produção!`);
-      loadData(); // Refresh list
+      // Force refresh both contexts because transfer moves from Manual to Odoo (backend side)
+      refreshManualRequests(true);
       window.dispatchEvent(new Event('manual-request-updated'));
       setSelectedItem(null);
     } catch (err: any) {
@@ -86,7 +55,7 @@ export function Solicitacoes({ onCreateBatch }: SolicitacoesProps) {
   const [selectedItem, setSelectedItem] = useState<Fabrication | null>(null);
 
   const filteredItems = useMemo(() => {
-    return items.filter(item => {
+    return manualRequests.filter(item => {
       const matchesSearch = item.mo_number.toLowerCase().includes(search.toLowerCase()) ||
         item.obra.toLowerCase().includes(search.toLowerCase());
 
@@ -98,7 +67,7 @@ export function Solicitacoes({ onCreateBatch }: SolicitacoesProps) {
       }
       return true;
     });
-  }, [items, search, filter]);
+  }, [manualRequests, search, filter]);
 
   const toggleSelect = (id: string) => {
     const newSelected = new Set(selectedIds);
@@ -111,7 +80,7 @@ export function Solicitacoes({ onCreateBatch }: SolicitacoesProps) {
   };
 
   const handleCreateBatch = () => {
-    const batchItems = items.filter(item => selectedIds.has(item.id));
+    const batchItems = manualRequests.filter(item => selectedIds.has(item.id));
     onCreateBatch(batchItems);
   };
 
@@ -191,7 +160,7 @@ export function Solicitacoes({ onCreateBatch }: SolicitacoesProps) {
                   <td className="p-4">
                     <div className="flex flex-col">
                       <span className="text-sm font-bold text-slate-800">{item.mo_number}</span>
-                      <span className="text-xs text-slate-500">{item.obra}</span>
+                      <span className="text-xs text-slate-500">{formatObraDisplayName(item.obra)}</span>
                     </div>
                   </td>
                   <td className="p-4 text-xs font-bold text-slate-600">{new Date(item.date_start).toLocaleDateString()}</td>
@@ -239,7 +208,7 @@ export function Solicitacoes({ onCreateBatch }: SolicitacoesProps) {
               )}
               <div className="p-4 bg-slate-50 rounded-lg">
                 <label className="text-[10px] font-black uppercase text-slate-400">Obra</label>
-                <p className="font-bold text-slate-800">{selectedItem.obra}</p>
+                <p className="font-bold text-slate-800">{formatObraDisplayName(selectedItem.obra)}</p>
               </div>
             </div>
 

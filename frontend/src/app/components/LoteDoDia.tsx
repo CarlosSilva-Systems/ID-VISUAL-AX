@@ -25,13 +25,15 @@ function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+import { useParams } from 'react-router-dom';
+
 interface LoteDoDiaProps {
   initialFabrications: Fabrication[];
-  batchId?: string | null;
   onBack: () => void;
 }
 
-export function LoteDoDia({ initialFabrications, batchId, onBack }: LoteDoDiaProps) {
+export function LoteDoDia({ initialFabrications, onBack }: LoteDoDiaProps) {
+  const { batchId } = useParams<{ batchId: string }>();
   const [view, setView] = useState<'pre-inicio' | 'matriz'>('pre-inicio');
   const [items, setItems] = useState<Fabrication[]>([]);
   const [selectedTask, setSelectedTask] = useState<{ fabId: string; task: Caixinha } | null>(null);
@@ -42,16 +44,16 @@ export function LoteDoDia({ initialFabrications, batchId, onBack }: LoteDoDiaPro
 
   useEffect(() => {
     const initialize = async () => {
-      // If we have a batchId, we should fetch the latest status from the server
+      // If we have a real batchId (not "new"), fetch from server
       let baseItems = initialFabrications;
 
-      if (batchId) {
+      if (batchId && batchId !== 'new') {
         try {
           const api = await import('../../services/api').then(m => m.api);
           const matrix = await api.getBatchMatrix(batchId);
 
-          // Use view to Matriz if it's already an existing batch
-          // (optional logic, for now let's keep it consistent)
+          // Force view to Matriz if it's an existing saved batch
+          setView('matriz');
 
           // Map Matrix data into Fabrication objects with Tasks
           baseItems = matrix.rows.map((row: any) => {
