@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, CheckCircle2, AlertTriangle, Play, ChevronRight, Info, ClipboardCheck, Printer, Ban } from 'lucide-react';
+import { X, CheckCircle2, AlertTriangle, Play, ChevronRight, Info, ClipboardCheck, Ban } from 'lucide-react';
 import { Fabrication, Caixinha } from '../types';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -51,11 +51,11 @@ export function DrawerCaixinha({ fabrication, task, onClose, onUpdateStatus }: D
   return (
     <div className="fixed inset-0 z-50 flex justify-end">
       {/* Backdrop */}
-      <div 
-        className="absolute inset-0 bg-slate-900/40 backdrop-blur-[2px] animate-in fade-in duration-300" 
-        onClick={onClose} 
+      <div
+        className="absolute inset-0 bg-slate-900/40 backdrop-blur-[2px] animate-in fade-in duration-300"
+        onClick={onClose}
       />
-      
+
       {/* Drawer */}
       <div className="relative w-full max-w-md bg-white h-full shadow-2xl flex flex-col animate-in slide-in-from-right duration-300">
         {/* Header */}
@@ -97,7 +97,6 @@ export function DrawerCaixinha({ fabrication, task, onClose, onUpdateStatus }: D
             <div className={cn(
               "px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider",
               task.status === 'Neutro' && "bg-slate-100 text-slate-500",
-              task.status === 'Imprimindo' && "bg-amber-100 text-amber-700 animate-pulse",
               task.status === 'Em Andamento' && "bg-blue-100 text-blue-700",
               task.status === 'Concluído' && "bg-emerald-100 text-emerald-700",
               task.status === 'Bloqueado' && "bg-rose-100 text-rose-700"
@@ -119,8 +118,8 @@ export function DrawerCaixinha({ fabrication, task, onClose, onUpdateStatus }: D
                   onClick={() => toggleCheck(item.id)}
                   className={cn(
                     "w-full flex items-center gap-4 p-4 rounded-xl border-2 transition-all text-left",
-                    checklist[item.id] 
-                      ? "bg-emerald-50 border-emerald-500 text-emerald-900" 
+                    checklist[item.id]
+                      ? "bg-emerald-50 border-emerald-500 text-emerald-900"
                       : "bg-white border-slate-100 hover:border-slate-200 text-slate-600"
                   )}
                 >
@@ -150,8 +149,8 @@ export function DrawerCaixinha({ fabrication, task, onClose, onUpdateStatus }: D
                     onClick={() => setBlockReason(reason)}
                     className={cn(
                       "px-3 py-2 rounded-lg border text-xs font-bold transition-all",
-                      blockReason === reason 
-                        ? "bg-rose-600 border-rose-600 text-white" 
+                      blockReason === reason
+                        ? "bg-rose-600 border-rose-600 text-white"
                         : "bg-white border-slate-200 text-slate-600 hover:border-rose-300"
                     )}
                   >
@@ -159,18 +158,18 @@ export function DrawerCaixinha({ fabrication, task, onClose, onUpdateStatus }: D
                   </button>
                 ))}
               </div>
-              <textarea 
+              <textarea
                 placeholder="Observações adicionais..."
                 className="w-full p-3 rounded-lg border border-slate-200 text-sm h-24 focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 outline-none"
               />
               <div className="flex gap-2">
-                <button 
+                <button
                   onClick={() => setIsBlocking(false)}
                   className="flex-1 px-4 py-2 text-sm font-bold text-slate-500 hover:bg-slate-100 rounded-lg transition-colors"
                 >
                   Cancelar
                 </button>
-                <button 
+                <button
                   disabled={!blockReason}
                   onClick={() => {
                     onUpdateStatus('Bloqueado', blockReason);
@@ -183,7 +182,7 @@ export function DrawerCaixinha({ fabrication, task, onClose, onUpdateStatus }: D
               </div>
             </div>
           ) : (
-            <button 
+            <button
               onClick={() => setIsBlocking(true)}
               className="w-full py-3 border-2 border-dashed border-slate-200 rounded-xl text-slate-400 text-xs font-bold hover:border-rose-300 hover:text-rose-500 transition-all flex items-center justify-center gap-2"
             >
@@ -196,40 +195,31 @@ export function DrawerCaixinha({ fabrication, task, onClose, onUpdateStatus }: D
         <div className="p-6 border-t border-gray-100 bg-slate-50 flex flex-col gap-3">
           {task.type === 'Epson' ? (
             <div className="flex gap-3">
-              <button 
-                onClick={() => {
-                  onUpdateStatus('Imprimindo');
-                  onClose();
-                }}
-                className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-amber-600 text-white rounded-xl font-bold text-sm hover:bg-amber-700 shadow-lg shadow-amber-600/20 transition-all active:scale-95"
-              >
-                <Printer size={18} /> Marcar Imprimindo
-              </button>
-              <button 
+              <button
                 onClick={() => {
                   onUpdateStatus('Concluído');
                   onClose();
                 }}
-                className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-emerald-600 text-white rounded-xl font-bold text-sm hover:bg-emerald-700 shadow-lg shadow-emerald-600/20 transition-all active:scale-95"
+                className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-emerald-600 text-white rounded-xl font-bold text-sm hover:bg-emerald-700 shadow-lg shadow-emerald-600/20 transition-all active:scale-95"
               >
-                <CheckCircle2 size={18} /> Já Impresso
+                <CheckCircle2 size={18} /> Marcar como Já Impresso
               </button>
             </div>
           ) : (
             <div className="flex flex-col gap-2">
-              <button 
+              <button
                 disabled={task.status === 'Em Andamento'}
                 onClick={() => onUpdateStatus('Em Andamento')}
                 className={cn(
                   "w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl font-bold text-sm transition-all active:scale-95 border-2",
-                  task.status === 'Em Andamento' 
-                    ? "bg-blue-50 border-blue-200 text-blue-400 cursor-default" 
+                  task.status === 'Em Andamento'
+                    ? "bg-blue-50 border-blue-200 text-blue-400 cursor-default"
                     : "bg-white border-blue-600 text-blue-600 hover:bg-blue-50"
                 )}
               >
                 <Play size={18} fill="currentColor" /> Iniciar Trabalho
               </button>
-              <button 
+              <button
                 disabled={!isAllChecked}
                 onClick={() => {
                   onUpdateStatus('Concluído');
@@ -237,8 +227,8 @@ export function DrawerCaixinha({ fabrication, task, onClose, onUpdateStatus }: D
                 }}
                 className={cn(
                   "w-full flex items-center justify-center gap-2 px-4 py-4 rounded-xl font-bold text-base shadow-lg transition-all active:scale-95",
-                  isAllChecked 
-                    ? "bg-emerald-600 text-white hover:bg-emerald-700 shadow-emerald-600/20" 
+                  isAllChecked
+                    ? "bg-emerald-600 text-white hover:bg-emerald-700 shadow-emerald-600/20"
                     : "bg-slate-200 text-slate-400 cursor-not-allowed shadow-none"
                 )}
               >

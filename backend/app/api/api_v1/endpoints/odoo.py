@@ -13,6 +13,19 @@ from app.models.manufacturing import ManufacturingOrder
 
 router = APIRouter()
 
+async def get_odoo_client():
+    client = OdooClient(
+        url=settings.ODOO_URL,
+        db=settings.ODOO_DB,
+        auth_type=settings.ODOO_AUTH_TYPE,
+        login=settings.ODOO_LOGIN,
+        secret=settings.ODOO_PASSWORD
+    )
+    try:
+        yield client
+    finally:
+        await client.close()
+
 @router.get("/mos", response_model=List[dict])
 async def get_odoo_mos(
     session: AsyncSession = Depends(deps.get_session)
@@ -25,7 +38,7 @@ async def get_odoo_mos(
     client = OdooClient(
         url=settings.ODOO_URL,
         db=settings.ODOO_DB,
-        auth_type="jsonrpc_password",
+        auth_type=settings.ODOO_AUTH_TYPE,
         login=settings.ODOO_LOGIN,
         secret=settings.ODOO_PASSWORD
     )
