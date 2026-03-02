@@ -1,6 +1,6 @@
 import React from 'react';
 import { BatchStats } from '../../types/matrix';
-import { Printer, TrendingUp, Calendar, Ban } from 'lucide-react';
+import { FileText, TrendingUp, Calendar, Ban } from 'lucide-react';
 
 interface BatchKPIsProps {
     stats: BatchStats;
@@ -12,15 +12,15 @@ export const BatchKPIs: React.FC<BatchKPIsProps> = ({ stats, onFilter, activeFil
     const cards = [
         {
             id: 'docs',
-            label: 'Documentos Epson',
+            label: 'Documentos (Docs)',
             value: (
                 <div className="flex text-xs space-x-2">
                     <span className="text-slate-500">Pend: <b className="text-slate-700">{stats.docs_pending}</b></span>
-                    <span className="text-amber-600">Impr: <b className="text-amber-700">{stats.docs_printing}</b></span>
+                    <span className="text-amber-600">Fila: <b className="text-amber-700">{stats.docs_printing}</b></span>
                     <span className="text-emerald-600">OK: <b className="text-emerald-700">{stats.docs_printed}</b></span>
                 </div>
             ),
-            icon: Printer,
+            icon: FileText,
             color: 'blue'
         },
         {

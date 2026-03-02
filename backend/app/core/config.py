@@ -56,10 +56,23 @@ class Settings(BaseSettings):
     ODOO_DB: str = "teste-dres"
     ODOO_LOGIN: str = ""
     ODOO_PASSWORD: str = ""
+    ODOO_AUTH_TYPE: str = "jsonrpc_password"
     
     # Odoo Activity Configuration
     ODOO_ID_VISUAL_ACTIVITY_TYPE_ID: Optional[int] = None
     ODOO_ACTIVITY_USER_ID: int = 2
+
+    # --- Andon Configuration ---
+    # ID do grupo res.groups no Odoo que define administradores do ID Visual
+    ID_VISUAL_ADMIN_GROUP_ID: Optional[int] = None
+    # Estados de mrp.workorder considerados "ativos" para exibição no Andon
+    ANDON_WO_STATES: List[str] = ["progress", "ready"]
+    # ID do tipo de picking interno (stock.picking.type) para requisições de material
+    ANDON_INTERNAL_PICKING_TYPE_ID: Optional[int] = None
+    # ID do canal mail.channel no Discuss para notificações de parada crítica
+    ANDON_CHANNEL_ID: Optional[int] = None
+    # ID do usuário/responsável de engenharia que recebe mail.activity de parada
+    ANDON_ENGINEERING_USER_ID: Optional[int] = None
 
     model_config = SettingsConfigDict(env_file=".env", case_sensitive=True, extra="ignore")
 

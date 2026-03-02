@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { TaskStatusEnum } from '../../types/matrix';
-import { Check, Printer, Ban } from 'lucide-react';
+import { Check, Ban } from 'lucide-react';
 
 interface StatusCellProps {
     taskCode: string;
@@ -30,8 +30,8 @@ export const StatusCell: React.FC<StatusCellProps> = ({
                 return {
                     bg: 'bg-amber-100',
                     border: 'border-amber-300',
-                    icon: isDocs ? <Printer size={16} className="text-amber-600" /> : null,
-                    text: isDocs ? 'Imprimindo' : ''
+                    icon: null,
+                    text: isDocs ? 'Em Fila' : ''
                 };
             case TaskStatusEnum.impresso:
                 return {

@@ -1,13 +1,13 @@
 import React, { useState } from 'react';
-import { 
-  BookOpen, 
-  CheckSquare, 
-  Tag, 
-  AlertTriangle, 
-  Lightbulb, 
-  ChevronRight, 
-  Copy, 
-  CheckCircle2, 
+import {
+  BookOpen,
+  CheckSquare,
+  Tag,
+  AlertTriangle,
+  Lightbulb,
+  ChevronRight,
+  Copy,
+  CheckCircle2,
   Layers,
   ArrowRight,
   ClipboardCheck,
@@ -92,7 +92,7 @@ export function Padroes5S() {
         {/* Main Standards */}
         <div className="lg:col-span-2 space-y-6">
           {sections.map((section) => (
-            <div 
+            <div
               key={section.id}
               className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden group hover:shadow-md transition-all"
             >
@@ -112,7 +112,7 @@ export function Padroes5S() {
                     {section.content.map((line, idx) => (
                       <div key={idx} className="flex items-center justify-between group/line">
                         <span className="text-sm font-medium text-slate-700">{line}</span>
-                        <button 
+                        <button
                           onClick={() => {
                             navigator.clipboard.writeText(line);
                             toast.success('Copiado para área de transferência');
@@ -152,7 +152,7 @@ export function Padroes5S() {
             </h3>
             <div className="space-y-2">
               {checklists.map((check) => (
-                <button 
+                <button
                   key={check.id}
                   onClick={() => setSelectedStandard(check.label)}
                   className="w-full flex items-center justify-between p-4 rounded-xl border border-slate-100 hover:border-blue-500 hover:bg-blue-50/50 transition-all text-left group"
@@ -174,7 +174,7 @@ export function Padroes5S() {
               <Info size={16} /> Dica de Produtividade
             </div>
             <p className="text-xs text-slate-600 leading-relaxed italic">
-              "Sempre inicie a impressão do Diagrama e Legenda (Epson) no início de cada MO. Enquanto a impressora trabalha, você monta as tags na SmartScript. Reduz o tempo de espera em 40%."
+              "Sempre inicie a liberação do Diagrama e Legenda (Docs) no início de cada MO. Enquanto o sistema processa, você monta as tags na SmartScript. Reduz o tempo de espera em 40%."
             </p>
           </div>
         </div>
@@ -192,9 +192,9 @@ function StandardDrawer({ title, onClose }: { title: string, onClose: () => void
   const steps = [
     'Verificar arquivo PDF do diagrama',
     'Conferir se todas as páginas estão corretas',
-    'Selecionar impressora Epson L3250',
+    'Escolher equipamento de saída adequado',
     'Papel A4 gramatura padrão',
-    'Marcar como "Imprimindo" no sistema'
+    'Marcar como "Iniciado" no sistema'
   ];
 
   return (
@@ -225,7 +225,7 @@ function StandardDrawer({ title, onClose }: { title: string, onClose: () => void
               ))}
             </div>
           </div>
-          
+
           <div className="p-4 bg-amber-50 rounded-xl border border-amber-100">
             <p className="text-[10px] font-black text-amber-600 uppercase mb-1">Atenção (Poka-yoke)</p>
             <p className="text-xs text-amber-800 font-medium leading-relaxed">
@@ -235,7 +235,7 @@ function StandardDrawer({ title, onClose }: { title: string, onClose: () => void
         </div>
 
         <div className="p-6 border-t border-gray-100 bg-slate-50">
-          <button 
+          <button
             onClick={onClose}
             className="w-full py-3 bg-slate-900 text-white rounded-xl font-bold text-sm hover:bg-slate-800 transition-all"
           >

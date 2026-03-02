@@ -1,68 +1,18 @@
-import uuid
 import logging
-import httpx
-from datetime import datetime
-from typing import Optional, Any, Dict
+import base64
+from typing import Any, Dict, List, Optional
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import StreamingResponse, JSONResponse
+import io
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from fastapi.responses import StreamingResponse, HTMLResponse, JSONResponse
-from sqlmodel import select
-from sqlmodel.ext.asyncio.session import AsyncSession
-
-from app.api import deps
-from app.core.config import settings
-from app.models.product_document import ProductDocumentCache
-from app.models.product_attachment import AttachmentAccessGrant, BatchProductDocLink
 from app.services.odoo_client import OdooClient
-from app.models.user import User
+from app.core.config import settings
+from app.api import deps
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-async def validate_access(
-    doc_key: uuid.UUID, 
-    session: AsyncSession,
-    user_id: uuid.UUID
-) -> ProductDocumentCache:
-    """
-    Validate document existence and access rights.
-    Strict Check:
-    1. Document exists.
-    2. EITHER linked to a Batch (Persistent Access).
-    3. OR has valid Grant for THIS user (Temporary Access).
-    Returns document if valid, else raises HTTPException.
-    """
-    # 1. Lookup Document
-    doc = await session.get(ProductDocumentCache, doc_key)
-    if not doc:
-        raise HTTPException(status_code=404, detail="Documento não encontrado")
-
-    # 2. Check Access (Grant OR Batch Link)
-    now = datetime.utcnow()
-    
-    # Check Persistence (Batch) - Assuming batches allow access to logged users
-    stmt_link = select(BatchProductDocLink).where(
-        BatchProductDocLink.product_document_id == doc.id
-    )
-    link = (await session.exec(stmt_link)).first()
-    
-    if link:
-        return doc # Access Granted via Batch
-    
-    # Check Temporary Grant for specific user
-    stmt_grant = select(AttachmentAccessGrant).where(
-        AttachmentAccessGrant.product_document_id == doc.id,
-        AttachmentAccessGrant.user_id == user_id,
-        AttachmentAccessGrant.expires_at > now
-    )
-    grant = (await session.exec(stmt_grant)).first()
-    
-    if grant:
-        return doc # Access Granted via Temp Link
-        
-    # No access
-    logger.warning(f"Access denied for doc {doc_key} (User {user_id})")
-    raise HTTPException(status_code=403, detail="Acesso expirado ou inválido")
+# --- Utilities ---
 
 def safe_filename(name: str) -> str:
     name = (name or "").strip()
@@ -72,267 +22,163 @@ def safe_filename(name: str) -> str:
         name = name.replace(ch, "_")
     return name[:150]
 
-def filtered_headers(upstream_headers: httpx.Headers) -> Dict[str, str]:
-    """whitelist safe headers to pass through"""
-    allowed = ["content-type", "content-length", "content-range", "accept-ranges", "etag", "last-modified", "cache-control"]
-    return {k: v for k, v in upstream_headers.items() if k.lower() in allowed}
+def is_previewable(mimetype: str) -> bool:
+    if not mimetype: return False
+    previewable = [
+        "application/pdf",
+        "image/png",
+        "image/jpeg",
+        "image/gif",
+        "text/plain",
+        "text/html" # Careful with HTML, but allowed for preview if trusted
+    ]
+    return any(mimetype.startswith(t) for t in previewable)
 
-async def chain_stream(first_chunk: bytes, iterator):
-    """Re-inject peeked bytes and continue streaming"""
-    if first_chunk:
-        yield first_chunk
-    async for chunk in iterator:
-        yield chunk
+# --- Endpoints ---
 
-async def stream_from_odoo(
-    doc: ProductDocumentCache, 
-    disposition: str, 
-    request: Request
+@router.get("/mos/{odoo_mo_id}/documents")
+async def list_mo_documents(
+    odoo_mo_id: int,
 ):
     """
-    Robust Proxy for Odoo Documents.
-    Features:
-    - Retry Logic (Auth/Redirects)
-    - Stream Peeking (Validation)
-    - Range Support (Pass-through)
-    - Safe Header Filtering
+    List documents linked to the product of a specific Manufacturing Order.
     """
     client = OdooClient(
         url=settings.ODOO_URL,
         db=settings.ODOO_DB,
-        auth_type="jsonrpc_password",
+        auth_type=settings.ODOO_AUTH_TYPE,
+        login=settings.ODOO_LOGIN,
+        secret=settings.ODOO_PASSWORD
+    )
+    
+    try:
+        # 1. Fetch MO to get product_id
+        mo_data = await client.search_read(
+            'mrp.production',
+            domain=[['id', '=', odoo_mo_id]],
+            fields=['id', 'product_id']
+        )
+        if not mo_data:
+            raise HTTPException(status_code=404, detail="Ordem de produção não encontrada no Odoo")
+        
+        product_raw = mo_data[0].get('product_id')
+        if not product_raw:
+            return {"mo_id": odoo_mo_id, "product_id": None, "documents": []}
+            
+        product_id = product_raw[0] if isinstance(product_raw, (list, tuple)) else product_raw
+        
+        # 2. Fetch documents for product
+        docs = await client.get_product_documents(product_id)
+        
+        # 3. Normalize for frontend
+        normalized = []
+        for d in docs:
+            doc_id = f"{d['model']}_{d['odoo_id']}"
+            normalized.append({
+                "id": doc_id,
+                "odoo_document_id": d['odoo_id'],
+                "attachment_id": d.get('ir_attachment_id'),
+                "name": d['name'],
+                "mimetype": d['mimetype'],
+                "size": d['size'],
+                "checksum": d['checksum'],
+                "is_previewable": is_previewable(d['mimetype']),
+                "view_url": f"/api/v1/odoo/mos/{odoo_mo_id}/documents/{doc_id}/view",
+                "download_url": f"/api/v1/odoo/mos/{odoo_mo_id}/documents/{doc_id}/download"
+            })
+            
+        return {
+            "mo_id": odoo_mo_id,
+            "product_id": product_id,
+            "documents": normalized,
+            "total": len(normalized)
+        }
+    except Exception as e:
+        logger.error(f"Error listing documents for MO {odoo_mo_id}: {e}")
+        raise HTTPException(status_code=502, detail=f"Erro ao buscar documentos no Odoo: {str(e)}")
+    finally:
+        await client.close()
+
+@router.get("/mos/{odoo_mo_id}/documents/{doc_id}/view")
+async def view_document(odoo_mo_id: int, doc_id: str):
+    """Proxy document content for inline viewing."""
+    return await proxy_document(doc_id, "inline")
+
+@router.get("/mos/{odoo_mo_id}/documents/{doc_id}/download")
+async def download_document(odoo_mo_id: int, doc_id: str):
+    """Proxy document content for download."""
+    return await proxy_document(doc_id, "attachment")
+
+async def proxy_document(doc_id: str, disposition: str):
+    """
+    Generic proxy logic for Odoo documents.
+    doc_id format: {model}_{id}
+    """
+    try:
+        model, record_id_str = doc_id.split('_', 1)
+        record_id = int(record_id_str)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="ID de documento inválido")
+
+    client = OdooClient(
+        url=settings.ODOO_URL,
+        db=settings.ODOO_DB,
+        auth_type=settings.ODOO_AUTH_TYPE,
         login=settings.ODOO_LOGIN,
         secret=settings.ODOO_PASSWORD
     )
 
-    # Logic to guarantee filename exists
-    doc_id_fallback = str(getattr(doc, "id", "unknown"))
-    base_name = safe_filename(doc.name or getattr(doc, "datas_fname", None) or f"document_{doc_id_fallback}")
-    
-    # Enforce .pdf extension
-    is_pdf_expected = (doc.mimetype == "application/pdf") or getattr(doc, "datas_fname", "").lower().endswith(".pdf")
-    if is_pdf_expected and not base_name.lower().endswith(".pdf"):
-        base_name += ".pdf"
+    try:
+        # 1. Fetch binary data
+        doc_data = await client.get_attachment_data(model, record_id)
+        if not doc_data or not doc_data.get('content'):
+            raise HTTPException(status_code=404, detail="Conteúdo do documento não encontrado")
+
+        content_raw = doc_data['content']
         
-    filename = base_name
-
-    MAX_RETRIES = 2
-    request_id = uuid.uuid4().hex[:8]
-
-    for attempt in range(MAX_RETRIES + 1):
-        # 1. Prepare Headers (Range)
-        req_headers = {}
-        range_header = request.headers.get("Range")
-        if range_header:
-            req_headers["Range"] = range_header
+        # 2. Check for HTML/Login masking
+        # Some Odoo versions return a login page if session is invalid or access denied
+        # even if RPC call seemed to succeed (depending on implementation)
+        if isinstance(content_raw, str):
+            # Check if it starts with <html (case insensitive)
+            if content_raw.strip().lower().startswith("<!doctype html") or content_raw.strip().lower().startswith("<html"):
+                logger.warning(f"Detected HTML masking for doc {doc_id}")
+                raise HTTPException(status_code=502, detail="Odoo retornou uma página de login em vez do arquivo")
             
-        try:
-            # Note: We must manage the stream context carefully. 
-            # We return StreamingResponse which takes ownership of the iterator.
-            # But the client context manager (async with) closes connection on exit.
-            # So we cannot use `async with` block for the return.
-            # We need to manually enter the context and ensure it closes after streaming.
-            # Httpx stream context manager returns a Response.
-            
-            # Since OdooClient.get_attachment_stream_context uses `async with`, it handles close on exit.
-            # If we yield from it, we are good. But we need to peek.
-            # Solution: We do the logic verifying inside the context, and if good, we return a StreamingResponse 
-            # that iterates over the response content. 
-            # WAIT: If we exit `async with`, the stream closes.
-            # We need `client.stream_client.stream()` directly or modify OdooClient to return request/response pair?
-            # OdooClient.get_attachment_stream_context returns `self.stream_client.stream(...)`.
-            
-            # Let's look at OdooClient again.
-            # return self.stream_client.stream("GET", url)
-            # This returns a context manager.
-            # Usage: async with ... as resp:
-            
-            ctx = await client.get_attachment_stream_context(doc.ir_attachment_id, extra_headers=req_headers)
-            resp = await ctx.__aenter__()
-            
-            # We must ensure ctx.__aexit__ is called eventually.
-            # StreamingResponse background task can do this? 
-            # Or we wrap the generator.
-            
-            # 2. Check Status (Dead Session / Redirect)
-            # follow_redirects=False means 30x are returned as status
-            if resp.status_code in (401, 403, 301, 302):
-                await ctx.__aexit__(None, None, None) # Close stream
-                if attempt < MAX_RETRIES:
-                    logger.warning(f"[{request_id}] Odoo Proxy Auth/Redirect (Status {resp.status_code}). Re-authenticating...")
-                    await client._jsonrpc_authenticate()
-                    continue
-                else:
-                    return JSONResponse(status_code=502, content={
-                        "error": "odoo_auth_error",
-                        "request_id": request_id, 
-                        "upstream_status": resp.status_code,
-                        "hint": "Falha de autenticação/redirect no Odoo persistente."
-                    })
-
-            # 3. Check Content-Type (HTML masquerade)
-            ct = resp.headers.get("Content-Type", "").lower()
-            if "text/html" in ct or "application/json" in ct:
-                await ctx.__aexit__(None, None, None) # Close stream
-                if attempt < MAX_RETRIES:
-                    logger.warning(f"[{request_id}] Odoo Proxy returned {ct}. Re-authenticating...")
-                    await client._jsonrpc_authenticate()
-                    continue
-                else:
-                    return JSONResponse(status_code=502, content={
-                        "error": "upstream_invalid_content",
-                        "request_id": request_id,
-                        "upstream_content_type": ct,
-                        "hint": "Odoo retornou HTML/JSON ao invés de Arquivo."
-                    })
-
-            # 4. Peek Bytes (Safety Check)
-            # Validate only if NO Range or Range starts at 0
-            should_validate_pdf = is_pdf_expected and (not range_header or range_header.strip().startswith("bytes=0-"))
-            
-            iterator = resp.aiter_bytes()
-            first_chunk = b""
-            
+            # Decode base64
             try:
-                first_chunk = await iterator.__anext__()
-            except StopAsyncIteration:
-                pass # Empty file
-            except Exception as e:
-                 await ctx.__aexit__(None, None, None)
-                 raise e
+                binary_content = base64.b64decode(content_raw)
+            except Exception:
+                # If not base64, maybe it's raw string? Odoo usually sends base64 for binary fields.
+                binary_content = content_raw.encode('utf-8')
+        else:
+            binary_content = content_raw
 
-            # Validate PDF Signature
-            if should_validate_pdf and len(first_chunk) > 0 and not first_chunk.startswith(b"%PDF"):
-                 # If HTML body detected
-                 if b"<html" in first_chunk.lower():
-                     await ctx.__aexit__(None, None, None)
-                     if attempt < MAX_RETRIES:
-                         await client._jsonrpc_authenticate()
-                         continue
-                     else:
-                        return JSONResponse(status_code=502, content={
-                            "error": "upstream_html_body",
-                            "request_id": request_id,
-                            "hint": "Conteúdo do arquivo parece HTML."
-                        })
-            
-            # 5. Success - Prepared Streaming Response
-            
-            # Headers preparation
-            final_headers = filtered_headers(resp.headers)
-            final_headers["Content-Disposition"] = f'{disposition}; filename="{filename}"'
-            
-            async def stream_wrapper():
-                try:
-                    async for chunk in chain_stream(first_chunk, iterator):
-                        yield chunk
-                finally:
-                    # Ensure stream is closed
-                    await ctx.__aexit__(None, None, None)
-                    await client.close()
+        # 3. Safety check on binary content for common PDF signature if mimetype says so
+        mimetype = doc_data.get('mimetype', 'application/octet-stream')
+        if mimetype == "application/pdf" and not binary_content.startswith(b"%PDF"):
+             # If it looks like HTML inside binary
+             if b"<html" in binary_content[:512].lower():
+                 logger.warning(f"Detected HTML body in binary for doc {doc_id}")
+                 raise HTTPException(status_code=502, detail="Conteúdo do arquivo parece inválido (HTML detectado)")
 
-            return StreamingResponse(
-                stream_wrapper(),
-                status_code=resp.status_code,
-                media_type=doc.mimetype or "application/octet-stream",
-                headers=final_headers
-            )
-            
-        except Exception as e:
-             logger.error(f"[{request_id}] Stream Proxy Error: {e}")
-             try:
-                 await client.close()
-             except: pass
-             
-             if attempt < MAX_RETRIES: continue
-             return JSONResponse(status_code=502, content={"error": "proxy_exception", "detail": str(e)})
+        # 4. Serve stream
+        filename = safe_filename(doc_data.get('name', 'document'))
+        headers = {
+            "Content-Disposition": f'{disposition}; filename="{filename}"',
+            "Cache-Control": "private, max-age=3600"
+        }
 
-    # Should not reach here
-    return JSONResponse(status_code=502, content={"error": "unknown_proxy_error"})
+        return StreamingResponse(
+            io.BytesIO(binary_content),
+            media_type=mimetype,
+            headers=headers
+        )
 
-@router.get("/{doc_key}/view")
-async def get_document_view(
-    doc_key: uuid.UUID,
-    request: Request,
-    session: AsyncSession = Depends(deps.get_session),
-    current_user: User = Depends(deps.get_current_user)
-):
-    """Proxy document content inline (Preview)."""
-    doc = await validate_access(doc_key, session, current_user.id)
-    return await stream_from_odoo(doc, "inline", request)
-
-@router.get("/{doc_key}/download")
-async def get_document_download(
-    doc_key: uuid.UUID,
-    request: Request,
-    session: AsyncSession = Depends(deps.get_session),
-    current_user: User = Depends(deps.get_current_user)
-):
-    """Proxy document content as attachment (Download)."""
-    doc = await validate_access(doc_key, session, current_user.id)
-    return await stream_from_odoo(doc, "attachment", request)
-
-@router.get("/{doc_key}/print")
-async def get_document_print(
-    doc_key: uuid.UUID,
-    session: AsyncSession = Depends(deps.get_session),
-    current_user: User = Depends(deps.get_current_user)
-):
-    """
-    Returns HTML wrapper with iframe to trigger print dialog.
-    """
-    # Validate access first
-    doc = await validate_access(doc_key, session, current_user.id)
-    
-    view_url = f"/api/v1/docs/{doc_key}/view"
-    
-    html_content = f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>Imprimir Documento</title>
-        <style>
-            body, html {{ margin: 0; padding: 0; height: 100%; overflow: hidden; }}
-            iframe {{ width: 100%; height: 100%; border: none; }}
-            .fallback {{
-                position: fixed;
-                top: 20px;
-                right: 20px;
-                z-index: 1000;
-                background: #fff;
-                padding: 10px;
-                border: 1px solid #ccc;
-                border-radius: 4px;
-                box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-                font-family: sans-serif;
-            }}
-            .fallback button {{
-                background: #007bff;
-                color: white;
-                border: none;
-                padding: 8px 16px;
-                border-radius: 4px;
-                cursor: pointer;
-                font-size: 14px;
-            }}
-            .fallback button:hover {{ background: #0056b3; }}
-        </style>
-        <script>
-            function triggerPrint() {{
-                const iframe = document.getElementById('pdf-frame');
-                if (iframe.contentWindow) {{
-                    iframe.contentWindow.focus();
-                    iframe.contentWindow.print();
-                }}
-            }}
-        </script>
-    </head>
-    <body>
-        <div class="fallback">
-            <button onclick="triggerPrint()">🖨️ Imprimir Agora</button>
-        </div>
-        <iframe id="pdf-frame" src="{view_url}" onload="setTimeout(triggerPrint, 1000)"></iframe>
-    </body>
-    </html>
-    """
-    return HTMLResponse(content=html_content, status_code=200)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error proxying document {doc_id}: {e}")
+        raise HTTPException(status_code=502, detail=f"Erro ao processar documento: {str(e)}")
+    finally:
+        await client.close()

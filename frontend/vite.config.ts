@@ -10,6 +10,11 @@ export default defineConfig({
     react(),
     tailwindcss(),
   ],
+  server: {
+    host: true,   // expõe em 0.0.0.0 (todas as interfaces de rede)
+    port: 5173,
+    strictPort: true,
+  },
   resolve: {
     alias: {
       // Alias @ to the src directory
