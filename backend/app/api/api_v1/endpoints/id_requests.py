@@ -13,6 +13,7 @@ from app.models.audit import HistoryLog
 from app.services.odoo_client import OdooClient
 from app.services.odoo_utils import normalize_many2one_display
 from app.services.status_mappers import map_mrp_state
+from app.api.api_v1.endpoints.sync import update_sync_version
 
 router = APIRouter()
 
@@ -283,6 +284,10 @@ async def transfer_manual_request(
     
     await session.commit()
     await session.refresh(req)
+    
+    # Invalidate both caches (request is gone from manual, appears in Odoo queue)
+    update_sync_version("odoo_version")
+    update_sync_version("requests_version")
     
     return {
         "created_activity": created,

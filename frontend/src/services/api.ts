@@ -1,15 +1,52 @@
 const API_URL = (import.meta as any).env.VITE_API_URL || 'http://localhost:8000/api/v1';
 
+const getHeaders = () => {
+    const token = localStorage.getItem('id_visual_token');
+    return {
+        'Content-Type': 'application/json',
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+    };
+};
+
 export const api = {
+    login: async (username: string, password: string) => {
+        const formData = new URLSearchParams();
+        formData.append('username', username);
+        formData.append('password', password);
+
+        const response = await fetch(`${API_URL}/auth/login`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: formData,
+        });
+
+        const data = await response.json();
+        if (!response.ok) {
+            throw new Error(data.detail || 'Falha no login');
+        }
+
+        localStorage.setItem('id_visual_token', data.access_token);
+        return data;
+    },
+
+    logout: () => {
+        localStorage.removeItem('id_visual_token');
+        window.location.reload();
+    },
+
     get: async (endpoint: string) => {
         try {
             const response = await fetch(`${API_URL}${endpoint}`, {
                 method: 'GET',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
+                headers: getHeaders(),
             });
             if (!response.ok) {
+                if (response.status === 401) {
+                    localStorage.removeItem('id_visual_token');
+                    window.location.reload();
+                }
                 throw new Error(`API Error: ${response.statusText}`);
             }
             return await response.json();
@@ -18,19 +55,24 @@ export const api = {
             throw error;
         }
     },
+
     healthCheck: async () => {
         return api.get('/health');
     },
+
+    getSyncStatus: async () => {
+        return api.get('/sync/status');
+    },
+
     getBatchMatrix: async (batchId: string) => {
         return api.get(`/batches/${batchId}/matrix`);
     },
+
     updateBatchTask: async (batchId: string, payload: any) => {
         try {
             const response = await fetch(`${API_URL}/batches/${batchId}/tasks`, {
                 method: 'PATCH',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
+                headers: getHeaders(),
                 body: JSON.stringify(payload),
             });
             if (!response.ok) {
@@ -44,19 +86,23 @@ export const api = {
             throw error;
         }
     },
+
     getOdooMOs: async () => {
         return api.get('/odoo/mos');
     },
+
     getFinishedBatches: async () => {
         return api.get('/batches/finished');
     },
+
     getActiveBatches: async () => {
         return api.get('/batches/active');
     },
+
     cancelBatch: async (batchId: string) => {
         const response = await fetch(`${API_URL}/batches/${batchId}/cancel`, {
             method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getHeaders(),
         });
         const data = await response.json().catch(() => ({}));
         if (!response.ok) {
@@ -66,13 +112,12 @@ export const api = {
         }
         return data;
     },
+
     createBatch: async (moIds: number[]) => {
         try {
             const response = await fetch(`${API_URL}/batches/`, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
+                headers: getHeaders(),
                 body: JSON.stringify({ mo_ids: moIds }),
             });
             if (!response.ok) {
@@ -85,12 +130,11 @@ export const api = {
             throw error;
         }
     },
+
     finalizeBatch: async (batchId: string) => {
         const response = await fetch(`${API_URL}/batches/${batchId}/finalize`, {
             method: 'PATCH',
-            headers: {
-                'Content-Type': 'application/json',
-            },
+            headers: getHeaders(),
         });
 
         const data = await response.json().catch(() => ({}));
@@ -123,7 +167,7 @@ export const api = {
     }) => {
         const response = await fetch(`${API_URL}/production/request`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getHeaders(),
             body: JSON.stringify(payload),
         });
 
@@ -143,14 +187,16 @@ export const api = {
     getManualRequests: async () => {
         return api.get('/id-requests/manual');
     },
+
     getManualRequestsCount: async () => {
         const res = await api.get('/id-requests/manual/count');
         return res; // { open_count: number }
     },
+
     transferManualRequest: async (requestId: string) => {
         const response = await fetch(`${API_URL}/id-requests/manual/${requestId}/transfer`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getHeaders(),
         });
 
         const data = await response.json().catch(() => ({}));
@@ -162,10 +208,44 @@ export const api = {
         return data;
     },
 
-    async getProductionRequests(limit: number = 50, offset: number = 0) {
+    getProductionRequests: async (limit: number = 50, offset: number = 0) => {
         return api.get(`/production/requests?limit=${limit}&offset=${offset}`);
     },
+
     getMODocuments: async (moId: number, limit: number = 50, offset: number = 0) => {
         return api.get(`/odoo/mos/${moId}/documents?limit=${limit}&offset=${offset}`);
+    },
+
+    // ── Auth ──
+    getMe: async () => {
+        return api.get('/auth/me');
+    },
+
+    // ── Andon ──
+    getAndonWorkcenters: async () => {
+        return api.get('/andon/workcenters');
+    },
+
+    getActiveWorkorder: async (wcId: number) => {
+        return api.get(`/andon/workcenters/${wcId}/current_order`);
+    },
+
+    triggerAndon: async (color: 'amarelo' | 'vermelho' | 'basico', payload: any) => {
+        const response = await fetch(`${API_URL}/andon/trigger/${color}`, {
+            method: 'POST',
+            headers: getHeaders(),
+            body: JSON.stringify(payload),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            const error = new Error(data.detail?.message || data.detail || `API Error: ${response.statusText}`);
+            (error as any).status = response.status;
+            throw error;
+        }
+        return data;
+    },
+
+    getAndonDowntime: async () => {
+        return api.get('/andon/downtime');
     },
 };

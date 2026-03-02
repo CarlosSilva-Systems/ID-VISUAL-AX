@@ -15,6 +15,7 @@ from app.schemas.matrix_view import (
     BatchMatrixResponse, BatchStats, MatrixColumn, MatrixRow, MatrixCell,
     TaskStatusEnum, TaskUpdatePayload, TaskUpdateResponse
 )
+from app.api.api_v1.endpoints.sync import update_sync_version
 
 router = APIRouter()
 print("DEBUG: LOADING BATCHES MODULE V999 -------------------------------------")
@@ -332,6 +333,9 @@ async def update_batch_task(
         await session.commit()
         await session.refresh(task)
         
+        # Invalidate cache
+        update_sync_version("odoo_version")
+        
         # 8. Recalculate Stats (Simplified: Fetches Matrix logic again or incremental)
         # For correctness, let's call get_batch_matrix logic reuse or simplified
         # Calling the full matrix logic is expensive but safe. For V1 let's assume client refreshes or we implement efficient recalc.
@@ -508,6 +512,9 @@ async def create_batch(
             
     await session.commit()
     
+    # Invalidate MOs cache as they are now in a batch
+    update_sync_version("odoo_version")
+    
     return {
         "batch_id": new_batch.id, 
         "message": f"Batch created with {created_requests_count} items",
@@ -671,6 +678,9 @@ async def finalize_batch(
     await session.commit()
     await session.refresh(batch)
     
+    # Invalidate cache
+    update_sync_version("odoo_version")
+    
     # C) CLOSE ODOO ACTIVITIES
     odoo_errors = []
     odoo_closed_count = 0
@@ -747,6 +757,9 @@ async def cancel_batch(
     batch.updated_at = datetime.now(timezone.utc)
     session.add(batch)
     await session.commit()
+    
+    # Invalidate cache
+    update_sync_version("odoo_version")
 
     return {
         "batch_id": str(batch.id),
