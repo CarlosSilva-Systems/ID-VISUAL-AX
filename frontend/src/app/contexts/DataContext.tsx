@@ -38,32 +38,62 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const versionsRef = useRef<SyncStatus>({ odoo_version: '', requests_version: '' });
 
+    const formatDate = (dateStr: string | null | undefined): string => {
+        if (!dateStr) return '-';
+        try {
+            // Se já vier com T ou for apenas YYYY-MM-DD
+            const date = new Date(dateStr.includes('T') ? dateStr : dateStr + 'T00:00:00');
+            return date.toLocaleDateString('pt-BR');
+        } catch (e) {
+            return dateStr;
+        }
+    };
+
     const fetchMOs = useCallback(async () => {
         setLoadingMOs(true);
         try {
             const data = await api.getOdooMOs();
-            const mapped = data.map((mo: any): Fabrication => ({
-                id: String(mo.odoo_mo_id),
-                mo_number: mo.mo_number,
-                obra: mo.obra,
-                status: mo.state === 'confirmed' ? 'Nova' : mo.state,
-                priority: 'Normal',
-                date_start: mo.date_start ? new Date(mo.date_start).toLocaleDateString('pt-BR') : '-',
-                product_qty: mo.product_qty,
-                sla: 'No Prazo',
-                mrp_state: 'Em Produção',
-                tasks: [],
-                docs: { diagrama: false, legenda: false },
-                from_production: mo.from_production,
-                production_requester: mo.production_requester
-            }));
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+
+            const mapped = data.map((mo: any): Fabrication => {
+                let slaStatus = 'Sem Prazo';
+                if (mo.activity_date_deadline) {
+                    const deadline = new Date(mo.activity_date_deadline + 'T00:00:00');
+                    if (deadline < today) {
+                        slaStatus = 'Vencida';
+                    } else if (deadline.getTime() === today.getTime()) {
+                        slaStatus = 'Vence Hoje';
+                    } else {
+                        slaStatus = 'No Prazo';
+                    }
+                }
+
+                return {
+                    id: String(mo.odoo_mo_id),
+                    mo_number: mo.mo_number,
+                    obra: mo.obra,
+                    status: mo.state === 'confirmed' ? 'Nova' : mo.state,
+                    priority: 'Normal',
+                    date_start: formatDate(mo.date_start),
+                    product_qty: mo.product_qty,
+                    sla: slaStatus,
+                    deadline_date: formatDate(mo.activity_date_deadline),
+                    mrp_state: 'Em Produção',
+                    tasks: [],
+                    docs: { diagrama: false, legenda: false },
+                    from_production: mo.from_production,
+                    production_requester: mo.production_requester,
+                    source: mo.from_production ? 'producao' : 'odoo'
+                };
+            });
             setOdooMOs(mapped);
         } catch (e) {
             console.error('Failed to fetch MOs', e);
         } finally {
             setLoadingMOs(false);
         }
-    }, []);
+    }, [formatDate]);
 
     const fetchManualRequests = useCallback(async () => {
         setLoadingRequests(true);
@@ -74,7 +104,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 mo_number: req.mo_number,
                 obra: req.obra_nome,
                 product_qty: req.product_qty,
-                date_start: req.date_start ? String(req.date_start).split('T')[0] : '',
+                date_start: formatDate(req.date_start),
                 sla: 'Urgente',
                 priority: req.priority,
                 status: req.status.charAt(0).toUpperCase() + req.status.slice(1),
@@ -83,7 +113,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 docs: { diagrama: true, legenda: true },
                 requester_name: req.requester_name,
                 notes: req.notes,
-                request_id: req.request_id
+                request_id: req.request_id,
+                source: 'producao'
             }));
             setManualRequests(mapped);
         } catch (e) {
@@ -91,7 +122,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         } finally {
             setLoadingRequests(false);
         }
-    }, []);
+    }, [formatDate]);
 
     const memoFetchMOs = useMemo(() => memoPromise(fetchMOs), [fetchMOs]);
     const memoFetchManualRequests = useMemo(() => memoPromise(fetchManualRequests), [fetchManualRequests]);

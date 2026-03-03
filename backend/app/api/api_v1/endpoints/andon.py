@@ -240,7 +240,10 @@ async def get_tv_data(
     """Endpoint consolidado para o Andon TV: workcenters, calls, recent_events, id_requests, version."""
     from app.api.api_v1.endpoints.sync import _sync_state as _sync_versions
 
-    # --- Workcenters ---
+    # --- Workcenters with Multi-Company Context ---
+    # User has access to [1, 2]. Empresa 1 is where real production happens.
+    odoo.company_ids = [1, 2]
+    
     try:
         odoo_wcs = await odoo.get_workcenters()
     except Exception:
