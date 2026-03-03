@@ -194,12 +194,21 @@ async def get_odoo_mos(
         return final_list
 
     except Exception as e:
-        safe_msg = str(e).replace(settings.ODOO_PASSWORD, "***") # Poka-yoke security
-        print(f"CRITICAL ODOO ERROR: {safe_msg}")
+        error_type = type(e).__name__
+        safe_msg = str(e).replace(settings.ODOO_PASSWORD, "***")
+        logger.error(f"CRITICAL ODOO ERROR [{error_type}]: {safe_msg}")
         traceback.print_exc()
+        
+        # Se for um erro de timeout mesmo após retentativas
+        if "Timeout" in error_type or "deadline" in safe_msg.lower():
+            raise HTTPException(
+                status_code=504,
+                detail="O servidor Odoo demorou muito para responder. Por favor, tente novamente em alguns segundos."
+            )
+            
         raise HTTPException(
             status_code=502, 
-            detail=f"Odoo Connection Error: {safe_msg}"
+            detail=f"Erro de Conectividade Odoo: {safe_msg}"
         )
     finally:
         await client.close()
