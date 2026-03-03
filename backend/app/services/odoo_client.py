@@ -27,45 +27,43 @@ class OdooClient:
     async def _call_with_retry(self, func, *args, **kwargs):
         """Helper para executar chamadas com retentativa e backoff exponencial."""
         max_retries = 3
-        base_delay = 1.0
+        base_delay = 0.5  # Reduzido para ser mais responsivo
         
         for attempt in range(max_retries + 1):
             try:
                 return await func(*args, **kwargs)
             except (httpx.NetworkError, httpx.TimeoutException, httpx.HTTPStatusError) as e:
+                # Se for erro de auth ou permissão, não retenta (401, 403)
+                if isinstance(e, httpx.HTTPStatusError) and e.response.status_code in [401, 403]:
+                    self.uid = None # Força re-autenticação na próxima
+                    raise
+
                 if attempt == max_retries:
                     logger.error(f"Odoo final failure after {max_retries} retries: {e}")
                     raise
                 
-                # Somente retentar em erros que parecem transitórios (502, 503, 504 ou rede)
+                # Somente retentar em erros que parecem transitórios
                 if isinstance(e, httpx.HTTPStatusError) and e.response.status_code not in [502, 503, 504, 429]:
                     raise
 
-                delay = base_delay * (2 ** attempt) + random.uniform(0, 1)
+                delay = base_delay * (2 ** attempt) + random.uniform(0, 0.5)
                 logger.warning(f"Odoo transient error (attempt {attempt+1}/{max_retries+1}): {e}. Retrying in {delay:.2f}s...")
                 await asyncio.sleep(delay)
             except Exception as e:
-                # Erros de lógica/autenticação não devem ser retentados
+                if "Auth Error" in str(e) or "AUTHENTICATION_FAILED" in str(e):
+                    self.uid = None
                 raise
 
     async def _json2_call(self, model: str, method: str, args: List = None, kwargs: Dict = None) -> Any:
         async def _do_call():
             nonlocal args, kwargs
-            args = args or []
-            kwargs = kwargs or {}
-            
             headers = {
                 "Authorization": f"Bearer {self.secret}",
                 "X-Db": self.db,
                 "Content-Type": "application/json"
             }
-            
             endpoint = f"{self.url}/json/2/{model}/{method}"
-            payload = {
-                "args": args,
-                "kwargs": kwargs
-            }
-            
+            payload = {"args": args or [], "kwargs": kwargs or {}}
             response = await self.session.post(endpoint, json=payload, headers=headers)
             response.raise_for_status()
             return response.json()
@@ -73,48 +71,40 @@ class OdooClient:
         return await self._call_with_retry(_do_call)
 
     async def _jsonrpc_authenticate(self) -> int:
-        """
-        Authenticate using XML-RPC common.authenticate to get UID.
-        Works reliably with API Keys as passwords.
-        """
-        async def _do_auth():
-            endpoint = f"{self.url}/jsonrpc"
-            payload = {
-                "jsonrpc": "2.0",
-                "method": "call",
-                "params": {
-                    "service": "common",
-                    "method": "authenticate",
-                    "args": [self.db, self.login, self.secret, {}]
-                },
-                "id": 1
-            }
-            
+        """Autenticação direta sem o wrapper de retry para evitar recursão no UID."""
+        endpoint = f"{self.url}/jsonrpc"
+        payload = {
+            "jsonrpc": "2.0",
+            "method": "call",
+            "params": {
+                "service": "common",
+                "method": "authenticate",
+                "args": [self.db, self.login, self.secret, {}]
+            },
+            "id": 1
+        }
+        try:
             response = await self.session.post(endpoint, json=payload)
             response.raise_for_status()
             data = response.json()
-            
             if "error" in data:
-                error = data['error']
-                raise Exception(f"Odoo Auth Error: {error}")
-            
+                self.uid = None
+                raise Exception(f"Odoo Auth Error: {data['error']}")
             uid = data.get("result")
             if not uid:
+                self.uid = None
                 raise Exception("AUTHENTICATION_FAILED")
-            
             self.uid = uid
             return self.uid
-
-        return await self._call_with_retry(_do_auth)
+        except Exception:
+            self.uid = None
+            raise
 
     async def _jsonrpc_call_kw(self, model: str, method: str, args: List = None, kwargs: Dict = None) -> Any:
-        """
-        Execute Odoo method via standard /jsonrpc execute_kw (sessionless).
-        """
-        if not self.uid:
-            await self._jsonrpc_authenticate()
-            
         async def _do_rpc():
+            if not self.uid:
+                await self._jsonrpc_authenticate()
+            
             endpoint = f"{self.url}/jsonrpc"
             payload = {
                 "jsonrpc": "2.0",
@@ -123,27 +113,21 @@ class OdooClient:
                     "service": "object",
                     "method": "execute_kw",
                     "args": [
-                        self.db, 
-                        self.uid, 
-                        self.secret, 
-                        model, 
-                        method, 
-                        args or [], 
+                        self.db, self.uid, self.secret, model, method, args or [], 
                         {**(kwargs or {}), "context": {**(kwargs.get("context", {}) if kwargs else {}), "allowed_company_ids": self.company_ids}} if self.company_ids else (kwargs or {})
                     ]
                 },
                 "id": 1
             }
-            
             response = await self.session.post(endpoint, json=payload)
             response.raise_for_status()
             data = response.json()
-            
             if "error" in data:
-                error_msg = f"Odoo RPC Error in {model}.{method}: {data['error']}"
-                logger.error(error_msg)
-                raise Exception(error_msg)
-            
+                # Se o erro for de sessão ou UID inválido, limpamos para re-autenticar
+                err_str = str(data['error']).lower()
+                if "session" in err_str or "uid" in err_str or "expired" in err_str:
+                    self.uid = None
+                raise Exception(f"Odoo RPC Error in {model}.{method}: {data['error']}")
             return data.get("result")
 
         return await self._call_with_retry(_do_rpc)
