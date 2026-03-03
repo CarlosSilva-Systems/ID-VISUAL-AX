@@ -72,3 +72,38 @@ class AndonMaterialRequest(SQLModel, table=True):
 
     created_at: datetime = Field(default_factory=datetime.utcnow)
     fulfilled_at: Optional[datetime] = Field(default=None)
+class AndonCall(SQLModel, table=True):
+    """Novo modelo de chamados Andon estruturados."""
+    
+    __tablename__ = "andon_call"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    color: str  # YELLOW | RED
+    category: str
+    reason: str
+    description: Optional[str] = Field(default=None)
+    
+    # Identificador do posto/linha
+    workcenter_id: int = Field(index=True)
+    workcenter_name: str
+    
+    # Referência opcional à OP
+    mo_id: Optional[int] = Field(default=None)
+    
+    # Fluxo de vida
+    status: str = Field(default="OPEN", index=True) # OPEN | IN_PROGRESS | RESOLVED
+    
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    
+    # Auditoria e Responsabilidade
+    triggered_by: str
+    assigned_team: Optional[str] = Field(default=None)
+    resolved_note: Optional[str] = Field(default=None)
+
+    # Parada real
+    is_stop: bool = Field(default=False)
+
+    # Campos de integração (preenchidos se o fluxo Odoo for disparado)
+    odoo_picking_id: Optional[int] = Field(default=None)
+    odoo_activity_id: Optional[int] = Field(default=None)

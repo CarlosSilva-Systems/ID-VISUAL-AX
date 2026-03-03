@@ -238,7 +238,7 @@ async def transfer_manual_request(
             # Use configured user or default to ensure assignment
             user_id = settings.ODOO_ACTIVITY_USER_ID
             
-            new_act = await client.create('mail.activity', {
+            new_act = await client.call_kw('mail.activity', 'create', args=[{
                 'res_model_id': res_model_id,
                 'res_id': mo.odoo_id,
                 'activity_type_id': act_type_id,
@@ -246,7 +246,7 @@ async def transfer_manual_request(
                 'note': note_content,
                 'date_deadline': deadline,
                 'user_id': user_id 
-            })
+            }])
             activity_id = new_act
             created = True
             
@@ -293,4 +293,35 @@ async def transfer_manual_request(
         "created_activity": created,
         "activity_id": activity_id,
         "manual_request_status": req.status
+    }
+@router.post("/manual/bulk-transfer", response_model=Dict[str, Any])
+async def bulk_transfer_manual_requests(
+    request_ids: List[str],
+    session: AsyncSession = Depends(deps.get_session),
+    current_user: Any = Depends(deps.get_current_user)
+) -> Any:
+    """
+    Transfer multiple manual requests to the Standard Queue in Odoo.
+    Returns results per ID.
+    """
+    results = []
+    success_count = 0
+    fail_count = 0
+
+    for rid in request_ids:
+        try:
+            res = await transfer_manual_request(rid, session, current_user)
+            results.append({"id": rid, "status": "success", "data": res})
+            success_count += 1
+        except HTTPException as e:
+            results.append({"id": rid, "status": "error", "detail": e.detail})
+            fail_count += 1
+        except Exception as e:
+            results.append({"id": rid, "status": "error", "detail": str(e)})
+            fail_count += 1
+
+    return {
+        "success_count": success_count,
+        "fail_count": fail_count,
+        "results": results
     }

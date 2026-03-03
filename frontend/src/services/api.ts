@@ -56,6 +56,46 @@ export const api = {
         }
     },
 
+    post: async (endpoint: string, payload: any) => {
+        try {
+            const response = await fetch(`${API_URL}${endpoint}`, {
+                method: 'POST',
+                headers: getHeaders(),
+                body: JSON.stringify(payload),
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) {
+                const error = new Error(data.detail?.message || data.detail || `API Error: ${response.statusText}`);
+                (error as any).status = response.status;
+                throw error;
+            }
+            return data;
+        } catch (error) {
+            console.error('API POST Failed:', error);
+            throw error;
+        }
+    },
+
+    patch: async (endpoint: string, payload: any) => {
+        try {
+            const response = await fetch(`${API_URL}${endpoint}`, {
+                method: 'PATCH',
+                headers: getHeaders(),
+                body: JSON.stringify(payload),
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) {
+                const error = new Error(data.detail?.message || data.detail || `API Error: ${response.statusText}`);
+                (error as any).status = response.status;
+                throw error;
+            }
+            return data;
+        } catch (error) {
+            console.error('API PATCH Failed:', error);
+            throw error;
+        }
+    },
+
     healthCheck: async () => {
         return api.get('/health');
     },
@@ -69,22 +109,7 @@ export const api = {
     },
 
     updateBatchTask: async (batchId: string, payload: any) => {
-        try {
-            const response = await fetch(`${API_URL}/batches/${batchId}/tasks`, {
-                method: 'PATCH',
-                headers: getHeaders(),
-                body: JSON.stringify(payload),
-            });
-            if (!response.ok) {
-                const errorData = await response.json().catch(() => ({}));
-                const error = new Error(errorData.detail || `API Error: ${response.statusText}`);
-                (error as any).status = response.status;
-                throw error;
-            }
-            return await response.json();
-        } catch (error) {
-            throw error;
-        }
+        return api.patch(`/batches/${batchId}/tasks`, payload);
     },
 
     getOdooMOs: async () => {
@@ -208,6 +233,22 @@ export const api = {
         return data;
     },
 
+    bulkTransferManualRequests: async (requestIds: string[]) => {
+        const response = await fetch(`${API_URL}/id-requests/manual/bulk-transfer`, {
+            method: 'POST',
+            headers: getHeaders(),
+            body: JSON.stringify(requestIds)
+        });
+
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            const error = new Error(data.detail?.message || data.detail || `API Error: ${response.statusText}`);
+            (error as any).status = response.status;
+            throw error;
+        }
+        return data;
+    },
+
     getProductionRequests: async (limit: number = 50, offset: number = 0) => {
         return api.get(`/production/requests?limit=${limit}&offset=${offset}`);
     },
@@ -230,22 +271,39 @@ export const api = {
         return api.get(`/andon/workcenters/${wcId}/current_order`);
     },
 
+    // --- Novos métodos Andon Estruturado ---
+    getAndonCalls: async (activeOnly = true) => {
+        return api.get(`/andon/calls?active_only=${activeOnly}`);
+    },
+
+    createAndonCall: async (data: {
+        color: 'YELLOW' | 'RED';
+        category: string;
+        reason: string;
+        description?: string;
+        workcenter_id: number;
+        workcenter_name: string;
+        mo_id?: number;
+        triggered_by: string;
+        is_stop: boolean;
+    }) => {
+        return api.post('/andon/calls', data);
+    },
+
+    updateAndonCallStatus: async (callId: number, status: 'IN_PROGRESS' | 'RESOLVED', resolvedNote?: string) => {
+        return api.patch(`/andon/calls/${callId}/status`, { status, resolved_note: resolvedNote });
+    },
+
+    // --- Métodos Legados ---
     triggerAndon: async (color: 'amarelo' | 'vermelho' | 'basico', payload: any) => {
-        const response = await fetch(`${API_URL}/andon/trigger/${color}`, {
-            method: 'POST',
-            headers: getHeaders(),
-            body: JSON.stringify(payload),
-        });
-        const data = await response.json().catch(() => ({}));
-        if (!response.ok) {
-            const error = new Error(data.detail?.message || data.detail || `API Error: ${response.statusText}`);
-            (error as any).status = response.status;
-            throw error;
-        }
-        return data;
+        return api.post(`/andon/trigger/${color}`, payload);
     },
 
     getAndonDowntime: async () => {
         return api.get('/andon/downtime');
+    },
+
+    getAndonTVData: async () => {
+        return api.get('/andon/tv-data');
     },
 };

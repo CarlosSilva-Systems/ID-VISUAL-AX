@@ -31,22 +31,43 @@ interface SolicitacoesProps {
 export function Solicitacoes({ onCreateBatch }: SolicitacoesProps) {
   const { manualRequests, loadingRequests, refreshManualRequests } = useData();
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [isTransferring, setIsTransferring] = useState(false);
 
   React.useEffect(() => {
     refreshManualRequests();
   }, [refreshManualRequests]);
 
-  const handleTransfer = async (item: Fabrication) => {
-    if (!item.request_id) return;
+  const handleTransfer = async (idOrIds: string | string[]) => {
+    const ids = Array.isArray(idOrIds) ? idOrIds : [idOrIds];
+    if (ids.length === 0) return;
+
+    setIsTransferring(true);
+    const loadingToast = toast.loading(ids.length === 1
+      ? `Transferindo solicitação...`
+      : `Transferindo ${ids.length} solicitações...`
+    );
+
     try {
-      await api.transferManualRequest(item.request_id);
-      toast.success(`Solicitação ${item.mo_number} transferida para fila de produção!`);
-      // Force refresh both contexts because transfer moves from Manual to Odoo (backend side)
+      if (ids.length === 1) {
+        await api.transferManualRequest(ids[0]);
+        toast.success(`Solicitação transferida com sucesso!`, { id: loadingToast });
+      } else {
+        const result = await api.bulkTransferManualRequests(ids);
+        if (result.fail_count === 0) {
+          toast.success(`${result.success_count} solicitações transferidas com sucesso!`, { id: loadingToast });
+        } else {
+          toast.error(`${result.success_count} transferidas, ${result.fail_count} falharam.`, { id: loadingToast });
+        }
+      }
+
+      setSelectedIds(new Set());
       refreshManualRequests(true);
       window.dispatchEvent(new Event('manual-request-updated'));
       setSelectedItem(null);
     } catch (err: any) {
-      toast.error(`Erro ao transferir: ${err.message}`);
+      toast.error(`Erro ao transferir: ${err.message}`, { id: loadingToast });
+    } finally {
+      setIsTransferring(false);
     }
   };
 
@@ -79,6 +100,14 @@ export function Solicitacoes({ onCreateBatch }: SolicitacoesProps) {
     setSelectedIds(newSelected);
   };
 
+  const toggleSelectAll = () => {
+    if (selectedIds.size === filteredItems.length && filteredItems.length > 0) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(filteredItems.map(i => i.id)));
+    }
+  };
+
   const handleCreateBatch = () => {
     const batchItems = manualRequests.filter(item => selectedIds.has(item.id));
     onCreateBatch(batchItems);
@@ -93,7 +122,20 @@ export function Solicitacoes({ onCreateBatch }: SolicitacoesProps) {
           <p className="text-sm text-slate-500">Pedidos manuais via tablet aguardando processamento.</p>
         </div>
         <div className="flex items-center gap-4">
-          {/* Batch actions can remain if still valid for manual flow */}
+          {selectedIds.size > 0 && (
+            <div className="flex items-center gap-3 animate-in fade-in slide-in-from-right-4">
+              <span className="text-sm font-bold text-blue-600 bg-blue-50 px-3 py-1 rounded-full border border-blue-100">
+                {selectedIds.size} selecionada{selectedIds.size !== 1 ? 's' : ''}
+              </span>
+              <button
+                onClick={() => handleTransfer(Array.from(selectedIds))}
+                disabled={isTransferring}
+                className="px-6 py-2 bg-blue-600 text-white rounded-xl text-sm font-black uppercase tracking-wider hover:bg-blue-700 shadow-lg shadow-blue-500/20 disabled:opacity-50 flex items-center gap-2"
+              >
+                Transferir em Lote <ArrowRightCircle size={16} />
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -134,7 +176,14 @@ export function Solicitacoes({ onCreateBatch }: SolicitacoesProps) {
           <table className="w-full text-left">
             <thead>
               <tr className="bg-slate-50 border-b border-gray-100">
-                <th className="p-4 w-12"><input type="checkbox" disabled className="w-4 h-4 rounded border-gray-300" /></th>
+                <th className="p-4 w-12">
+                  <input
+                    type="checkbox"
+                    className="w-4 h-4 rounded border-gray-300 transition-all cursor-pointer accent-blue-600"
+                    checked={filteredItems.length > 0 && selectedIds.size === filteredItems.length}
+                    onChange={toggleSelectAll}
+                  />
+                </th>
                 <th className="p-4 text-[10px] font-black uppercase text-slate-400 tracking-widest">Status</th>
                 <th className="p-4 text-[10px] font-black uppercase text-slate-400 tracking-widest">Solicitante</th>
                 <th className="p-4 text-[10px] font-black uppercase text-slate-400 tracking-widest">MO / Obra</th>
@@ -146,10 +195,20 @@ export function Solicitacoes({ onCreateBatch }: SolicitacoesProps) {
               {filteredItems.map((item) => (
                 <tr
                   key={item.id}
-                  className="group hover:bg-blue-50/20 transition-colors cursor-pointer"
+                  className={cn(
+                    "group hover:bg-blue-50/20 transition-colors cursor-pointer",
+                    selectedIds.has(item.id) && "bg-blue-50 border-l-2 border-l-blue-500"
+                  )}
                   onClick={() => setSelectedItem(item)}
                 >
-                  <td className="p-4"><input type="checkbox" disabled className="w-4 h-4 rounded border-gray-300" /></td>
+                  <td className="p-4" onClick={(e) => e.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      className="w-4 h-4 rounded border-gray-300 transition-all cursor-pointer accent-blue-600"
+                      checked={selectedIds.has(item.id)}
+                      onChange={() => toggleSelect(item.id)}
+                    />
+                  </td>
                   <td className="p-4"><StatusBadge status={item.status} /></td>
                   <td className="p-4">
                     <div className="flex flex-col">
@@ -166,10 +225,11 @@ export function Solicitacoes({ onCreateBatch }: SolicitacoesProps) {
                   <td className="p-4 text-xs font-bold text-slate-600">{new Date(item.date_start).toLocaleDateString()}</td>
                   <td className="p-4 text-right">
                     <button
-                      onClick={(e) => { e.stopPropagation(); handleTransfer(item); }}
-                      className="px-3 py-1 bg-blue-100 text-blue-700 hover:bg-blue-200 rounded text-xs font-bold transition-colors flex items-center gap-1 ml-auto"
+                      onClick={(e) => { e.stopPropagation(); handleTransfer(item.id); }}
+                      disabled={isTransferring}
+                      className="px-3 py-1 bg-blue-100 text-blue-700 hover:bg-blue-200 rounded text-xs font-bold transition-colors flex items-center gap-1 ml-auto disabled:opacity-50"
                     >
-                      Transferir <ArrowRightCircle size={14} />
+                      {isTransferring ? '...' : 'Transferir'} <ArrowRightCircle size={14} />
                     </button>
                   </td>
                 </tr>
@@ -214,10 +274,11 @@ export function Solicitacoes({ onCreateBatch }: SolicitacoesProps) {
 
             <div className="mt-auto">
               <button
-                onClick={() => handleTransfer(selectedItem)}
-                className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 shadow-lg shadow-blue-500/20"
+                onClick={() => handleTransfer(selectedItem.id)}
+                disabled={isTransferring}
+                className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 shadow-lg shadow-blue-500/20 disabled:opacity-50 flex items-center justify-center gap-2"
               >
-                Confirmar Transferência para Fila Padrão
+                {isTransferring ? 'Processando...' : 'Confirmar Transferência para Fila Padrão'}
               </button>
             </div>
           </div>
