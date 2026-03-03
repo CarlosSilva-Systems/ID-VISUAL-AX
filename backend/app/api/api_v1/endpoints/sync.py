@@ -8,7 +8,8 @@ router = APIRouter()
 # In production, this would be tied to DB triggers or a cache layer like Redis
 _sync_state = {
     "odoo_version": str(int(time.time())),
-    "requests_version": str(int(time.time()))
+    "requests_version": str(int(time.time())),
+    "andon_version": str(int(time.time()))
 }
 
 def update_sync_version(key: str):

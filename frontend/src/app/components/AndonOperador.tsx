@@ -22,6 +22,8 @@ export const AndonOperador: React.FC<AndonOperadorProps> = ({ workcenter, onBack
     const [loading, setLoading] = useState(true);
     const [currentStatus, setCurrentStatus] = useState(workcenter.status);
     const [reason, setReason] = useState('');
+    const [isStop, setIsStop] = useState(false);
+    const [activeColor, setActiveColor] = useState<'amarelo' | 'vermelho' | null>(null);
     const [showReasonModal, setShowReasonModal] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -47,7 +49,6 @@ export const AndonOperador: React.FC<AndonOperadorProps> = ({ workcenter, onBack
     }, [workcenter.id]);
 
     const handleTrigger = async (color: 'verde' | 'amarelo' | 'vermelho') => {
-        // Validação de WO Ativa ou Manual
         const woId = activeWO?.id || parseInt(manualWOId);
         const moId = activeWO?.production_id?.[0] || parseInt(manualMOId);
 
@@ -56,7 +57,9 @@ export const AndonOperador: React.FC<AndonOperadorProps> = ({ workcenter, onBack
             return;
         }
 
-        if (color === 'vermelho' && !reason) {
+        if ((color === 'vermelho' || color === 'amarelo') && !showReasonModal) {
+            setActiveColor(color);
+            setIsStop(color === 'vermelho'); // Default stop=true for Red
             setShowReasonModal(true);
             return;
         }
@@ -74,37 +77,30 @@ export const AndonOperador: React.FC<AndonOperadorProps> = ({ workcenter, onBack
                 });
                 toast.success('Status retornado para Verde (Produção Normal)');
             }
-            else if (color === 'amarelo') {
-                const res = await api.triggerAndon('amarelo', {
+            else {
+                // Use the new structured call for Yellow and Red
+                const callRes = await api.createAndonCall({
+                    color: color === 'amarelo' ? 'YELLOW' : 'RED',
+                    category: color === 'amarelo' ? 'Material' : 'Qualidade/Técnico', // Simplified for now
+                    reason: reason || (color === 'amarelo' ? 'Falta de Material' : 'Parada Crítica'),
+                    description: reason,
                     workcenter_id: workcenter.id,
                     workcenter_name: workcenter.name,
-                    workorder_id: woId,
-                    production_id: moId,
-                    triggered_by: username
-                });
-                if (res.path === 'odoo_picking') {
-                    toast.success(`Estoque solicitado via Odoo (Picking #${res.picking_id})`);
-                } else {
-                    toast.warning('Requisição Local de Material criada (Sem componentes na MO)');
-                }
-            }
-            else if (color === 'vermelho') {
-                const res = await api.triggerAndon('vermelho', {
-                    workcenter_id: workcenter.id,
-                    workcenter_name: workcenter.name,
-                    workorder_id: woId,
-                    production_id: moId,
-                    reason: reason,
-                    triggered_by: username
+                    mo_id: moId,
+                    triggered_by: username,
+                    is_stop: isStop
                 });
 
-                if (!res.pause_ok) {
-                    toast.error(`Falha ao pausar OP no Odoo: ${res.pause_error}`, { duration: 10000 });
+                if (color === 'vermelho' && !callRes.pause_ok && isStop) {
+                    toast.warning('Chamado aberto, mas houve falha ao pausar OP no Odoo automaticamente.');
                 } else {
-                    toast.success('Mesa paralisada e responsáveis notificados!');
+                    toast.success(isStop ? 'Mesa PARADA e responsáveis notificados!' : 'Chamado aberto (Produção continua)');
                 }
+
                 setShowReasonModal(false);
                 setReason('');
+                setIsStop(false);
+                setActiveColor(null);
             }
 
             setCurrentStatus(color);
@@ -254,12 +250,31 @@ export const AndonOperador: React.FC<AndonOperadorProps> = ({ workcenter, onBack
 
                         <textarea
                             autoFocus
-                            className="w-full p-4 border-2 border-slate-200 rounded-xl mb-6 focus:border-red-500 focus:ring-4 focus:ring-red-500/20 text-lg transition-all"
-                            rows={4}
-                            placeholder="Ex: Máquina quebrou, falta de energia..."
+                            className={cn(
+                                "w-full p-4 border-2 rounded-xl mb-4 focus:ring-4 text-lg transition-all",
+                                activeColor === 'vermelho' ? "border-slate-200 focus:border-red-500 focus:ring-red-500/20" : "border-slate-200 focus:border-amber-500 focus:ring-amber-500/20"
+                            )}
+                            rows={3}
+                            placeholder={activeColor === 'vermelho' ? "Descreva o problema técnico..." : "Descreva o material em falta..."}
                             value={reason}
                             onChange={(e) => setReason(e.target.value)}
                         />
+
+                        <div
+                            className="flex items-center gap-3 p-4 bg-slate-50 rounded-xl border border-slate-200 mb-6 cursor-pointer hover:bg-slate-100 transition-colors"
+                            onClick={() => setIsStop(!isStop)}
+                        >
+                            <input
+                                type="checkbox"
+                                checked={isStop}
+                                onChange={() => { }} // Controlled by div click
+                                className="w-5 h-5 rounded border-slate-300 text-red-600 focus:ring-red-500"
+                            />
+                            <div>
+                                <div className="font-bold text-slate-800">Esta situação bloqueia a produção?</div>
+                                <div className="text-xs text-slate-500">Marque se a mesa ficará totalmente parada.</div>
+                            </div>
+                        </div>
 
                         <div className="flex gap-4">
                             <Button
@@ -268,15 +283,20 @@ export const AndonOperador: React.FC<AndonOperadorProps> = ({ workcenter, onBack
                                 onClick={() => {
                                     setShowReasonModal(false);
                                     setReason('');
+                                    setIsStop(false);
+                                    setActiveColor(null);
                                 }}
                             >
                                 Cancelar
                             </Button>
                             <Button
-                                className="flex-1 h-14 bg-red-600 hover:bg-red-700 text-white text-lg font-bold rounded-xl shadow-lg shadow-red-500/30"
-                                onClick={() => handleTrigger('vermelho')}
+                                className={cn(
+                                    "flex-1 h-14 text-white text-lg font-bold rounded-xl shadow-lg transition-all",
+                                    activeColor === 'vermelho' ? "bg-red-600 hover:bg-red-700 shadow-red-500/30" : "bg-amber-500 hover:bg-amber-600 shadow-amber-500/30"
+                                )}
+                                onClick={() => handleTrigger(activeColor || 'vermelho')}
                             >
-                                Confirmar Parada
+                                Confirmar Chamado
                             </Button>
                         </div>
                     </div>

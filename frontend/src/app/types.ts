@@ -48,6 +48,7 @@ export interface Fabrication {
   from_production?: boolean;
   production_requester?: string;
   odoo_mo_id?: string; // Odoo MO ID for document lookups
+  source?: 'odoo' | 'producao';
 }
 
 export const PACKAGES_CONFIG: Record<PackageType, string[]> = {

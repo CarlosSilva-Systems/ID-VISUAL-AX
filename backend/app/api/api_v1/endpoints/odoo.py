@@ -147,6 +147,7 @@ async def get_odoo_mos(
                 "activity_date_deadline": act.get('date_deadline'),
                 "origin": mo.get('origin'),
                 # Defaults for local decoration
+                "source": "odoo",
                 "from_production": False,
                 "production_requester": None
             }
@@ -183,6 +184,7 @@ async def get_odoo_mos(
 
                 for item in final_list:
                     if item["odoo_mo_id"] in transferred_map:
+                        item["source"] = "producao"
                         item["from_production"] = True
                         item["production_requester"] = transferred_map[item["odoo_mo_id"]]
             except Exception as e:
