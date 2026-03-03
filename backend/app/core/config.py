@@ -1,4 +1,5 @@
 from typing import List, Optional, Union
+import os
 from pydantic import AnyHttpUrl, PostgresDsn, field_validator, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -74,6 +75,10 @@ class Settings(BaseSettings):
     # ID do usuário/responsável de engenharia que recebe mail.activity de parada
     ANDON_ENGINEERING_USER_ID: Optional[int] = None
 
-    model_config = SettingsConfigDict(env_file=".env", case_sensitive=True, extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), ".env"),
+        case_sensitive=True, 
+        extra="ignore"
+    )
 
 settings = Settings()

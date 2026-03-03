@@ -7,13 +7,14 @@ from app.models.odoo_connection import OdooAuthType
 logger = logging.getLogger(__name__)
 
 class OdooClient:
-    def __init__(self, url: str, db: str, auth_type: str, login: Optional[str], secret: str):
+    def __init__(self, url: str, db: str, auth_type: str, login: Optional[str], secret: str, company_ids: List[int] = None):
         self.url = url.rstrip('/')
         self.db = db
         self.auth_type = OdooAuthType(auth_type)
         self.login = login
         self.secret = secret # Decrypted secret
         self.uid = None
+        self.company_ids = company_ids or []
         self.session = httpx.AsyncClient(timeout=30.0)
         self.session_id = None
 
@@ -120,7 +121,7 @@ class OdooClient:
                     model, 
                     method, 
                     args or [], 
-                    kwargs or {}
+                    {**(kwargs or {}), "context": {**(kwargs.get("context", {}) if kwargs else {}), "allowed_company_ids": self.company_ids}} if self.company_ids else (kwargs or {})
                 ]
             },
             "id": 1

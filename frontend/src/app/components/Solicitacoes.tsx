@@ -222,7 +222,7 @@ export function Solicitacoes({ onCreateBatch }: SolicitacoesProps) {
                       <span className="text-xs text-slate-500">{formatObraDisplayName(item.obra)}</span>
                     </div>
                   </td>
-                  <td className="p-4 text-xs font-bold text-slate-600">{new Date(item.date_start).toLocaleDateString()}</td>
+                  <td className="p-4 text-xs font-bold text-slate-600">{item.date_start}</td>
                   <td className="p-4 text-right">
                     <button
                       onClick={(e) => { e.stopPropagation(); handleTransfer(item.id); }}

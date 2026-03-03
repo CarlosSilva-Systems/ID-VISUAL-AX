@@ -132,6 +132,16 @@ function DashboardRow({ item, isSelected, onToggle, onViewDocs }: {
         <div className="flex items-center gap-4 text-xs text-slate-500">
           <span className="flex items-center gap-1"><Package size={12} /> Qtd: {item.product_qty}</span>
           <span className="flex items-center gap-1 font-bold text-slate-600"><Calendar size={12} /> {item.date_start}</span>
+          {item.sla === 'Vencida' && item.status !== 'Concluída' && (
+            <span className="flex items-center gap-1 font-black text-rose-600 animate-pulse">
+              <Clock size={12} /> ATRASADA
+            </span>
+          )}
+          {item.sla === 'Vence Hoje' && item.status !== 'Concluída' && (
+            <span className="flex items-center gap-1 font-black text-amber-600">
+              <Clock size={12} /> VENCE HOJE
+            </span>
+          )}
         </div>
       </div>
 
@@ -227,7 +237,7 @@ export function Dashboard({ onCreateBatch }: DashboardProps) {
 
       if (!matchesSearch) return false;
 
-      if (filter === 'Atrasadas') return item.sla === 'Vencida';
+      if (filter === 'Atrasadas') return item.sla === 'Vencida' && item.status !== 'Concluída';
       if (filter === 'Bloqueadas') return item.status === 'Bloqueada';
       return true;
     });
@@ -305,8 +315,18 @@ export function Dashboard({ onCreateBatch }: DashboardProps) {
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <StatCard label="Total Filas" value={odooMOs.length.toString()} icon={Package} color="blue" />
         <StatCard label="Selecionados" value={selectedIds.size.toString()} icon={CheckCircle2} color="amber" />
-        <StatCard label="Atrasadas" value="0" icon={Clock} color="red" />
-        <StatCard label="Bloqueadas" value="0" icon={AlertTriangle} color="red" />
+        <StatCard
+          label="Atrasadas"
+          value={odooMOs.filter(i => i.sla === 'Vencida' && i.status !== 'Concluída').length.toString()}
+          icon={Clock}
+          color="red"
+        />
+        <StatCard
+          label="Bloqueadas"
+          value={odooMOs.filter(i => i.status === 'Bloqueada').length.toString()}
+          icon={AlertTriangle}
+          color="red"
+        />
       </div>
 
       {/* Active Batches Section */}
