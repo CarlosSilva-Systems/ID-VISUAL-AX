@@ -61,6 +61,7 @@ export function LoteDoDia({ initialFabrications, onBack }: LoteDoDiaProps) {
               const cell = row.cells[col.task_code];
               return {
                 id: `${row.request_id}-${col.task_code}`,
+                taskCode: col.task_code,
                 label: col.label,
                 status: cell.status === 'nao_iniciado' ? 'Neutro' :
                   cell.status === 'montado' ? 'Em Andamento' :
@@ -130,7 +131,11 @@ export function LoteDoDia({ initialFabrications, onBack }: LoteDoDiaProps) {
   };
 
   const handleUpdateTaskStatus = async (fabId: string, taskId: string, status: Caixinha['status'], blockedReason?: string) => {
-    // 1. Local Update for responsiveness
+    const currentFab = items.find(f => f.id === fabId);
+    const currentTask = currentFab?.tasks.find(t => t.id === taskId);
+    if (!currentTask) return;
+
+    // 1. Local Update for responsiveness (Optimistic)
     setItems(prev => prev.map(fab => {
       if (fab.id !== fabId) return fab;
       return {
@@ -151,7 +156,7 @@ export function LoteDoDia({ initialFabrications, onBack }: LoteDoDiaProps) {
     }
 
     // 2. Remote Sync if batch exists
-    if (batchId) {
+    if (batchId && batchId !== 'new') {
       try {
         const api = await import('../../services/api').then(m => m.api);
 
@@ -160,38 +165,77 @@ export function LoteDoDia({ initialFabrications, onBack }: LoteDoDiaProps) {
           status === 'Em Andamento' ? 'montado' :
             status === 'Bloqueado' ? 'bloqueado' : 'nao_iniciado';
 
-        // Extract task_code from taskId (format: fabricationId-taskCode)
-        const taskCodeRaw = taskId.split('-').pop(); // Simple mapping for now
-
         // More robust mapping based on labels if code is label-based
         const labelToCode: Record<string, string> = {
           'Diagrama+Legenda': 'DOCS_Epson',
           'Documentos Epson': 'DOCS_Epson',
+          'Componente 210-804': 'WAGO_210_804',
+          'Adesivo 210-805': 'WAGO_210_805',
+          'Tag EFZ': 'ELESYS_EFZ',
+          'Régua 2009-110': 'WAGO_2009_110',
+          'Adesivo 210-855': 'WAGO_210_855',
+          'QA Final': 'QA_FINAL',
           '210-804': 'WAGO_210_804',
           '210-805': 'WAGO_210_805',
           'EFZ Tag Cabo': 'ELESYS_EFZ',
           '2009-110': 'WAGO_2009_110',
-          '210-855': 'WAGO_210_855',
-          'QA Final': 'QA_FINAL'
+          '210-855': 'WAGO_210_855'
         };
 
-        const currentFab = items.find(f => f.id === fabId);
-        const currentTask = currentFab?.tasks.find(t => t.id === taskId);
-        const taskCode = labelToCode[currentTask?.label || ''] || taskCodeRaw || '';
+        const taskCode = currentTask.taskCode || labelToCode[currentTask.label] || '';
 
-        await api.updateBatchTask(batchId, {
+        const response = await api.updateBatchTask(batchId, {
           request_id: fabId,
           task_code: taskCode,
           new_status: backendStatus,
           blocked_reason: blockedReason,
-          version: (currentTask as any).version || 1
+          version: currentTask.version || 1
         });
 
-        toast.info(`Status atualizado: ${currentTask?.label}`);
+        // Sync version back
+        setItems(prev => prev.map(fab => {
+          if (fab.id !== fabId) return fab;
+          return {
+            ...fab,
+            tasks: fab.tasks.map(task =>
+              task.id === taskId
+                ? { ...task, version: response.updated_cell?.version || task.version }
+                : task
+            )
+          };
+        }));
+        
+        if (selectedTask && selectedTask.task.id === taskId) {
+          setSelectedTask(prev => prev ? {
+            ...prev,
+            task: { ...prev.task, version: response.updated_cell?.version || prev.task.version }
+          } : null);
+        }
+
+        toast.info(`Status atualizado: ${currentTask.label}`);
       } catch (error: any) {
         console.error('Remote sync failed:', error);
         toast.error('Erro ao sincronizar com servidor: ' + (error.message || 'Erro desconhecido'));
-        // Revert local state or show error badge is recommended in production
+        
+        // Rollback local state
+        setItems(prev => prev.map(fab => {
+          if (fab.id !== fabId) return fab;
+          return {
+            ...fab,
+            tasks: fab.tasks.map(task =>
+              task.id === taskId
+                ? { ...task, status: currentTask.status, blockedReason: currentTask.blockedReason }
+                : task
+            )
+          };
+        }));
+        
+        if (selectedTask && selectedTask.task.id === taskId) {
+          setSelectedTask(prev => prev ? {
+            ...prev,
+            task: { ...prev.task, status: currentTask.status, blockedReason: currentTask.blockedReason }
+          } : null);
+        }
       }
     }
   };
