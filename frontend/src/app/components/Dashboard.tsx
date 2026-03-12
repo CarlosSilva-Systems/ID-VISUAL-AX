@@ -454,6 +454,63 @@ export function Dashboard({ onCreateBatch }: DashboardProps) {
       {docModalMoId && docModalMoNumber && (
         <DocumentPreviewModal moId={docModalMoId} moNumber={docModalMoNumber} onClose={() => { setDocModalMoId(null); setDocModalMoNumber(null); }} />
       )}
+
+      {/* Confirmation Modal for Finalize / Delete Batch */}
+      {confirmAction && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl flex flex-col scale-100 animate-in zoom-in-95 duration-200">
+            <div className="p-6 text-center space-y-4">
+              <div className={cn(
+                "w-16 h-16 rounded-full mx-auto flex items-center justify-center",
+                confirmAction.type === 'finalize' ? "bg-emerald-100 text-emerald-600" : "bg-rose-100 text-rose-600"
+              )}>
+                {confirmAction.type === 'finalize' ? <CheckCircle2 size={32} /> : <Trash2 size={32} />}
+              </div>
+              <div>
+                <h3 className="text-xl font-bold text-slate-800">
+                  {confirmAction.type === 'finalize' ? 'Finalizar Lote?' : 'Apagar Lote?'}
+                </h3>
+                <p className="text-sm text-slate-500 mt-2">
+                  {confirmAction.type === 'finalize'
+                    ? 'Tem certeza que testou tudo e deseja concluir todas as pendências referentes a este lote no Odoo?'
+                    : 'Tem certeza que deseja apagar este lote em andamento? As MOs voltarão para a fila.'
+                  }
+                </p>
+              </div>
+            </div>
+            <div className="p-4 bg-slate-50 border-t border-slate-100 flex gap-3">
+              <button
+                onClick={() => setConfirmAction(null)}
+                className="flex-1 px-4 py-2 font-bold text-slate-600 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                disabled={actionLoading === confirmAction.batchId}
+                onClick={async () => {
+                   if (confirmAction.type === 'finalize') {
+                     await handleFinalizeBatch(confirmAction.batchId);
+                   } else {
+                     await handleCancelBatch(confirmAction.batchId);
+                   }
+                   setConfirmAction(null);
+                }}
+                className={cn(
+                  "flex-1 px-4 py-2 font-bold text-white rounded-lg transition-colors shadow-sm flex items-center justify-center",
+                  confirmAction.type === 'finalize' ? "bg-emerald-600 hover:bg-emerald-700 focus:ring-2 focus:ring-emerald-500/20" : "bg-rose-600 hover:bg-rose-700 focus:ring-2 focus:ring-rose-500/20",
+                  actionLoading === confirmAction.batchId && "opacity-70 cursor-not-allowed"
+                )}
+              >
+                {actionLoading === confirmAction.batchId ? (
+                   <Loader2 size={16} className="animate-spin" />
+                ) : (
+                   'Confirmar'
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
