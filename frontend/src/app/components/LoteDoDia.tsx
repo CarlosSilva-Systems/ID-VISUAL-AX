@@ -44,9 +44,7 @@ export function LoteDoDia({ initialFabrications, onBack }: LoteDoDiaProps) {
 
   useEffect(() => {
     const initialize = async () => {
-      // If we have a real batchId (not "new"), fetch from server
-      let baseItems = initialFabrications;
-
+      // If we have a real batchId (not "new"), fetch from server to get correct UUID request_ids
       if (batchId && batchId !== 'new') {
         try {
           const api = await import('../../services/api').then(m => m.api);
@@ -56,7 +54,7 @@ export function LoteDoDia({ initialFabrications, onBack }: LoteDoDiaProps) {
           setView('matriz');
 
           // Map Matrix data into Fabrication objects with Tasks
-          baseItems = matrix.rows.map((row: any) => {
+          const mappedItems = matrix.rows.map((row: any) => {
             const tasks: Caixinha[] = matrix.columns.map((col: any) => {
               const cell = row.cells[col.task_code];
               return {
@@ -74,7 +72,7 @@ export function LoteDoDia({ initialFabrications, onBack }: LoteDoDiaProps) {
             });
 
             return {
-              id: row.request_id,
+              id: row.request_id, // THIS IS THE CRUCIAL PART: using backend UUID instead of Odoo ID
               odoo_mo_id: row.odoo_mo_id ? String(row.odoo_mo_id) : undefined,
               mo_number: row.mo_number,
               obra: row.obra_nome || 'Sem Obra',
@@ -88,17 +86,16 @@ export function LoteDoDia({ initialFabrications, onBack }: LoteDoDiaProps) {
             };
           });
 
-          setItems(baseItems);
-          // If it's a batch from DB, we can skip pre-inicio if desired
-          // setView('matriz'); 
-          return;
+          setItems(mappedItems);
+          return; // Exit early so we don't use initialFabrications
         } catch (error) {
           console.error('Failed to fetch batch matrix:', error);
+          toast.error('Erro ao buscar dados do lote no servidor.');
         }
       }
 
-      // Fallback/Initial Logic for newly selected items
-      const initializedItems = baseItems.map(fab => {
+      // Fallback/Initial Logic for newly selected items (only used if batchId is 'new')
+      const initializedItems = initialFabrications.map(fab => {
         const packageType = fab.packageType || 'COMANDO';
         const taskLabels = PACKAGES_CONFIG[packageType];
         
@@ -197,6 +194,15 @@ export function LoteDoDia({ initialFabrications, onBack }: LoteDoDiaProps) {
         };
 
         const taskCode = currentTask.taskCode || labelToCode[currentTask.label] || '';
+
+        console.log('DEBUG UPDATE PAYLOAD ->', {
+          batchId,
+          fabId,
+          taskId,
+          taskCode,
+          newStatus: backendStatus,
+          version: currentTask.version || 1
+        });
 
         const response = await api.updateBatchTask(batchId, {
           request_id: fabId,
