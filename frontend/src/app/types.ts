@@ -22,6 +22,8 @@ export interface Caixinha {
   type: "Epson" | "SmartScript" | "Elesys" | "QA";
   blockedReason?: string;
   lastUpdate?: string;
+  version?: number;
+  taskCode?: string;
 }
 
 export interface Fabrication {
