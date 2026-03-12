@@ -101,8 +101,21 @@ export function LoteDoDia({ initialFabrications, onBack }: LoteDoDiaProps) {
       const initializedItems = baseItems.map(fab => {
         const packageType = fab.packageType || 'COMANDO';
         const taskLabels = PACKAGES_CONFIG[packageType];
+        
+        const labelToCodeInit: Record<string, string> = {
+          'Diagrama+Legenda': 'DOCS_Epson',
+          'Documentos Epson': 'DOCS_Epson',
+          '210-804': 'WAGO_210_804',
+          '210-805': 'WAGO_210_805',
+          'EFZ Tag Cabo': 'ELESYS_EFZ',
+          '2009-110': 'WAGO_2009_110',
+          '210-855': 'WAGO_210_855',
+          'QA Final': 'QA_FINAL'
+        };
+
         const tasks: Caixinha[] = taskLabels.map(label => ({
           id: `${fab.id}-${label}`,
+          taskCode: labelToCodeInit[label] || '',
           label,
           status: 'Neutro',
           type: label === 'Diagrama+Legenda' ? 'Epson' : label === 'QA Final' ? 'QA' : 'SmartScript'
@@ -111,6 +124,7 @@ export function LoteDoDia({ initialFabrications, onBack }: LoteDoDiaProps) {
         if (!tasks.find(t => t.label === 'QA Final')) {
           tasks.push({
             id: `${fab.id}-QA`,
+            taskCode: 'QA_FINAL',
             label: 'QA Final',
             status: 'Neutro',
             type: 'QA'
