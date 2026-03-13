@@ -1,18 +1,19 @@
-from typing import Any, List, Dict
+from typing import Any, List, Dict, Optional
 import uuid
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlmodel import select, func, col
+from fastapi import APIRouter, Depends, HTTPException
+from sqlmodel import select, col, func
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.api import deps
-from app.core.config import settings
-from app.models.id_request import IDRequest, IDRequestStatus, OPEN_STATUSES
+from app.models.id_request import IDRequest, IDRequestStatus, IDRequestTask, OPEN_STATUSES
 from app.models.manufacturing import ManufacturingOrder
 from app.models.audit import HistoryLog
+from app.models.system_setting import SystemSetting
 from app.services.odoo_client import OdooClient
 from app.services.odoo_utils import normalize_many2one_display
 from app.services.status_mappers import map_mrp_state
+from app.core.config import settings
 from app.api.api_v1.endpoints.sync import update_sync_version
 from app.services.task_service import initialize_request_tasks
 
@@ -127,7 +128,7 @@ async def count_manual_requests(
         .where(
             IDRequest.source == "manual",
             IDRequest.transferred_to_queue == False,
-            col(IDRequest.status).in_(OPEN_STATUSES)
+            col(IDRequest.status).in_([s.value for s in OPEN_STATUSES])
         )
     )
     count = await session.exec(stmt)
@@ -218,23 +219,25 @@ async def transfer_manual_request(
              raise HTTPException(status_code=500, detail="Critical: Odoo Model 'mrp.production' not found in ir.model")
         res_model_id = models[0]['id']
 
-        # 2c. Resolve Assignee (Strict)
-        user_id = settings.ODOO_ACTIVITY_USER_ID
+        # 2c. Resolve Assignee (Dynamic from SystemSettings)
+        stmt = select(SystemSetting).where(SystemSetting.key == "odoo_id_visual_activity_user_id")
+        result = await session.exec(stmt)
+        setting = result.first()
         
-        # Always verify or search for Dorival by name for safety
-        dorival_name = "DORIVAL BONIFACIO DE SOUZA JUNIOR"
-        dorival_domain = [['name', '=', dorival_name]]
-        dorival_users = await client.search_read('res.users', domain=dorival_domain, fields=['id', 'name'], limit=1)
-        
-        if dorival_users and dorival_users[0]['name'] == dorival_name:
-            user_id = dorival_users[0]['id']
-        else:
-            # STRICT FAILURE: User must be exactly Dorival
-            print(f"CRITICAL: User '{dorival_name}' not found or name mismatch in Odoo.")
-            raise HTTPException(
+        if not setting or not setting.value:
+             raise HTTPException(
                 status_code=422,
-                detail=f"Responsável '{dorival_name}' não encontrado no Odoo. Verifique o cadastro."
+                detail="Responsável pela ID Visual não configurado. Acesse as configurações para definir um usuário do Odoo."
             )
+        
+        try:
+            user_id = int(setting.value)
+        except ValueError:
+            raise HTTPException(status_code=500, detail="Configuração de usuário Odoo inválida no banco de dados.")
+
+        # Optional: Verify if user still exists/active (already done on save, but good for runtime safety)
+        # We'll trust the setting for now to avoid extra roundtrips per transfer, 
+        # unless transfer fails.
 
         # 2d. Prepare Payload
         summary = 'Imprimir ID Visual'
