@@ -91,7 +91,8 @@ export const ActiveBatch: React.FC<ActiveBatchProps> = ({ batchId = DEV_BATCH_ID
                 task_code: taskCode,
                 new_status: nextStatus,
                 version: currentCell.version,
-                update_note: updateNote
+                update_note: updateNote,
+                blocked_reason: currentCell.blocked_reason // Ensure consistency
             });
 
             setData(prev => {

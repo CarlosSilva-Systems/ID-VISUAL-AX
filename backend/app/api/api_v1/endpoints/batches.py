@@ -13,23 +13,15 @@ from app.models.id_request import IDRequest, IDRequestTask
 from app.models.manufacturing import ManufacturingOrder
 from app.schemas.matrix_view import (
     BatchMatrixResponse, BatchStats, MatrixColumn, MatrixRow, MatrixCell,
-    TaskStatusEnum, TaskUpdatePayload, TaskUpdateResponse
+    TaskStatusEnum, TaskUpdatePayload, TaskUpdateResponse, FIXED_COLUMNS
 )
 from app.api.api_v1.endpoints.sync import update_sync_version
+from app.services.task_service import initialize_request_tasks
 
 router = APIRouter()
 
 
-# 5S Fixed Columns Source of Truth
-FIXED_COLUMNS = [
-    MatrixColumn(task_code="DOCS_Epson", label="Documentos Epson", order=10),
-    MatrixColumn(task_code="WAGO_210_804", label="Componente 210-804", order=20),
-    MatrixColumn(task_code="WAGO_210_805", label="Adesivo 210-805", order=30),
-    MatrixColumn(task_code="ELESYS_EFZ", label="Tag EFZ", order=40),
-    MatrixColumn(task_code="WAGO_2009_110", label="Régua 2009-110", order=50),
-    MatrixColumn(task_code="WAGO_210_855", label="Adesivo 210-855", order=60),
-    MatrixColumn(task_code="QA_FINAL", label="QA Final", order=99),
-]
+
 
 # --- Active Batches ---
 
@@ -269,7 +261,25 @@ async def update_batch_task(
     Implements: Optimistic Locking, Business Validations, Poka-yoke.
     """
     try:
-        # 1. Fetch Task
+        # 1. Diagnostic Logging (Root Cause Investigation)
+        print(f"DIAGNOSTIC: Update PATCH received for Batch={batch_id}, Request={payload.request_id}, Task={payload.task_code}")
+
+        # 2. Fetch Request and Validate Batch Ownership (Business Security)
+        req_stmt = select(IDRequest).where(IDRequest.id == payload.request_id)
+        req_res = await session.exec(req_stmt)
+        req = req_res.first()
+        
+        if not req:
+            raise HTTPException(status_code=404, detail=f"Request {payload.request_id} not found")
+        
+        if req.batch_id != batch_id:
+            print(f"DIAGNOSTIC: Ownership Error. Request {req.id} belongs to Batch {req.batch_id}, not {batch_id}")
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Request does not belong to the provided Batch ID. (Request Batch: {req.batch_id})"
+            )
+
+        # 3. Fetch Task
         statement = select(IDRequestTask).where(
             IDRequestTask.request_id == payload.request_id,
             IDRequestTask.task_code == payload.task_code
@@ -278,7 +288,8 @@ async def update_batch_task(
         task = result.first()
         
         if not task:
-            raise HTTPException(status_code=404, detail="Task not found")
+            print(f"DIAGNOSTIC: Task {payload.task_code} not found for Request {payload.request_id}. Proving Root Cause 1.")
+            raise HTTPException(status_code=404, detail=f"Task {payload.task_code} not found for this request.")
 
         # 2. Validation: N/A Immutable
         if task.status == TaskStatusEnum.nao_aplicavel.value:
@@ -487,6 +498,9 @@ async def create_batch(
                  await session.commit()
                  created_requests_count += 1 # Counted as "processed into this batch"
             
+            # Ensure tasks are initialized (Poka-yoke)
+            await initialize_request_tasks(active_req.id, session)
+            
             continue # Skip creating new one
 
         # If not exists, create new
@@ -501,14 +515,8 @@ async def create_batch(
         
         created_requests_count += 1
         
-        # 4. Initialize Tasks (5S)
-        for col_def in FIXED_COLUMNS:
-            task = IDRequestTask(
-                request_id=new_req.id,
-                task_code=col_def.task_code,
-                status=TaskStatusEnum.nao_iniciado.value 
-            )
-            session.add(task)
+        # 4. Initialize Tasks (5S) - Single Source of Truth
+        await initialize_request_tasks(new_req.id, session)
             
     await session.commit()
     
