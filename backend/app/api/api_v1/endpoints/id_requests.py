@@ -14,6 +14,7 @@ from app.services.odoo_client import OdooClient
 from app.services.odoo_utils import normalize_many2one_display
 from app.services.status_mappers import map_mrp_state
 from app.api.api_v1.endpoints.sync import update_sync_version
+from app.services.task_service import initialize_request_tasks
 
 router = APIRouter()
 
@@ -278,7 +279,11 @@ async def transfer_manual_request(
     
     session.add(req)
     
-    # 4. History Log
+    # 4. Initialize Checklist Tasks (Poka-yoke)
+    # This ensures that once transferred, the request already has the standard tasks ready.
+    await initialize_request_tasks(req.id, session)
+    
+    # 5. History Log
     log = HistoryLog(
         entity_type="id_request",
         entity_id=req.id,

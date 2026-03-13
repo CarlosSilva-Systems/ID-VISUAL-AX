@@ -65,3 +65,14 @@ class TaskUpdatePayload(BaseModel):
 class TaskUpdateResponse(BaseModel):
     updated_cell: MatrixCell
     updated_stats: BatchStats
+
+# 5S Fixed Columns Source of Truth
+FIXED_COLUMNS = [
+    MatrixColumn(task_code="DOCS_Epson", label="Documentos Epson", order=10),
+    MatrixColumn(task_code="WAGO_210_804", label="Componente 210-804", order=20),
+    MatrixColumn(task_code="WAGO_210_805", label="Adesivo 210-805", order=30),
+    MatrixColumn(task_code="ELESYS_EFZ", label="Tag EFZ", order=40),
+    MatrixColumn(task_code="WAGO_2009_110", label="Régua 2009-110", order=50),
+    MatrixColumn(task_code="WAGO_210_855", label="Adesivo 210-855", order=60),
+    MatrixColumn(task_code="QA_FINAL", label="QA Final", order=99),
+]

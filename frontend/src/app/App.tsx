@@ -8,6 +8,7 @@ import { Fabricacoes } from './components/Fabricacoes';
 import { VisaoProducao } from './components/VisaoProducao';
 import { Configuracoes } from './components/Configuracoes';
 import { LoteDoDia } from './components/LoteDoDia';
+import { ActiveBatch } from '../components/ActiveBatch';
 import { Padroes5S } from './components/Padroes5S';
 import { Login } from './components/Login';
 import { AndonGrid } from './components/AndonGrid';
@@ -93,8 +94,7 @@ function AppContent() {
               <Route path="/templates" element={<Padroes5S />} />
               {isAdmin && <Route path="/admin" element={<Configuracoes />} />}
               <Route path="/id-visual/batch/:batchId" element={
-                <LoteDoDia
-                  initialFabrications={currentBatchItems}
+                <ActiveBatch
                   onBack={() => navigate('/id-visual/dashboard')}
                 />
               } />
