@@ -96,7 +96,7 @@ function AppContent() {
               <Route path="/andon/painel" element={<AndonGrid username={username} />} />
               <Route path="/mrp" element={<Fabricacoes />} />
               <Route path="/templates" element={<Padroes5S />} />
-              {isAdmin && <Route path="/admin" element={<Configuracoes />} />}
+              <Route path="/admin" element={<Configuracoes />} />
               <Route path="/id-visual/batch/:batchId" element={
                 <ActiveBatch
                   onBack={() => navigate('/id-visual/dashboard')}

@@ -104,11 +104,8 @@ export const Layout = ({ children, isAdmin = false, username = "Usuário" }: Lay
     },
     { id: "mrp", label: "Fabricações (MRP)", icon: Factory, path: "/mrp" },
     { id: "templates", label: "Padrões (5S)", icon: LayoutTemplate, path: "/templates" },
+    { id: "config", label: "Configurações", icon: Settings, path: "/admin" },
   ];
-
-  if (isAdmin) {
-    menuStructure.push({ id: "admin", label: "Configurações", icon: Settings, path: "/admin" });
-  }
 
   // Auto-expand group if child is active
   useEffect(() => {
