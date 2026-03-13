@@ -218,11 +218,44 @@ async def transfer_manual_request(
              raise HTTPException(status_code=500, detail="Critical: Odoo Model 'mrp.production' not found in ir.model")
         res_model_id = models[0]['id']
 
-        # 2c. Check existing activity (Idempotency)
+        # 2c. Resolve Assignee (Strict)
+        user_id = settings.ODOO_ACTIVITY_USER_ID
+        
+        # Always verify or search for Dorival by name for safety
+        dorival_name = "DORIVAL BONIFACIO DE SOUZA JUNIOR"
+        dorival_domain = [['name', '=', dorival_name]]
+        dorival_users = await client.search_read('res.users', domain=dorival_domain, fields=['id', 'name'], limit=1)
+        
+        if dorival_users and dorival_users[0]['name'] == dorival_name:
+            user_id = dorival_users[0]['id']
+        else:
+            # STRICT FAILURE: User must be exactly Dorival
+            print(f"CRITICAL: User '{dorival_name}' not found or name mismatch in Odoo.")
+            raise HTTPException(
+                status_code=422,
+                detail=f"Responsável '{dorival_name}' não encontrado no Odoo. Verifique o cadastro."
+            )
+
+        # 2d. Prepare Payload
+        summary = 'Imprimir ID Visual'
+        deadline = datetime.now(timezone.utc).strftime('%Y-%m-%d')
+        note_content = (
+            f"<p><strong>Solicitação de ID Visual</strong></p>"
+            f"<ul>"
+            f"<li><strong>Solicitante:</strong> {req.requester_name or 'Não informado'}</li>"
+            f"<li><strong>OF:</strong> {mo.name}</li>"
+            f"<li><strong>ID Interno:</strong> {req.id}</li>"
+            f"<li><strong>Notas:</strong> {req.notes or '-'}</li>"
+            f"</ul>"
+        )
+
+        # 2e. Check existing activity (Idempotency - Hardened)
         domain = [
             ['res_model', '=', 'mrp.production'],
             ['res_id', '=', mo.odoo_id],
             ['activity_type_id', '=', act_type_id],
+            ['user_id', '=', user_id],
+            ['summary', '=', summary],
             ['active', '=', True]
         ]
         
@@ -231,28 +264,22 @@ async def transfer_manual_request(
         if existing:
             activity_id = existing[0]['id']
             created = False
+            print(f"DIAGNOSTIC: Reusing existing Odoo activity {activity_id} for MO {mo.name}")
         else:
-            # 2d. Resolve Assignee (Dorival)
-            user_id = settings.ODOO_ACTIVITY_USER_ID
-            dorival_domain = [['name', 'ilike', 'DORIVAL BONIFACIO DE SOUZA JUNIOR']]
-            dorival_users = await client.search_read('res.users', domain=dorival_domain, fields=['id'], limit=1)
-            
-            if dorival_users:
-                user_id = dorival_users[0]['id']
-            else:
-                print("WARNING: User 'DORIVAL BONIFACIO DE SOUZA JUNIOR' not found in Odoo. Falling back to default assignee.")
-            
-            # 2e. Create Activity (Full Payload)
-            
-            new_act = await client.call_kw('mail.activity', 'create', args=[{
+            # 2f. Create Activity (Full Payload)
+            payload = {
                 'res_model_id': res_model_id,
                 'res_id': mo.odoo_id,
                 'activity_type_id': act_type_id,
-                'summary': 'Imprimir ID Visual', # Enforced for standard queue compatibility
+                'summary': summary,
                 'note': note_content,
                 'date_deadline': deadline,
                 'user_id': user_id 
-            }])
+            }
+            
+            print(f"DIAGNOSTIC: Sending Payload to Odoo -> {payload}")
+            
+            new_act = await client.call_kw('mail.activity', 'create', args=[payload])
             activity_id = new_act
             created = True
             
