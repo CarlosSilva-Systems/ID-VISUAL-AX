@@ -17,8 +17,8 @@ class OdooClient:
         self.secret = secret # Decrypted secret
         self.uid = None
         self.company_ids = company_ids or []
-        # Aumentado timeout para 60s para lidar com consultas complexas
-        self.session = httpx.AsyncClient(timeout=60.0)
+        # Reduzido timeout para 15s - 60s era excessivo e causava hangs na UI
+        self.session = httpx.AsyncClient(timeout=15.0, follow_redirects=True)
         self.session_id = None
 
     async def close(self):
@@ -26,8 +26,8 @@ class OdooClient:
 
     async def _call_with_retry(self, func, *args, **kwargs):
         """Helper para executar chamadas com retentativa e backoff exponencial."""
-        max_retries = 3
-        base_delay = 0.5  # Reduzido para ser mais responsivo
+        max_retries = 2 # Reduzido de 3 para 2
+        base_delay = 0.5
         
         for attempt in range(max_retries + 1):
             try:

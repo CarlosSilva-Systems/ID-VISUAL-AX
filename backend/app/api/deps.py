@@ -10,6 +10,7 @@ from app.core import security
 from app.core.config import settings
 from app.db.session import get_session
 from app.models.user import User
+from app.services.odoo_client import OdooClient
 
 reusable_oauth2 = OAuth2PasswordBearer(
     tokenUrl=f"{settings.API_V1_STR}/auth/login",
@@ -50,3 +51,17 @@ async def get_current_user(
         return None
         
     return user
+
+async def get_odoo_client():
+    from app.services.odoo_client import OdooClient
+    client = OdooClient(
+        url=settings.ODOO_URL,
+        db=settings.ODOO_DB,
+        auth_type=settings.ODOO_AUTH_TYPE,
+        login=settings.ODOO_LOGIN,
+        secret=settings.ODOO_PASSWORD
+    )
+    try:
+        yield client
+    finally:
+        await client.close()
