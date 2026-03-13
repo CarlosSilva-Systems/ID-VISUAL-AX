@@ -7,7 +7,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.services.odoo_client import OdooClient
 from app.core.config import settings
-from app.api import deps
+from app.api.deps import get_session, get_odoo_client, get_current_user
 from app.models.id_request import IDRequest, IDRequestStatus
 from app.models.manufacturing import ManufacturingOrder
 
@@ -16,22 +16,9 @@ import logging
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-async def get_odoo_client():
-    client = OdooClient(
-        url=settings.ODOO_URL,
-        db=settings.ODOO_DB,
-        auth_type=settings.ODOO_AUTH_TYPE,
-        login=settings.ODOO_LOGIN,
-        secret=settings.ODOO_PASSWORD
-    )
-    try:
-        yield client
-    finally:
-        await client.close()
-
 @router.get("/mos", response_model=List[dict])
 async def get_odoo_mos(
-    session: AsyncSession = Depends(deps.get_session)
+    session: AsyncSession = Depends(get_session)
 ) -> Any:
     """
     Fetch Manufacturing Orders (MOs) that have a pending 'Imprimir ID Visual' activity.
@@ -220,7 +207,7 @@ async def get_odoo_mos(
 
 @router.get("/users", response_model=List[dict])
 async def get_odoo_users(
-    current_user: Any = Depends(deps.get_current_user)
+    current_user: Any = Depends(get_current_user)
 ) -> Any:
     """
     Fetch active users from Odoo to populate settings selection.
