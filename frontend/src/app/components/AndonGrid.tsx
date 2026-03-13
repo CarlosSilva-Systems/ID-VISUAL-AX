@@ -1,24 +1,68 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../../services/api';
-import { Users, AlertTriangle, MonitorPlay, Activity } from 'lucide-react';
-import { cn } from './ui';
+import { Users, AlertTriangle, MonitorPlay, Activity, Clock, Package, Calendar } from 'lucide-react';
+import { cn } from '../../lib/utils';
 import { AndonOperador } from './AndonOperador';
+import { PlanningModal } from './PlanningModal';
 
 interface Workcenter {
     id: number;
     name: string;
     code: string;
     status: 'verde' | 'amarelo' | 'vermelho' | 'cinza';
+    owner_name: string;
+    current_mo: string;
+    started_at: string | null;
+    planned_mos: any[];
 }
 
 interface AndonGridProps {
     username: string;
 }
 
+const Timer: React.FC<{ startedAt: string | null }> = ({ startedAt }) => {
+    const [elapsed, setElapsed] = useState('00:00:00');
+
+    useEffect(() => {
+        if (!startedAt) {
+            setElapsed('Aguardando início');
+            return;
+        }
+
+        const updateTimer = () => {
+            const start = new Date(startedAt).getTime();
+            const now = new Date().getTime();
+            const diff = Math.max(0, now - start);
+
+            const hours = Math.floor(diff / 3600000);
+            const minutes = Math.floor((diff % 3600000) / 60000);
+            const seconds = Math.floor((diff % 60000) / 1000);
+
+            setElapsed(
+                `${hours.toString().padStart(2, '0')}:${minutes
+                    .toString()
+                    .padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`
+            );
+        };
+
+        updateTimer();
+        const interval = setInterval(updateTimer, 1000);
+        return () => clearInterval(interval);
+    }, [startedAt]);
+
+    return (
+        <div className="flex items-center gap-1.5 text-xs font-mono font-bold opacity-70">
+            <Clock className="w-3 h-3" />
+            {elapsed}
+        </div>
+    );
+};
+
 export const AndonGrid: React.FC<AndonGridProps> = ({ username }) => {
     const [workcenters, setWorkcenters] = useState<Workcenter[]>([]);
     const [loading, setLoading] = useState(true);
     const [selectedWorkcenter, setSelectedWorkcenter] = useState<Workcenter | null>(null);
+    const [planningWc, setPlanningWc] = useState<Workcenter | null>(null);
 
     const fetchWorkcenters = async () => {
         try {
@@ -33,16 +77,25 @@ export const AndonGrid: React.FC<AndonGridProps> = ({ username }) => {
 
     useEffect(() => {
         fetchWorkcenters();
-        const interval = setInterval(fetchWorkcenters, 10000); // Poll a cada 10s
+        const interval = setInterval(fetchWorkcenters, 10000);
         return () => clearInterval(interval);
     }, []);
 
     const getStatusColor = (status: string) => {
         switch (status) {
-            case 'verde': return 'bg-emerald-500 shadow-emerald-500/40 text-white border-emerald-600';
-            case 'amarelo': return 'bg-amber-400 shadow-amber-400/40 text-slate-800 border-amber-500';
-            case 'vermelho': return 'bg-red-500 shadow-red-500/40 text-white border-red-600 animate-pulse';
-            default: return 'bg-slate-200 text-slate-600 border-slate-300';
+            case 'verde': return 'border-emerald-500 bg-emerald-50/30';
+            case 'amarelo': return 'border-amber-400 bg-amber-50/40';
+            case 'vermelho': return 'border-red-500 bg-red-50/50 animate-pulse-subtle';
+            default: return 'border-slate-200 bg-slate-50/50';
+        }
+    };
+
+    const getStatusBadge = (status: string) => {
+        switch (status) {
+            case 'verde': return 'bg-emerald-500 text-white';
+            case 'amarelo': return 'bg-amber-400 text-slate-900';
+            case 'vermelho': return 'bg-red-500 text-white';
+            default: return 'bg-slate-300 text-slate-600';
         }
     };
 
@@ -53,7 +106,7 @@ export const AndonGrid: React.FC<AndonGridProps> = ({ username }) => {
     if (selectedWorkcenter) {
         return (
             <AndonOperador
-                workcenter={selectedWorkcenter}
+                workcenter={selectedWorkcenter as any}
                 username={username}
                 onBack={() => setSelectedWorkcenter(null)}
             />
@@ -64,46 +117,103 @@ export const AndonGrid: React.FC<AndonGridProps> = ({ username }) => {
         <div className="space-y-6">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
-                    <h1 className="text-2xl font-bold tracking-tight text-slate-900 flex items-center gap-2">
+                    <h1 className="text-2xl font-black tracking-tight text-slate-900 flex items-center gap-2">
                         <Activity className="w-7 h-7 text-blue-600" />
                         Painel Andon
                     </h1>
-                    <p className="text-slate-500 mt-1">Status em tempo real das mesas de trabalho</p>
+                    <p className="text-slate-500 text-sm mt-1">Status e produção em tempo real</p>
                 </div>
 
-                {/* Futuro botão para abrir a TV */}
-                <button
-                    onClick={() => window.open('/andon-tv', '_blank')}
-                    className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-xl hover:bg-slate-800 transition-colors shadow-lg shadow-slate-900/20 text-sm font-semibold whitespace-nowrap"
-                >
-                    <MonitorPlay className="w-4 h-4" />
-                    Abrir Painel TV
-                </button>
+                <div className="flex items-center gap-3">
+                    <button
+                        onClick={() => window.open('/andon-tv', '_blank')}
+                        className="flex items-center gap-2 px-4 py-2 bg-white border-2 border-slate-200 text-slate-700 rounded-xl hover:bg-slate-50 transition-all shadow-sm text-sm font-bold active:scale-95"
+                    >
+                        <MonitorPlay className="w-4 h-4" />
+                        Abrir TV
+                    </button>
+                </div>
             </div>
 
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                 {workcenters.map((wc) => (
-                    <button
+                    <div
                         key={wc.id}
-                        onClick={() => setSelectedWorkcenter(wc)}
                         className={cn(
-                            "relative group p-6 rounded-2xl border-2 transition-all flex flex-col items-center justify-center gap-3 text-center shadow-lg hover:-translate-y-1 hover:shadow-xl",
+                            "relative flex flex-col rounded-[2rem] border-2 p-5 transition-all shadow-sm hover:shadow-xl hover:-translate-y-1 overflow-hidden",
                             getStatusColor(wc.status)
                         )}
                     >
-                        {wc.status === 'vermelho' && (
-                            <AlertTriangle className="absolute top-3 right-3 w-5 h-5 opacity-80" />
-                        )}
-                        <div className="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-sm">
-                            <Users className="w-6 h-6 currentColor" />
+                        {/* Header: WC Name + Status Indicator */}
+                        <div className="flex items-center justify-between mb-4">
+                            <h3 className="font-black text-lg text-slate-900 truncate pr-2">{wc.name}</h3>
+                            <div className={cn("w-3 h-3 rounded-full flex-shrink-0", getStatusBadge(wc.status))} />
                         </div>
-                        <div>
-                            <h3 className="font-bold text-lg leading-tight">{wc.name}</h3>
-                            <p className="text-xs opacity-80 font-medium mt-1 uppercase tracking-wider">{wc.code || `WC-${wc.id}`}</p>
+
+                        {/* Content: New Hierarchy */}
+                        <div className="space-y-4 flex-1">
+                            {/* 1. Owner */}
+                            <div className="space-y-1">
+                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
+                                    <Users size={12} /> Responsável
+                                </label>
+                                <p className={cn(
+                                    "text-sm font-bold truncate",
+                                    wc.owner_name === "Sem responsável definido" ? "text-slate-400 italic" : "text-slate-700"
+                                )}>
+                                    {wc.owner_name}
+                                </p>
+                            </div>
+
+                            {/* 2. Current MO */}
+                            <div className="space-y-1">
+                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
+                                    <Package size={12} /> Fabricação Atual
+                                </label>
+                                <div className={cn(
+                                    "text-sm font-black leading-tight",
+                                    wc.current_mo === "Sem fabricação em andamento" ? "text-slate-400 italic" : "text-blue-600"
+                                )}>
+                                    {wc.current_mo}
+                                </div>
+                            </div>
+
+                            {/* 3. Timer */}
+                            <div className="pt-2 border-t border-slate-100/50">
+                                <Timer startedAt={wc.started_at} />
+                            </div>
                         </div>
-                    </button>
+
+                        {/* Actions */}
+                        <div className="mt-6 flex items-center gap-2">
+                            <button
+                                onClick={() => setSelectedWorkcenter(wc)}
+                                className="flex-1 py-2.5 bg-slate-900 text-white rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-slate-800 transition-all active:scale-95"
+                            >
+                                Acionar Andon
+                            </button>
+                            <button
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    setPlanningWc(wc);
+                                }}
+                                className="p-2.5 bg-white border-2 border-slate-100 text-slate-600 rounded-xl hover:border-blue-200 hover:text-blue-600 transition-all active:scale-95 shadow-sm"
+                                title="Ver Planejamento"
+                            >
+                                <Calendar size={18} />
+                            </button>
+                        </div>
+                    </div>
                 ))}
             </div>
+
+            {planningWc && (
+                <PlanningModal
+                    wcName={planningWc.name}
+                    plannedMos={planningWc.planned_mos}
+                    onClose={() => setPlanningWc(null)}
+                />
+            )}
         </div>
     );
 };
