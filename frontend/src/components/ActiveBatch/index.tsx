@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useParams } from 'react-router-dom';
 import { api } from '../../services/api';
 import {
     BatchMatrixResponse,
@@ -28,7 +29,9 @@ interface Pendency {
 
 const DEV_BATCH_ID = "00000000-0000-0000-0000-000000000000";
 
-export const ActiveBatch: React.FC<ActiveBatchProps> = ({ batchId = DEV_BATCH_ID, onBack, onNavigateFinalizadas }) => {
+export const ActiveBatch: React.FC<ActiveBatchProps> = ({ onBack, onNavigateFinalizadas }) => {
+    const { batchId } = useParams<{ batchId: string }>();
+    const effectiveBatchId = batchId || DEV_BATCH_ID;
     const [data, setData] = useState<BatchMatrixResponse | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -52,7 +55,7 @@ export const ActiveBatch: React.FC<ActiveBatchProps> = ({ batchId = DEV_BATCH_ID
         setLoading(true);
         setError(null);
         try {
-            const response = await api.getBatchMatrix(batchId);
+            const response = await api.getBatchMatrix(effectiveBatchId);
             setData(response);
         } catch (err: any) {
             console.error(err);
@@ -61,7 +64,7 @@ export const ActiveBatch: React.FC<ActiveBatchProps> = ({ batchId = DEV_BATCH_ID
         } finally {
             setLoading(false);
         }
-    }, [batchId]);
+    }, [effectiveBatchId]);
 
     useEffect(() => {
         fetchMatrix();
@@ -86,7 +89,7 @@ export const ActiveBatch: React.FC<ActiveBatchProps> = ({ batchId = DEV_BATCH_ID
         setData(newData);
 
         try {
-            const response = await api.updateBatchTask(batchId, {
+            const response = await api.updateBatchTask(effectiveBatchId, {
                 request_id: requestId,
                 task_code: taskCode,
                 new_status: nextStatus,
@@ -140,7 +143,7 @@ export const ActiveBatch: React.FC<ActiveBatchProps> = ({ batchId = DEV_BATCH_ID
 
         setFinalizing(true);
         try {
-            const result = await api.finalizeBatch(batchId);
+            const result = await api.finalizeBatch(effectiveBatchId);
 
             const errCount = result.errors?.length || 0;
             if (errCount > 0) {

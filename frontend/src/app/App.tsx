@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Toaster } from 'sonner';
+import { Toaster, toast } from 'sonner';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { Layout } from './components/Layout';
 import { Dashboard } from './components/Dashboard';
@@ -7,9 +7,8 @@ import { Solicitacoes } from './components/Solicitacoes';
 import { Fabricacoes } from './components/Fabricacoes';
 import { VisaoProducao } from './components/VisaoProducao';
 import { Configuracoes } from './components/Configuracoes';
-import { LoteDoDia } from './components/LoteDoDia';
-import { ActiveBatch } from '../components/ActiveBatch';
 import { Padroes5S } from './components/Padroes5S';
+import { ActiveBatch } from '../components/ActiveBatch';
 import { Login } from './components/Login';
 import { AndonGrid } from './components/AndonGrid';
 import { AndonTV } from './components/AndonTV';
@@ -20,7 +19,8 @@ import { DataProvider } from './contexts/DataContext';
 
 function AppContent() {
   const navigate = useNavigate();
-  const [currentBatchItems, setCurrentBatchItems] = useState<Fabrication[]>([]);
+  // currentBatchItems is deprecated in favor of URL-based UUIDs
+
 
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [authLoading, setAuthLoading] = useState(true);
@@ -53,14 +53,18 @@ function AppContent() {
     setUsername(meData.user);
   };
 
-  const handleCreateBatch = async (items: Fabrication[] | string) => {
-    if (Array.isArray(items)) {
-      // For new batch from selection
-      setCurrentBatchItems(items);
-      navigate('/id-visual/batch/new');
+  const handleCreateBatch = async (itemsOrId: Fabrication[] | string) => {
+    if (typeof itemsOrId === 'string') {
+      navigate(`/id-visual/batch/${itemsOrId}`);
     } else {
-      // For existing batch by ID
-      navigate(`/id-visual/batch/${items}`);
+      // If items are passed, we need to save the batch first (Manual requests flow)
+      try {
+        const ids = itemsOrId.map(i => parseInt(i.id));
+        const res = await api.createBatch(ids);
+        navigate(`/id-visual/batch/${res.batch_id}`);
+      } catch (err: any) {
+        toast.error(`Erro ao criar lote: ${err.message}`);
+      }
     }
   };
 
