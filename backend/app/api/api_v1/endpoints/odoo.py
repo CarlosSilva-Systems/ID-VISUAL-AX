@@ -11,6 +11,9 @@ from app.api import deps
 from app.models.id_request import IDRequest, IDRequestStatus
 from app.models.manufacturing import ManufacturingOrder
 
+import logging
+
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 async def get_odoo_client():
@@ -197,7 +200,7 @@ async def get_odoo_mos(
 
     except Exception as e:
         error_type = type(e).__name__
-        safe_msg = str(e).replace(settings.ODOO_PASSWORD, "***")
+        safe_msg = str(e).replace(settings.ODOO_PASSWORD or "", "***")
         logger.error(f"CRITICAL ODOO ERROR [{error_type}]: {safe_msg}")
         traceback.print_exc()
         
@@ -212,5 +215,34 @@ async def get_odoo_mos(
             status_code=502, 
             detail=f"Erro de Conectividade Odoo: {safe_msg}"
         )
+    finally:
+        await client.close()
+
+@router.get("/users", response_model=List[dict])
+async def get_odoo_users(
+    current_user: Any = Depends(deps.get_current_user)
+) -> Any:
+    """
+    Fetch active users from Odoo to populate settings selection.
+    """
+    client = OdooClient(
+        url=settings.ODOO_URL,
+        db=settings.ODOO_DB,
+        auth_type=settings.ODOO_AUTH_TYPE,
+        login=settings.ODOO_LOGIN,
+        secret=settings.ODOO_PASSWORD
+    )
+    try:
+        domain = [['active', '=', True]]
+        users = await client.search_read(
+            'res.users',
+            domain=domain,
+            fields=['id', 'name', 'login'],
+            order='name ASC'
+        )
+        return users
+    except Exception as e:
+        logger.error(f"Failed to fetch Odoo users: {e}")
+        raise HTTPException(status_code=502, detail=f"Erro ao buscar usuários no Odoo: {str(e)}")
     finally:
         await client.close()

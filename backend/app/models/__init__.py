@@ -6,3 +6,4 @@ from app.models.batch import Batch, BatchItem
 from app.models.consumption import ElesysConsumption
 from app.models.audit import HistoryLog
 from app.models.andon import AndonStatus, AndonEvent, AndonMaterialRequest
+from app.models.system_setting import SystemSetting
