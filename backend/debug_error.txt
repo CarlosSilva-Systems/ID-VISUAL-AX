@@ -1,7 +1,0 @@
-Traceback (most recent call last):
-  File "C:\Users\carlo\OneDrive\Documentos\5-DEV\id_visual_2\backend\app\api\api_v1\endpoints\batches.py", line 149, in get_batch_matrix
-    batch_status=batch.state,
-                 ^^^^^^^^^^^
-  File "C:\Users\carlo\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\pydantic\main.py", line 991, in __getattr__
-    raise AttributeError(f'{type(self).__name__!r} object has no attribute {item!r}')
-AttributeError: 'Batch' object has no attribute 'state'. Did you mean: 'status'?
