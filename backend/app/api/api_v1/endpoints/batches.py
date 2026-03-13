@@ -18,7 +18,7 @@ from app.schemas.matrix_view import (
 from app.api.api_v1.endpoints.sync import update_sync_version
 
 router = APIRouter()
-print("DEBUG: LOADING BATCHES MODULE V999 -------------------------------------")
+
 
 # 5S Fixed Columns Source of Truth
 FIXED_COLUMNS = [
@@ -606,7 +606,7 @@ async def finalize_batch(
         }
     
     # 1. Fetch IDRequests for this batch
-    req_stmt = select(IDRequest).where(IDRequest.batch_id == batch_id)
+    req_stmt = select(IDRequest).where(IDRequest.batch_id == batch.id)
     req_result = await session.exec(req_stmt)
     requests = req_result.all()
     
