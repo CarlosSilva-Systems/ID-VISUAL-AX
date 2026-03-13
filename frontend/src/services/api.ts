@@ -306,4 +306,21 @@ export const api = {
     getAndonTVData: async () => {
         return api.get('/andon/tv-data');
     },
+
+    // ── Settings ──
+    getSettings: async () => {
+        return api.get('/settings');
+    },
+
+    patchSettings: async (updates: Record<string, string>) => {
+        return api.patch('/settings', updates);
+    },
+
+    getOdooUsers: async () => {
+        return api.get('/odoo/users');
+    },
+
+    resetDatabase: async () => {
+        return api.post('/settings/reset-database', {});
+    },
 };
