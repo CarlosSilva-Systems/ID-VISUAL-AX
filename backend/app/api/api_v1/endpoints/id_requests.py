@@ -231,12 +231,17 @@ async def transfer_manual_request(
             activity_id = existing[0]['id']
             created = False
         else:
-            # 2d. Create Activity (Full Payload)
-            deadline = datetime.now().strftime("%Y-%m-%d")
-            note_content = f"Solicitante: {req.requester_name or 'N/A'}<br/>Nota: {req.notes or ''}"
-            
-            # Use configured user or default to ensure assignment
+            # 2d. Resolve Assignee (Dorival)
             user_id = settings.ODOO_ACTIVITY_USER_ID
+            dorival_domain = [['name', 'ilike', 'DORIVAL BONIFACIO DE SOUZA JUNIOR']]
+            dorival_users = await client.search_read('res.users', domain=dorival_domain, fields=['id'], limit=1)
+            
+            if dorival_users:
+                user_id = dorival_users[0]['id']
+            else:
+                print("WARNING: User 'DORIVAL BONIFACIO DE SOUZA JUNIOR' not found in Odoo. Falling back to default assignee.")
+            
+            # 2e. Create Activity (Full Payload)
             
             new_act = await client.call_kw('mail.activity', 'create', args=[{
                 'res_model_id': res_model_id,

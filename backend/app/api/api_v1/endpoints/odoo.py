@@ -55,11 +55,13 @@ async def get_odoo_mos(
             print(f"Warning: Failed to fetch activity type: {e}")
 
         # ── Step 2: Search Activities ──
-        # Fallback to summary check if type not found
+        # Fix: Use OR condition to catch activities by ID or by summary
         domain = [['res_model', '=', 'mrp.production']]
         
         if activity_type_id:
+            domain.append('|')
             domain.append(['activity_type_id', '=', activity_type_id])
+            domain.append(['summary', 'ilike', 'Imprimir ID Visual'])
         else:
             domain.append(['summary', 'ilike', 'Imprimir ID Visual'])
             
