@@ -29,6 +29,17 @@ const memoPromise = <T,>(fn: () => Promise<T>) => {
     };
 };
 
+const formatDate = (dateStr: string | null | undefined): string => {
+    if (!dateStr) return '-';
+    try {
+        // Se já vier com T ou for apenas YYYY-MM-DD
+        const date = new Date(dateStr.includes('T') ? dateStr : dateStr + 'T00:00:00');
+        return date.toLocaleDateString('pt-BR');
+    } catch (e) {
+        return dateStr;
+    }
+};
+
 export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const [odooMOs, setOdooMOs] = useState<Fabrication[]>([]);
     const [manualRequests, setManualRequests] = useState<Fabrication[]>([]);
@@ -38,16 +49,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const versionsRef = useRef<SyncStatus>({ odoo_version: '', requests_version: '' });
 
-    const formatDate = (dateStr: string | null | undefined): string => {
-        if (!dateStr) return '-';
-        try {
-            // Se já vier com T ou for apenas YYYY-MM-DD
-            const date = new Date(dateStr.includes('T') ? dateStr : dateStr + 'T00:00:00');
-            return date.toLocaleDateString('pt-BR');
-        } catch (e) {
-            return dateStr;
-        }
-    };
+
 
     const fetchMOs = useCallback(async () => {
         setLoadingMOs(true);
@@ -93,7 +95,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         } finally {
             setLoadingMOs(false);
         }
-    }, [formatDate]);
+    }, []);
 
     const fetchManualRequests = useCallback(async () => {
         setLoadingRequests(true);
@@ -122,7 +124,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         } finally {
             setLoadingRequests(false);
         }
-    }, [formatDate]);
+    }, []);
 
     const memoFetchMOs = useMemo(() => memoPromise(fetchMOs), [fetchMOs]);
     const memoFetchManualRequests = useMemo(() => memoPromise(fetchManualRequests), [fetchManualRequests]);
