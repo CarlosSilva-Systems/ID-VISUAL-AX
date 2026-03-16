@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     SECRET_KEY: str = "CHANGE_THIS_TO_A_SECURE_SECRET_KEY"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 8  # 8 days
     ALGORITHM: str = "HS256"
+    ODOO_WEBHOOK_SECRET: str = "SET_THIS_IN_ENV_FOR_SECURITY"
     
     # Fernet Implementation (32 url-safe base64-encoded bytes)
     # Generate one e.g. with: cryptography.fernet.Fernet.generate_key().decode()

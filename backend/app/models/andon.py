@@ -107,3 +107,22 @@ class AndonCall(SQLModel, table=True):
     # Campos de integração (preenchidos se o fluxo Odoo for disparado)
     odoo_picking_id: Optional[int] = Field(default=None)
     odoo_activity_id: Optional[int] = Field(default=None)
+
+class SyncQueue(SQLModel, table=True):
+    """Fila de sincronização para comandos enviados ao Odoo."""
+    __tablename__ = "sync_queue"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    action: str  # ex: 'pause_workorder', 'resolve_activity'
+    payload: str  # JSON com os argumentos da ação
+    
+    # Estados: PENDING | PROCESSING | COMPLETED | FAILED
+    status: str = Field(default="PENDING", index=True)
+    
+    retry_count: int = Field(default=0)
+    max_retries: int = Field(default=5)
+    last_error: Optional[str] = Field(default=None)
+    
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    processed_at: Optional[datetime] = Field(default=None)
