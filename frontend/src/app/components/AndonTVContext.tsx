@@ -14,7 +14,7 @@ export interface TVWorkcenter {
     id: number;
     name: string;
     code: string;
-    status: 'verde' | 'amarelo' | 'vermelho' | 'cinza';
+    status: 'verde' | 'amarelo' | 'vermelho' | 'cinza' | 'amarelo_suave';
     operational_status: string;
     has_active_production: boolean;
     operator_name: string;
@@ -23,6 +23,8 @@ export interface TVWorkcenter {
     stage: string;
     started_at: string | null;
     is_online: boolean;
+    sync_pending?: boolean;
+    active_calls_count?: number;
 }
 
 export interface TVCall {
