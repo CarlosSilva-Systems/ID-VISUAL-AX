@@ -5,7 +5,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
     Activity, AlertTriangle, CheckCircle2, Clock, Factory,
-    Image as ImageIcon, MonitorPlay, Package, Users, Wifi, WifiOff, Zap,
+    Image as ImageIcon, MonitorPlay, Package, Users, Signal as Wifi, SignalLow as WifiOff, Zap,
     AlertCircle, Info, ChevronRight
 } from 'lucide-react';
 import { AndonTVProvider, LogType, TVCall, TVIDRequest, TVLog, TVWorkcenter, useAndonTV } from './AndonTVContext';
@@ -156,7 +156,7 @@ function PanelResumo({ workcenters, calls, idRequests }: {
     const normalizedCalls = Array.isArray(calls) ? calls : [];
     const normalizedIdRequests = Array.isArray(idRequests) ? idRequests : [];
 
-    const verdes = normalizedWcs.filter(w => w?.status === 'verde').length;
+    const verdes = normalizedWcs.filter(w => w?.status === 'verde' || w?.status === 'amarelo_suave').length;
     const amarelos = normalizedWcs.filter(w => w?.status === 'amarelo').length;
     const vermelhos = normalizedWcs.filter(w => w?.status === 'vermelho').length;
     const cinzas = normalizedWcs.filter(w => w?.status === 'cinza').length;
@@ -315,12 +315,13 @@ function TVProductionCard({ wc }: { wc: TVWorkcenter }) {
     const isGreen = wc.status === 'verde';
     const isRed = wc.status === 'vermelho';
     const isYellow = wc.status === 'amarelo';
+    const isSoftYellow = wc.status === 'amarelo_suave';
 
     return (
         <div
             className={cn(
-                "rounded-2xl p-4 flex flex-col gap-3 border-2 transition-all shadow-lg",
-                isGreen ? "bg-emerald-950/40 border-emerald-600/50 text-emerald-100" :
+                "rounded-2xl p-4 flex flex-col gap-3 border-2 transition-all shadow-lg relative",
+                isGreen || isSoftYellow ? "bg-emerald-950/40 border-emerald-600/50 text-emerald-100" :
                     isRed ? "bg-rose-950/50 border-rose-600/50 text-rose-100 animate-pulse" :
                         isYellow ? "bg-amber-950/40 border-amber-600/50 text-amber-100" :
                             "bg-slate-900/40 border-slate-800/60 text-slate-400"
@@ -343,6 +344,11 @@ function TVProductionCard({ wc }: { wc: TVWorkcenter }) {
                         </div>
                     )}
                 </div>
+                {isSoftYellow && (
+                    <div className="absolute top-4 right-4">
+                        <AlertTriangle className="w-5 h-5 text-amber-500 animate-pulse" />
+                    </div>
+                )}
             </div>
 
             <div className="space-y-1.5 border-y border-white/5 py-2">
@@ -367,6 +373,12 @@ function TVProductionCard({ wc }: { wc: TVWorkcenter }) {
                 )}>
                     {wc.is_online === false ? "OFFLINE" : wc.operational_status}
                 </div>
+
+                {wc.sync_pending && (
+                    <div className="flex items-center gap-1 text-[9px] font-black text-blue-400 animate-pulse uppercase tracking-tighter">
+                        <Clock size={10} /> Sync Odoo
+                    </div>
+                )}
 
                 {wc.has_active_production && (
                     <div className="flex items-center gap-1.5 text-white/50">
@@ -701,7 +713,7 @@ function AndonTVInner() {
 
                 {/* Connection */}
                 <div className={`flex items-center gap-1.5 text-xs font-semibold ${isConnected ? 'text-emerald-500' : 'text-red-500'}`}>
-                    {isConnected ? <Wifi className="w-4 h-4" /> : <WifiOff className="w-4 h-4" />}
+                    <span>•</span>
                     {isConnected ? 'Online' : 'Sem sinal'}
                 </div>
 
