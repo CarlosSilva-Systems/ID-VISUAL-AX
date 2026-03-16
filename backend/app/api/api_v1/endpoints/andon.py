@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel import select
 from typing import Any, Dict, List, Optional
@@ -7,13 +7,15 @@ from pydantic import BaseModel
 
 from app.api.deps import get_session, get_odoo_client
 from app.core.config import settings
-from app.models.andon import AndonStatus, AndonEvent, AndonMaterialRequest, AndonCall
+from app.models.andon import AndonStatus, AndonEvent, AndonMaterialRequest, AndonCall, SyncQueue
 from app.models.id_request import IDRequest, IDRequestStatus
 from app.models.manufacturing import ManufacturingOrder
 from app.services.odoo_utils import normalize_label
+from app.services.sync_service import add_to_sync_queue, process_sync_queue
 
 import logging
 import traceback
+import json
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
@@ -137,7 +139,9 @@ async def get_workcenters_status(
             p_info = production_map.get(p_id, {}) if p_id else {}
             
             wo_data = {
-                "mo_name": normalize_label(p_info.get('x_studio_nome_da_obra') or p_info.get('name') or "---"),
+                "obra": normalize_label(p_info.get('x_studio_nome_da_obra') or "Sem Obra"),
+                "fabrication": normalize_label(p_info.get('name') or "---"),
+                "mo_name": normalize_label(f"{p_info.get('x_studio_nome_da_obra') or '---'} | {p_info.get('name') or '---'}"),
                 "date_start": wo.get('date_start'),
                 "state": wo.get('state'),
                 "user_name": normalize_label(wo.get('user_id'))
@@ -151,16 +155,49 @@ async def get_workcenters_status(
             else:
                 wc_data_enriched[wc_id]["planned"].append(wo_data)
 
-        # 5. Montar Resposta Final
+        # 5. Buscar Fila de Sincronização para flags de pendência
+        stmt_sync = select(SyncQueue).where(SyncQueue.status.in_(["PENDING", "FAILED", "PROCESSING"]))
+        res_sync = await session.execute(stmt_sync)
+        sync_items = res_sync.scalars().all()
+        wc_sync_map = {}
+        for item in sync_items:
+            try:
+                p = json.loads(item.payload)
+                # Tentar mapear para workcenter_id (pode exigir busca se payload só tiver wo_id)
+                if "workcenter_id" in p:
+                    wc_sync_map[p["workcenter_id"]] = True
+            except: pass
+
+        # 6. Montar Resposta Final com Regras de Precedência
         response = []
         for wc in odoo_wcs:
             wc_id = wc["id"]
-            local_status = local_statuses.get(wc_id, "cinza")
+            active_calls = wc_calls_map.get(wc_id, [])
             enriched = wc_data_enriched.get(wc_id, {"current": None, "planned": []})
             
-            status_color = local_status
-            if status_color not in ("amarelo", "vermelho") and enriched["current"]:
+            # --- Regra de Precedência ---
+            red_calls = [c for c in active_calls if c.color == "RED"]
+            yellow_stop_calls = [c for c in active_calls if c.color == "YELLOW" and c.is_stop]
+            yellow_soft_calls = [c for c in active_calls if c.color == "YELLOW" and not c.is_stop]
+            
+            status_color = "cinza"
+            if red_calls:
+                status_color = "vermelho"
+            elif yellow_stop_calls:
+                status_color = "amarelo"
+            elif yellow_soft_calls:
+                # Amarelo Suave: se estiver produzindo (progress), prevalece o verde como fundo
+                # mas mantemos a flag para o frontend mostrar o ícone/alerta
+                status_color = "amarelo_suave" if enriched["current"] else "amarelo"
+            elif enriched["current"]:
                 status_color = "verde"
+            elif enriched["planned"]:
+                status_color = "cinza" # Ou algum status de "preparado"
+            
+            # Se o Odoo diz que está pausado mas não temos chamado bloqueante, 
+            # forçamos cinza (Produção Parada)
+            if status_color == "verde" and enriched["current"] and enriched["current"]["state"] in ["pause", "pending"]:
+                status_color = "cinza"
 
             current_mo = enriched["current"]["mo_name"] if enriched["current"] else "Sem fabricação em andamento"
             owner_name = enriched["current"]["user_name"] if enriched["current"] else "Sem responsável definido"
@@ -177,7 +214,9 @@ async def get_workcenters_status(
                 "owner_name": owner_name,
                 "current_mo": current_mo,
                 "started_at": started_at,
-                "planned_mos": sorted(enriched["planned"], key=lambda x: str(x.get('date_start') or ""))[:5]
+                "planned_mos": sorted(enriched["planned"], key=lambda x: str(x.get('date_start') or ""))[:5],
+                "sync_pending": wc_sync_map.get(wc_id, False),
+                "active_calls_count": len(active_calls)
             })
         
         return response
@@ -198,6 +237,46 @@ async def get_current_order(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@router.post("/trigger/{color}")
+async def trigger_andon_basic(
+    color: str,
+    req: TriggerCinzaVerdeRequest,
+    session: AsyncSession = Depends(get_session)
+):
+    """
+    Endpoint para acionamentos básicos (verde/cinza) que não geram chamados estruturados,
+    ou para retornar um posto ao estado normal.
+    """
+    from app.api.api_v1.endpoints.sync import update_sync_version
+    
+    # 1. Atualizar o cache de status
+    await update_or_create_status(
+        session, 
+        req.workcenter_id, 
+        req.workcenter_name, 
+        req.status, # 'verde' ou 'cinza'
+        req.triggered_by
+    )
+    
+    # 2. Se o status for verde, resolver chamados abertos para este workcenter
+    if req.status == "verde":
+        stmt = select(AndonCall).where(
+            AndonCall.workcenter_id == req.workcenter_id,
+            AndonCall.status != "RESOLVED"
+        )
+        result = await session.execute(stmt)
+        active_calls = result.scalars().all()
+        for call in active_calls:
+            call.status = "RESOLVED"
+            call.resolved_note = f"Resolvido por {req.triggered_by} via Produção Normal"
+            call.updated_at = datetime.utcnow()
+            session.add(call)
+    
+    update_sync_version("andon_version")
+    await session.commit()
+    
+    return {"status": "ok", "message": f"Status alterado para {req.status}"}
+
 class AndonCallCreate(BaseModel):
     color: str
     category: str
@@ -216,6 +295,7 @@ class AndonCallUpdate(BaseModel):
 @router.post("/calls")
 async def create_andon_call(
     req: AndonCallCreate,
+    background_tasks: BackgroundTasks,
     session: AsyncSession = Depends(get_session),
     odoo: Any = Depends(get_odoo_client)
 ):
@@ -237,20 +317,44 @@ async def create_andon_call(
     await session.commit()
     await session.refresh(call)
 
-    if req.color == "YELLOW" and req.category == "Material":
-        picking_type_id = settings.ANDON_INTERNAL_PICKING_TYPE_ID
-        if picking_type_id and req.mo_id:
-            res = await odoo.create_internal_picking(0, req.mo_id, req.workcenter_name, call.id, picking_type_id)
-            if res["path"] == "odoo_picking":
-                call.odoo_picking_id = res["picking_id"]
-                await odoo.post_chatter_message(req.mo_id, f"📦 <b>Andon Amarelo</b>: {req.reason} (Chamado #{call.id})")
-    elif req.color == "RED":
-        if req.mo_id:
-            wo = await odoo.get_active_workorder(req.workcenter_id, settings.ANDON_WO_STATES)
-            if wo:
-                pause_res = await odoo.pause_workorder(wo["id"])
-                call.odoo_activity_id = await odoo.create_andon_activity(req.mo_id, req.reason, settings.ANDON_ENGINEERING_USER_ID)
-                await odoo.post_chatter_message(req.mo_id, f"🔴 <b>Andon Vermelho</b>: {req.reason} (Chamado #{call.id})")
+    # 1. Integração Odoo via Background Tasks para não travar a UI
+    async def process_odoo_integration():
+        # Re-obter sessão se necessário ou usar o odoo client injetado 
+        # (Nota: o odoo client injetado pode ser fechado se a request terminar, 
+        # melhor injetar na Task ou usar um factory)
+        try:
+            if req.color == "YELLOW" and req.category == "Material":
+                picking_type_id = settings.ANDON_INTERNAL_PICKING_TYPE_ID
+                if picking_type_id and req.mo_id:
+                    res = await odoo.create_internal_picking(0, req.mo_id, req.workcenter_name, call.id, picking_type_id)
+                    if res["path"] == "odoo_picking":
+                        call.odoo_picking_id = res["picking_id"]
+                        await odoo.post_chatter_message(req.mo_id, f"📦 <b>Andon Amarelo</b>: {req.reason} (Chamado #{call.id})")
+                
+                # Pausa Odoo se for Bloqueante
+                if req.is_stop and req.mo_id:
+                    wo = await odoo.get_active_workorder(req.workcenter_id, settings.ANDON_WO_STATES)
+                    if wo:
+                        # Adicionar à fila de sincronização para resiliência
+                        await add_to_sync_queue(session, "pause_workorder", {"workorder_id": wo["id"]})
+                        background_tasks.add_task(process_sync_queue, session, odoo)
+
+            elif req.color == "RED":
+                if req.mo_id:
+                    wo = await odoo.get_active_workorder(req.workcenter_id, settings.ANDON_WO_STATES)
+                    if wo:
+                        # Adicionar à fila de sincronização
+                        await add_to_sync_queue(session, "pause_workorder", {"workorder_id": wo["id"]})
+                        background_tasks.add_task(process_sync_queue, session, odoo)
+                        
+                        call.odoo_activity_id = await odoo.create_andon_activity(req.mo_id, req.reason, settings.ANDON_ENGINEERING_USER_ID)
+                        await odoo.post_chatter_message(req.mo_id, f"🔴 <b>Andon Vermelho</b>: {req.reason} (Chamado #{call.id})")
+            
+            await session.commit()
+        except Exception as e:
+            logger.error(f"Error in background Odoo integration for call {call.id}: {e}")
+
+    background_tasks.add_task(process_odoo_integration)
 
     await update_or_create_status(session, req.workcenter_id, req.workcenter_name, req.color.lower(), req.triggered_by)
     update_sync_version("andon_version")
