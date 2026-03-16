@@ -1,5 +1,5 @@
 from typing import Generator, Optional
-from fastapi import Depends, HTTPException, status, Query
+from fastapi import Depends, HTTPException, status, Query, Header
 from fastapi.security import OAuth2PasswordBearer
 from jose import jwt, JWTError
 from pydantic import ValidationError
@@ -65,3 +65,12 @@ async def get_odoo_client():
         yield client
     finally:
         await client.close()
+
+async def verify_webhook_secret(
+    x_andon_webhook_secret: str = Header(..., alias="X-Andon-Webhook-Secret")
+):
+    if x_andon_webhook_secret != settings.ODOO_WEBHOOK_SECRET:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid webhook secret"
+        )
