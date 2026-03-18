@@ -179,9 +179,10 @@ async def search_mos(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Odoo MO search error: {e}")
+        request_id = str(uuid.uuid4())[:8]
+        logger.error(f"Odoo MO search error [ref:{request_id}]: {e}")
         traceback.print_exc()
-        raise HTTPException(status_code=502, detail=f"Falha ao consultar Odoo: {str(e)}")
+        raise HTTPException(status_code=502, detail=f"Falha ao consultar Odoo [ref: {request_id}]")
     finally:
         await client.close()
 
@@ -424,9 +425,10 @@ async def create_manual_request(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Manual request creation error: {e}")
+        request_id = str(uuid.uuid4())[:8]
+        logger.error(f"Manual request creation error [ref:{request_id}]: {e}")
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Request creation error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Request creation error [ref: {request_id}]")
 
 
 # ── GET /production/blueprints ────────────────────────────────────
