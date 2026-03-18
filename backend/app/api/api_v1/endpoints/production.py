@@ -180,8 +180,7 @@ async def search_mos(
         raise
     except Exception as e:
         request_id = str(uuid.uuid4())[:8]
-        logger.error(f"Odoo MO search error [ref:{request_id}]: {e}")
-        traceback.print_exc()
+        logger.exception(f"Odoo MO search error [ref:{request_id}]: {e}")
         raise HTTPException(status_code=502, detail=f"Falha ao consultar Odoo [ref: {request_id}]")
     finally:
         await client.close()
@@ -426,8 +425,7 @@ async def create_manual_request(
         raise
     except Exception as e:
         request_id = str(uuid.uuid4())[:8]
-        logger.error(f"Manual request creation error [ref:{request_id}]: {e}")
-        traceback.print_exc()
+        logger.exception(f"Manual request creation error [ref:{request_id}]: {e}")
         raise HTTPException(status_code=500, detail=f"Request creation error [ref: {request_id}]")
 
 

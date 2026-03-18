@@ -43,7 +43,7 @@ async def get_odoo_mos(
             if activity_types:
                 activity_type_id = activity_types[0]['id']
         except Exception as e:
-            print(f"Warning: Failed to fetch activity type: {e}")
+            logger.warning(f"Failed to fetch activity type: {e}")
 
         # ── Step 2: Search Activities ──
         # Fix: Use OR condition to catch activities by ID or by summary
@@ -98,7 +98,7 @@ async def get_odoo_mos(
                 fields=safe_fields + ['date_start']
             )
         except Exception as e:
-            print(f"Warning: Failed to fetch 'date_start', trying 'date_planned_start': {e}")
+            logger.warning(f"Failed to fetch 'date_start', trying 'date_planned_start': {e}")
             try:
                 odoo_mos = await client.search_read(
                     'mrp.production', 
@@ -109,7 +109,7 @@ async def get_odoo_mos(
                 for m in odoo_mos:
                     m['date_start'] = m.get('date_planned_start')
             except Exception as e2:
-                 print(f"Warning: Failed to fetch date fields, fetching base only: {e2}")
+                 logger.warning(f"Failed to fetch date fields, fetching base only: {e2}")
                  odoo_mos = await client.search_read(
                     'mrp.production', 
                     domain=mo_domain, 
@@ -181,7 +181,7 @@ async def get_odoo_mos(
                         item["from_production"] = True
                         item["production_requester"] = transferred_map[item["odoo_mo_id"]]
             except Exception as e:
-                print(f"Warning: Failed to decorate with local requests: {e}")
+                logger.warning(f"Failed to decorate with local requests: {e}")
                 # Don't fail the whole request just for this decoration
 
         return final_list
@@ -190,8 +190,7 @@ async def get_odoo_mos(
         error_type = type(e).__name__
         safe_msg = str(e).replace(settings.ODOO_PASSWORD or "", "***")
         request_id = str(uuid.uuid4())[:8]
-        logger.error(f"CRITICAL ODOO ERROR [{error_type}] [ref:{request_id}]: {safe_msg}")
-        traceback.print_exc()
+        logger.exception(f"CRITICAL ODOO ERROR [{error_type}] [ref:{request_id}]: {safe_msg}")
         
         # Se for um erro de timeout mesmo após retentativas
         if "Timeout" in error_type or "deadline" in safe_msg.lower():
