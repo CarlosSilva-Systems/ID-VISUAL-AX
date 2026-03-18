@@ -3,6 +3,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel import select
 from typing import Any, Dict, List, Optional
 from datetime import datetime, timedelta
+import uuid
 from pydantic import BaseModel
 
 from app.api.deps import get_session, get_odoo_client
@@ -222,9 +223,10 @@ async def get_workcenters_status(
         return response
 
     except Exception as e:
+        request_id = str(uuid.uuid4())[:8]
         error_msg = traceback.format_exc()
-        logger.error(f"Error in get_workcenters_status: {error_msg}")
-        raise HTTPException(status_code=500, detail=f"Erro interno no servidor: {str(e)}")
+        logger.error(f"Error in get_workcenters_status [ref:{request_id}]: {error_msg}")
+        raise HTTPException(status_code=500, detail=f"Erro interno no servidor [ref: {request_id}]")
 
 @router.get("/workcenters/{wc_id}/current_order")
 async def get_current_order(
@@ -235,7 +237,9 @@ async def get_current_order(
         wo = await odoo.get_active_workorder(wc_id, settings.ANDON_WO_STATES)
         return wo
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        request_id = str(uuid.uuid4())[:8]
+        logger.error(f"Error in get_current_order [ref:{request_id}]: {e}")
+        raise HTTPException(status_code=500, detail=f"Erro interno no servidor [ref: {request_id}]")
 
 @router.post("/trigger/{color}")
 async def trigger_andon_basic(
@@ -441,8 +445,9 @@ async def get_tv_data(
             
         return tv_data
     except Exception as e:
-        logger.error(f"Error in get_tv_data: {traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail=str(e))
+        request_id = str(uuid.uuid4())[:8]
+        logger.error(f"Error in get_tv_data [ref:{request_id}]: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Erro interno no servidor [ref: {request_id}]")
 
 @router.get("/downtime")
 async def get_downtime_report(

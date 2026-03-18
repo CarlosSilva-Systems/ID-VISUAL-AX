@@ -1,4 +1,5 @@
 from typing import List, Dict, Any, Optional as Opt
+import uuid
 from uuid import UUID
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -369,10 +370,11 @@ async def update_batch_task(
         raise e
     except Exception as e:
         import traceback
+        request_id = str(uuid.uuid4())[:8]
         err = traceback.format_exc()
         with open("debug_trace.log", "a") as f:
-            f.write(f"ERROR IN UPDATE TASK: {err}\n")
-        raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}")
+            f.write(f"ERROR IN UPDATE TASK [ref:{request_id}]: {err}\n")
+        raise HTTPException(status_code=500, detail=f"Internal Server Error [ref: {request_id}]")
 
 class CreateBatchRequest(SQLModel):
     mo_ids: List[int] # Odoo IDs
@@ -410,7 +412,9 @@ async def create_batch(
         )
         await client.close()
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Odoo Fetch Error: {str(e)}")
+        request_id = str(uuid.uuid4())[:8]
+        # logger.error(f"Odoo Fetch Error [ref:{request_id}]: {e}")
+        raise HTTPException(status_code=500, detail=f"Odoo Fetch Error [ref: {request_id}]")
 
     if not mos_data:
         raise HTTPException(status_code=404, detail="No MOs found in Odoo for provided IDs")

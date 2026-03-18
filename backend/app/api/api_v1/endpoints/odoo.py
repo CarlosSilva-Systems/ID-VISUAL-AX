@@ -1,5 +1,6 @@
 from typing import Any, List
 import traceback
+import uuid
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import select, col
@@ -188,7 +189,8 @@ async def get_odoo_mos(
     except Exception as e:
         error_type = type(e).__name__
         safe_msg = str(e).replace(settings.ODOO_PASSWORD or "", "***")
-        logger.error(f"CRITICAL ODOO ERROR [{error_type}]: {safe_msg}")
+        request_id = str(uuid.uuid4())[:8]
+        logger.error(f"CRITICAL ODOO ERROR [{error_type}] [ref:{request_id}]: {safe_msg}")
         traceback.print_exc()
         
         # Se for um erro de timeout mesmo após retentativas
@@ -200,7 +202,7 @@ async def get_odoo_mos(
             
         raise HTTPException(
             status_code=502, 
-            detail=f"Erro de Conectividade Odoo: {safe_msg}"
+            detail=f"Erro de Conectividade Odoo [ref: {request_id}]"
         )
     finally:
         await client.close()
@@ -229,7 +231,8 @@ async def get_odoo_users(
         )
         return users
     except Exception as e:
-        logger.error(f"Failed to fetch Odoo users: {e}")
-        raise HTTPException(status_code=502, detail=f"Erro ao buscar usuários no Odoo: {str(e)}")
+        request_id = str(uuid.uuid4())[:8]
+        logger.error(f"Failed to fetch Odoo users [ref:{request_id}]: {e}")
+        raise HTTPException(status_code=502, detail=f"Erro ao buscar usuários no Odoo [ref: {request_id}]")
     finally:
         await client.close()
