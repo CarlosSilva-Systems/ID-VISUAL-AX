@@ -322,43 +322,57 @@ async def create_andon_call(
     await session.refresh(call)
 
     # 1. Integração Odoo via Background Tasks para não travar a UI
-    async def process_odoo_integration():
-        # Re-obter sessão se necessário ou usar o odoo client injetado 
-        # (Nota: o odoo client injetado pode ser fechado se a request terminar, 
-        # melhor injetar na Task ou usar um factory)
+    async def process_odoo_integration(call_id: int, req: AndonCallCreate):
+        from app.db.session import async_session_factory
+        from app.services.odoo_client import OdooClient
+        
+        local_odoo = OdooClient(
+            url=settings.ODOO_URL,
+            db=settings.ODOO_DB,
+            auth_type=settings.ODOO_AUTH_TYPE,
+            login=settings.ODOO_LOGIN,
+            secret=settings.ODOO_PASSWORD
+        )
         try:
-            if req.color == "YELLOW" and req.category == "Material":
-                picking_type_id = settings.ANDON_INTERNAL_PICKING_TYPE_ID
-                if picking_type_id and req.mo_id:
-                    res = await odoo.create_internal_picking(0, req.mo_id, req.workcenter_name, call.id, picking_type_id)
-                    if res["path"] == "odoo_picking":
-                        call.odoo_picking_id = res["picking_id"]
-                        await odoo.post_chatter_message(req.mo_id, f"📦 <b>Andon Amarelo</b>: {req.reason} (Chamado #{call.id})")
+            async with async_session_factory() as local_session:
+                stmt_call = select(AndonCall).where(AndonCall.id == call_id)
+                res = await local_session.execute(stmt_call)
+                local_call = res.scalars().first()
+                if not local_call:
+                    return
+
+                if req.color == "YELLOW" and req.category == "Material":
+                    picking_type_id = settings.ANDON_INTERNAL_PICKING_TYPE_ID
+                    if picking_type_id and req.mo_id:
+                        res_picking = await local_odoo.create_internal_picking(0, req.mo_id, req.workcenter_name, local_call.id, picking_type_id)
+                        if res_picking["path"] == "odoo_picking":
+                            local_call.odoo_picking_id = res_picking["picking_id"]
+                            await local_odoo.post_chatter_message(req.mo_id, f"📦 <b>Andon Amarelo</b>: {req.reason} (Chamado #{local_call.id})")
+                    
+                    if req.is_stop and req.mo_id:
+                        wo = await local_odoo.get_active_workorder(req.workcenter_id, settings.ANDON_WO_STATES)
+                        if wo:
+                            await add_to_sync_queue(local_session, "pause_workorder", {"workorder_id": wo["id"]})
+                            await process_sync_queue(local_session, local_odoo)
+
+                elif req.color == "RED":
+                    if req.mo_id:
+                        wo = await local_odoo.get_active_workorder(req.workcenter_id, settings.ANDON_WO_STATES)
+                        if wo:
+                            await add_to_sync_queue(local_session, "pause_workorder", {"workorder_id": wo["id"]})
+                            await process_sync_queue(local_session, local_odoo)
+                            
+                            local_call.odoo_activity_id = await local_odoo.create_andon_activity(req.mo_id, req.reason, settings.ANDON_ENGINEERING_USER_ID)
+                            await local_odoo.post_chatter_message(req.mo_id, f"🔴 <b>Andon Vermelho</b>: {req.reason} (Chamado #{local_call.id})")
                 
-                # Pausa Odoo se for Bloqueante
-                if req.is_stop and req.mo_id:
-                    wo = await odoo.get_active_workorder(req.workcenter_id, settings.ANDON_WO_STATES)
-                    if wo:
-                        # Adicionar à fila de sincronização para resiliência
-                        await add_to_sync_queue(session, "pause_workorder", {"workorder_id": wo["id"]})
-                        background_tasks.add_task(process_sync_queue, session, odoo)
-
-            elif req.color == "RED":
-                if req.mo_id:
-                    wo = await odoo.get_active_workorder(req.workcenter_id, settings.ANDON_WO_STATES)
-                    if wo:
-                        # Adicionar à fila de sincronização
-                        await add_to_sync_queue(session, "pause_workorder", {"workorder_id": wo["id"]})
-                        background_tasks.add_task(process_sync_queue, session, odoo)
-                        
-                        call.odoo_activity_id = await odoo.create_andon_activity(req.mo_id, req.reason, settings.ANDON_ENGINEERING_USER_ID)
-                        await odoo.post_chatter_message(req.mo_id, f"🔴 <b>Andon Vermelho</b>: {req.reason} (Chamado #{call.id})")
-            
-            await session.commit()
+                await local_session.commit()
         except Exception as e:
-            logger.error(f"Error in background Odoo integration for call {call.id}: {e}")
+            request_id = str(uuid.uuid4())[:8]
+            logger.exception(f"Error in background Odoo integration for call {call_id} [ref:{request_id}]: {e}")
+        finally:
+            await local_odoo.close()
 
-    background_tasks.add_task(process_odoo_integration)
+    background_tasks.add_task(process_odoo_integration, call.id, req)
 
     await update_or_create_status(session, req.workcenter_id, req.workcenter_name, req.color.lower(), req.triggered_by)
     update_sync_version("andon_version")
