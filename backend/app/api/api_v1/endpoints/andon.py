@@ -1,4 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+
+limiter = Limiter(key_func=get_remote_address)
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel import select
 from typing import Any, Dict, List, Optional
@@ -242,7 +246,9 @@ async def get_current_order(
         raise HTTPException(status_code=500, detail=f"Erro interno no servidor [ref: {request_id}]")
 
 @router.post("/trigger/{color}")
+@limiter.limit("5/second")
 async def trigger_andon_basic(
+    request: Request,
     color: str,
     req: TriggerCinzaVerdeRequest,
     session: AsyncSession = Depends(get_session)
@@ -297,7 +303,9 @@ class AndonCallUpdate(BaseModel):
     resolved_note: Optional[str] = None
 
 @router.post("/calls")
+@limiter.limit("5/second")
 async def create_andon_call(
+    request: Request,
     req: AndonCallCreate,
     background_tasks: BackgroundTasks,
     session: AsyncSession = Depends(get_session),
