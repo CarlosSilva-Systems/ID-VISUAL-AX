@@ -1,11 +1,7 @@
 import sys
 import os
+import uuid
 import app
-
-print(f"DEBUG: STARTUP MAIN.PY ---------------------------------")
-print(f"DEBUG: CWD: {os.getcwd()}")
-print(f"DEBUG: APP FILE: {getattr(app, '__file__', 'unknown')}")
-# print(f"DEBUG: SYS.PATH: {sys.path}")
 
 from fastapi import FastAPI, Request
 from starlette.middleware.cors import CORSMiddleware
@@ -69,11 +65,11 @@ async def db_session_middleware(request: Request, call_next):
         response = await call_next(request)
         return response
     except Exception as e:
-        import traceback
-        traceback.print_exc()
+        request_id = str(uuid.uuid4())[:8]
+        logger.exception(f"Unhandled error [{request_id}]")
         return JSONResponse(
             status_code=500,
-            content={"detail": str(e), "traceback": traceback.format_exc()}
+            content={"detail": "Erro interno do servidor", "request_id": request_id}
         )
 
 # Set all CORS enabled origins
