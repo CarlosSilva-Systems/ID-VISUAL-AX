@@ -263,7 +263,9 @@ async def update_batch_task(
     """
     try:
         # 1. Diagnostic Logging (Root Cause Investigation)
-        print(f"DIAGNOSTIC: Update PATCH received for Batch={batch_id}, Request={payload.request_id}, Task={payload.task_code}")
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.debug(f"Update PATCH received for Batch={batch_id}, Request={payload.request_id}, Task={payload.task_code}")
 
         # 2. Fetch Request and Validate Batch Ownership (Business Security)
         req_stmt = select(IDRequest).where(IDRequest.id == payload.request_id)
@@ -274,7 +276,7 @@ async def update_batch_task(
             raise HTTPException(status_code=404, detail=f"Request {payload.request_id} not found")
         
         if req.batch_id != batch_id:
-            print(f"DIAGNOSTIC: Ownership Error. Request {req.id} belongs to Batch {req.batch_id}, not {batch_id}")
+            logger.debug(f"Ownership Error. Request {req.id} belongs to Batch {req.batch_id}, not {batch_id}")
             raise HTTPException(
                 status_code=400, 
                 detail=f"Request does not belong to the provided Batch ID. (Request Batch: {req.batch_id})"
@@ -289,7 +291,7 @@ async def update_batch_task(
         task = result.first()
         
         if not task:
-            print(f"DIAGNOSTIC: Task {payload.task_code} not found for Request {payload.request_id}. Proving Root Cause 1.")
+            logger.debug(f"Task {payload.task_code} not found for Request {payload.request_id}. Proving Root Cause 1.")
             raise HTTPException(status_code=404, detail=f"Task {payload.task_code} not found for this request.")
 
         # 2. Validation: N/A Immutable
@@ -371,9 +373,7 @@ async def update_batch_task(
     except Exception as e:
         import traceback
         request_id = str(uuid.uuid4())[:8]
-        err = traceback.format_exc()
-        with open("debug_trace.log", "a") as f:
-            f.write(f"ERROR IN UPDATE TASK [ref:{request_id}]: {err}\n")
+        logger.exception(f"ERROR IN UPDATE TASK [ref:{request_id}]: {e}")
         raise HTTPException(status_code=500, detail=f"Internal Server Error [ref: {request_id}]")
 
 class CreateBatchRequest(SQLModel):
