@@ -1,6 +1,6 @@
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 from typing import Any, Dict
@@ -33,7 +33,7 @@ async def process_sync_queue(session: AsyncSession, odoo: OdooClient):
     
     for item in items:
         item.status = "PROCESSING"
-        item.updated_at = datetime.utcnow()
+        item.updated_at = datetime.now(timezone.utc)
         session.add(item)
         await session.commit()
         
@@ -48,7 +48,7 @@ async def process_sync_queue(session: AsyncSession, odoo: OdooClient):
             
             # Adicionar outras ações conforme necessário
             
-            item.processed_at = datetime.utcnow()
+            item.processed_at = datetime.now(timezone.utc)
             item.last_error = None
         except Exception as e:
             item.retry_count += 1
@@ -56,6 +56,6 @@ async def process_sync_queue(session: AsyncSession, odoo: OdooClient):
             item.status = "FAILED" if item.retry_count >= item.max_retries else "PENDING"
             logger.error(f"Sync error for item {item.id}: {e}")
         
-        item.updated_at = datetime.utcnow()
+        item.updated_at = datetime.now(timezone.utc)
         session.add(item)
         await session.commit()
