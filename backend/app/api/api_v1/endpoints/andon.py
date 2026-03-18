@@ -6,7 +6,7 @@ limiter = Limiter(key_func=get_remote_address)
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel import select
 from typing import Any, Dict, List, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import uuid
 from pydantic import BaseModel, ConfigDict
 
@@ -72,7 +72,7 @@ async def update_or_create_status(
         session.add(record)
     else:
         record.status = status
-        record.updated_at = datetime.utcnow()
+        record.updated_at = datetime.now(timezone.utc)
         record.updated_by = user
     
     await session.commit()
@@ -282,7 +282,7 @@ async def trigger_andon_basic(
         for call in active_calls:
             call.status = "RESOLVED"
             call.resolved_note = f"Resolvido por {req.triggered_by} via Produção Normal"
-            call.updated_at = datetime.utcnow()
+            call.updated_at = datetime.now(timezone.utc)
             session.add(call)
     
     update_sync_version("andon_version")
@@ -418,7 +418,7 @@ async def update_call_status(
     if not call:
         raise HTTPException(status_code=404, detail="Chamado não encontrado")
     call.status = req.status
-    call.updated_at = datetime.utcnow()
+    call.updated_at = datetime.now(timezone.utc)
     if req.status == "RESOLVED":
         call.resolved_note = req.resolved_note
         await update_or_create_status(session, call.workcenter_id, call.workcenter_name, "verde", "System")

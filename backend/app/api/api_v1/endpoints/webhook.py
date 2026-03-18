@@ -3,7 +3,8 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel import select
 from pydantic import BaseModel, ConfigDict
 from typing import Any, Optional
-from datetime import datetime
+import time
+from datetime import datetime, timezone
 
 from app.api.deps import get_session, verify_webhook_secret, get_odoo_client
 from app.models.andon import AndonCall, AndonStatus
@@ -28,6 +29,14 @@ async def odoo_workorder_webhook(
     Recebe atualizações de estado do Odoo via Webhook.
     Implementa idempotência via timestamp e autorresolução de chamados.
     """
+    # 0. Replay protection
+    now = time.time()
+    if abs(now - payload.timestamp) > 300:
+        raise HTTPException(
+            status_code=400,
+            detail="Webhook timestamp expired or too far in the future"
+        )
+        
     # 1. Buscar a WO para identificar o workcenter
     # Nota: No futuro, o Odoo pode enviar o wc_id diretamente no payload
     wo_data = await odoo.search_read(
@@ -72,7 +81,7 @@ async def odoo_workorder_webhook(
             for call in active_calls:
                 call.status = "RESOLVED"
                 call.resolved_note = "Chamado resolvido automaticamente: Produção retomada no Odoo."
-                call.updated_at = datetime.utcnow()
+                call.updated_at = datetime.now(timezone.utc)
                 session.add(call)
                 
                 # Opcional: Log no Odoo Chatter via BackgroundTask ou direto
@@ -86,7 +95,7 @@ async def odoo_workorder_webhook(
             # o status de referência vai para cinza.
             andon_status.status = "cinza"
 
-        andon_status.updated_at = datetime.utcnow()
+        andon_status.updated_at = datetime.now(timezone.utc)
         andon_status.updated_by = "Odoo Sync"
         session.add(andon_status)
 
