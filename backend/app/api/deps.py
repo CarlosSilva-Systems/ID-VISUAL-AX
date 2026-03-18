@@ -5,6 +5,9 @@ from jose import jwt, JWTError
 from pydantic import ValidationError
 from sqlmodel.ext.asyncio.session import AsyncSession
 import uuid
+import logging
+
+logger = logging.getLogger(__name__)
 
 from app.core import security
 from app.core.config import settings
