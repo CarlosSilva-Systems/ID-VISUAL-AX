@@ -83,3 +83,19 @@ class Settings(BaseSettings):
     )
 
 settings = Settings()
+
+# --- Startup Security Validation ---
+_INSECURE_DEFAULTS = {
+    "SECRET_KEY": "CHANGE_THIS_TO_A_SECURE_SECRET_KEY",
+    "ENCRYPTION_KEY": "gX2scx5P9p8w-d5c2J5q3k5P9p8w-d5c2J5q3k5P9p8=",
+    "ODOO_WEBHOOK_SECRET": "SET_THIS_IN_ENV_FOR_SECURITY",
+}
+
+for _key, _default in _INSECURE_DEFAULTS.items():
+    if getattr(settings, _key) == _default:
+        import warnings
+        warnings.warn(
+            f"⚠️  SECURITY: '{_key}' is using the insecure default value. "
+            f"Set it in .env before deploying to production.",
+            stacklevel=2,
+        )
