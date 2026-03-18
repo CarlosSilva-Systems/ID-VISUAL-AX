@@ -12,7 +12,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from sqlmodel import select, text
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -73,6 +73,7 @@ class MOSearchResult(BaseModel):
 
 
 class ManualRequestPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     odoo_mo_id: int
     panel_type: str = Field(..., pattern=r"^(comando|distribuicao|apartamento|custom)$")
     id_types: List[str]

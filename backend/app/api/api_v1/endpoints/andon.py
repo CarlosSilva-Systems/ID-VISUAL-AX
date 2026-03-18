@@ -8,7 +8,7 @@ from sqlmodel import select
 from typing import Any, Dict, List, Optional
 from datetime import datetime, timedelta
 import uuid
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from app.api.deps import get_session, get_odoo_client
 from app.core.config import settings
@@ -28,6 +28,7 @@ router = APIRouter()
 # --- Schemas ---
 
 class TriggerAmareloRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     workcenter_id: int
     workorder_id: int
     production_id: int
@@ -35,6 +36,7 @@ class TriggerAmareloRequest(BaseModel):
     triggered_by: str
 
 class TriggerVermelhoRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     workcenter_id: int
     workorder_id: int
     production_id: int
@@ -43,6 +45,7 @@ class TriggerVermelhoRequest(BaseModel):
     triggered_by: str
 
 class TriggerCinzaVerdeRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     workcenter_id: int
     workcenter_name: str
     status: str  # verde | cinza
@@ -288,6 +291,7 @@ async def trigger_andon_basic(
     return {"status": "ok", "message": f"Status alterado para {req.status}"}
 
 class AndonCallCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     color: str
     category: str
     reason: str
@@ -299,6 +303,7 @@ class AndonCallCreate(BaseModel):
     is_stop: bool = False
 
 class AndonCallUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     status: str
     resolved_note: Optional[str] = None
 

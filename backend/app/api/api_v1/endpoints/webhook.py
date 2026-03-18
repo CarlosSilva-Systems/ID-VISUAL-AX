@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Header
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel import select
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from typing import Any, Optional
 from datetime import datetime
 
@@ -12,6 +12,7 @@ from app.api.api_v1.endpoints.sync import update_sync_version
 router = APIRouter()
 
 class OdooWorkorderWebhook(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     wo_id: int
     new_state: str
     timestamp: float
