@@ -26,7 +26,7 @@ async def run_backfill():
                 req.solicitado_em = req.created_at
                 
             # concluido_em / entregue_em herdam de updated_at se a ID já estiver resolvida
-            if req.status in [IDRequestStatus.CONCLUIDA, IDRequestStatus.ENTREGUE]:
+            if req.status == IDRequestStatus.CONCLUIDA:
                 if not req.concluido_em:
                     req.concluido_em = req.updated_at
                 if not req.entregue_em:

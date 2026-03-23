@@ -13,7 +13,6 @@ from app.core import security
 from app.core.config import settings
 from app.db.session import get_session
 from app.models.user import User
-from app.services.odoo_client import OdooClient
 
 reusable_oauth2 = OAuth2PasswordBearer(
     tokenUrl=f"{settings.API_V1_STR}/auth/login",
