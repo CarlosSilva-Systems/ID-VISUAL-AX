@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 import logging
 
 from app.api.deps import get_session, get_current_active_user
-from app.schemas.mpr_analytics import KPIResumoResponse
+from app.schemas.mpr_analytics import KPIResumoResponse, FilaAtivaResponse
 from app.services.mpr_analytics_service import MPRAnalyticsService
 from app.models.user import User
 
@@ -53,3 +53,18 @@ async def get_kpis_resumo(
     except Exception as e:
         logger.error(f"Erro em get_kpis_resumo: {str(e)}")
         raise HTTPException(status_code=500, detail="Erro interno ao calcular KPIs")
+
+@router.get("/fila-ativa", response_model=List[FilaAtivaResponse])
+async def get_fila_ativa(
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_active_user)
+):
+    """
+    Retorna a fila ativa (WIP) de IDs em andamento, incluindo aging_horas.
+    """
+    try:
+        data = await MPRAnalyticsService.get_fila_ativa(session)
+        return [FilaAtivaResponse(**item) for item in data]
+    except Exception as e:
+        logger.error(f"Erro em get_fila_ativa: {str(e)}")
+        raise HTTPException(status_code=500, detail="Erro interno ao buscar fila ativa")
