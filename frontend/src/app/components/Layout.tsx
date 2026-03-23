@@ -102,7 +102,7 @@ export const Layout = ({ children, isAdmin = false, username = "Usuário" }: Lay
         { id: "andon", label: "Painel Andon", icon: Activity, path: "/andon/painel" },
       ]
     },
-    { id: "mrp", label: "Fabricações (MRP)", icon: Factory, path: "/mrp" },
+    { id: "relatorios", label: "Relatórios", icon: BarChart3, path: "/relatorios" },
     { id: "templates", label: "Padrões (5S)", icon: LayoutTemplate, path: "/templates" },
     { id: "config", label: "Configurações", icon: Settings, path: "/admin" },
   ];

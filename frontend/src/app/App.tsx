@@ -4,7 +4,7 @@ import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-route
 import { Layout } from './components/Layout';
 import { Dashboard } from './components/Dashboard';
 import { Solicitacoes } from './components/Solicitacoes';
-import { Fabricacoes } from './components/Fabricacoes';
+import { MPRAnalyticsDashboard } from './pages/mpr/MPRAnalyticsDashboard';
 import { VisaoProducao } from './components/VisaoProducao';
 import { Configuracoes } from './components/Configuracoes';
 import { Padroes5S } from './components/Padroes5S';
@@ -94,7 +94,7 @@ function AppContent() {
               <Route path="/id-visual/solicitacoes" element={<Solicitacoes onCreateBatch={handleCreateBatch} />} />
               <Route path="/id-visual/producao" element={<VisaoProducao />} />
               <Route path="/andon/painel" element={<AndonGrid username={username} />} />
-              <Route path="/mrp" element={<Fabricacoes />} />
+              <Route path="/relatorios" element={<MPRAnalyticsDashboard />} />
               <Route path="/templates" element={<Padroes5S />} />
               <Route path="/admin" element={<Configuracoes />} />
               <Route path="/id-visual/batch/:batchId" element={
