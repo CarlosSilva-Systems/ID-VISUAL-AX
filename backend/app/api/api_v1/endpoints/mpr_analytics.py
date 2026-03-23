@@ -5,7 +5,10 @@ from datetime import datetime, timezone
 import logging
 
 from app.api.deps import get_session, get_current_active_user
-from app.schemas.mpr_analytics import KPIResumoResponse, FilaAtivaResponse
+from app.schemas.mpr_analytics import (
+    KPIResumoResponse, FilaAtivaResponse, VolumePorPeriodoItem,
+    EvolucaoTempoCicloItem, RankingResponsaveisItem
+)
 from app.services.mpr_analytics_service import MPRAnalyticsService
 from app.models.user import User
 
@@ -68,3 +71,33 @@ async def get_fila_ativa(
     except Exception as e:
         logger.error(f"Erro em get_fila_ativa: {str(e)}")
         raise HTTPException(status_code=500, detail="Erro interno ao buscar fila ativa")
+
+@router.get("/volume-por-periodo", response_model=List[VolumePorPeriodoItem])
+async def get_volume_por_periodo(
+    dates: Tuple[datetime, datetime] = Depends(parse_dates_utc),
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_active_user)
+):
+    start_date, end_date = dates
+    data = await MPRAnalyticsService.get_volume_por_periodo(session, start_date, end_date)
+    return [VolumePorPeriodoItem(**item) for item in data]
+
+@router.get("/evolucao-tempo-ciclo", response_model=List[EvolucaoTempoCicloItem])
+async def get_evolucao_tempo_ciclo(
+    dates: Tuple[datetime, datetime] = Depends(parse_dates_utc),
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_active_user)
+):
+    start_date, end_date = dates
+    data = await MPRAnalyticsService.get_evolucao_tempo_ciclo(session, start_date, end_date)
+    return [EvolucaoTempoCicloItem(**item) for item in data]
+
+@router.get("/ranking-responsaveis", response_model=List[RankingResponsaveisItem])
+async def get_ranking_responsaveis(
+    dates: Tuple[datetime, datetime] = Depends(parse_dates_utc),
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_active_user)
+):
+    start_date, end_date = dates
+    data = await MPRAnalyticsService.get_ranking_responsaveis(session, start_date, end_date)
+    return [RankingResponsaveisItem(**item) for item in data]
