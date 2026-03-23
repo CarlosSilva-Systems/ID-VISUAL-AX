@@ -26,7 +26,7 @@ export interface VolumePorPeriodoItem {
     label: string;
     solicitadas: number;
     entregues: number;
-    no_prazo: int;
+    no_prazo: number;
 }
 
 export interface EvolucaoTempoCicloItem {

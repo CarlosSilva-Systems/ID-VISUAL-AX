@@ -115,7 +115,7 @@ export function MPRAnalyticsDashboard() {
       <div className="max-w-7xl mx-auto">
         <div className="flex justify-between items-center mb-6">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Analytics Fabricações (MPR)</h1>
+            <h1 className="text-2xl font-bold text-gray-900">Relatórios de Produção (MPR)</h1>
             <p className="text-gray-500 text-sm mt-1">Visão de Produção e Ciclo de Vida de Identidade Visual</p>
           </div>
           
