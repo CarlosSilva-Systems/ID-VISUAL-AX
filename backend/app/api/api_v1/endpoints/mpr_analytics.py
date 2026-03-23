@@ -8,10 +8,13 @@ from app.api.deps import get_session, get_current_active_user
 from app.schemas.mpr_analytics import (
     KPIResumoResponse, FilaAtivaResponse, VolumePorPeriodoItem,
     EvolucaoTempoCicloItem, RankingResponsaveisItem,
-    MPRConfigResponse, MPRConfigUpdate
+    MPRConfigResponse, MPRConfigUpdate,
+    MotivoRevisaoItem, ImpactoFabricacaoItem, MetadadosResponse
 )
 from app.services.mpr_analytics_service import MPRAnalyticsService
 from app.models.user import User, UserRole
+from app.models.analytics import MotivoRevisao
+from app.models.id_request import IDRequestStatus
 
 logger = logging.getLogger(__name__)
 
@@ -132,3 +135,40 @@ async def update_mpr_config(
     await session.refresh(config)
     
     return MPRConfigResponse.model_validate(config)
+
+@router.get("/impacto-fabricacao", response_model=List[ImpactoFabricacaoItem])
+async def get_impacto_fabricacao(
+    dates: Tuple[datetime, datetime] = Depends(parse_dates_utc),
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_active_user)
+):
+    start_date, end_date = dates
+    data = await MPRAnalyticsService.get_impacto_fabricacao(session, start_date, end_date)
+    return [ImpactoFabricacaoItem(**item) for item in data]
+
+@router.get("/motivos-revisao", response_model=List[MotivoRevisaoItem])
+async def get_motivos_revisao(
+    dates: Tuple[datetime, datetime] = Depends(parse_dates_utc),
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_active_user)
+):
+    start_date, end_date = dates
+    data = await MPRAnalyticsService.get_motivos_revisao(session, start_date, end_date)
+    return [MotivoRevisaoItem(**item) for item in data]
+
+@router.get("/metadados", response_model=MetadadosResponse)
+async def get_metadados(
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_active_user)
+):
+    from sqlmodel import select
+    # Busca responsaveis do banco (ex: full_name não nulos)
+    stmt = select(User.full_name).where(User.is_active == True)
+    res = await session.execute(stmt)
+    nomes_responsaveis = [n for n in res.scalars().all() if n]
+    
+    return MetadadosResponse(
+        motivos_revisao=[m.value for m in MotivoRevisao],
+        status_options=[s.value for s in IDRequestStatus if isinstance(s, IDRequestStatus) or isinstance(s, str)],
+        responsaveis=sorted(list(set(nomes_responsaveis)))
+    )
