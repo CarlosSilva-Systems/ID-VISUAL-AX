@@ -1,11 +1,22 @@
 import React from 'react';
-import { Clock, CheckCircle, AlertTriangle, Activity, PenTool, Hash } from 'lucide-react';
+import { Clock, CheckCircle, AlertTriangle, Activity, PenTool, Hash, Info } from 'lucide-react';
 import { KPIResumo, MPRConfigResponse } from '../../../services/mprAnalytics';
+import { Tooltip, TooltipProvider } from '../ui';
 
 interface MPRKPICardsProps {
   data: KPIResumo | null;
   config: MPRConfigResponse | null;
   isLoading: boolean;
+}
+
+interface CardProps {
+  title: string;
+  value: string;
+  icon: React.ReactNode;
+  subtitle?: string | null;
+  color: string;
+  alert?: string | null;
+  tooltip: string;
 }
 
 export function MPRKPICards({ data, config, isLoading }: MPRKPICardsProps) {
@@ -27,24 +38,29 @@ export function MPRKPICards({ data, config, isLoading }: MPRKPICardsProps) {
   const formatPct = (pct: number | null) => pct !== null ? `${pct.toFixed(1)}%` : 'N/A';
 
   // Componente interno para reuso
-  const Card = ({ title, value, icon, subtitle, color, alert }: any) => (
-    <div className={`bg-white rounded-lg p-4 shadow border-l-4 ${color} relative overflow-hidden`}>
-      <div className="flex justify-between items-start">
-        <div>
-          <p className="text-sm font-medium text-gray-500 mb-1">{title}</p>
-          <h3 className="text-2xl font-bold text-gray-800">{value}</h3>
-          {subtitle && <p className="text-xs text-gray-400 mt-1">{subtitle}</p>}
+  const Card = ({ title, value, icon, subtitle, color, alert, tooltip }: CardProps) => (
+    <Tooltip content={tooltip}>
+      <div className={`bg-white rounded-lg p-4 shadow border-l-4 ${color} relative overflow-hidden transition-all hover:shadow-md cursor-help`}>
+        <div className="flex justify-between items-start">
+          <div className="flex-1">
+            <div className="flex items-center gap-1.5 mb-1">
+              <p className="text-sm font-medium text-gray-500">{title}</p>
+              <Info size={12} className="text-gray-300" />
+            </div>
+            <h3 className="text-2xl font-bold text-gray-800">{value}</h3>
+            {subtitle && <p className="text-xs text-gray-400 mt-1">{subtitle}</p>}
+          </div>
+          <div className={`p-2 rounded-md ${color.replace('border-', 'bg-').replace('-500', '-100').replace('-400', '-100')} text-${color.split('-')[1]}-600`}>
+            {icon}
+          </div>
         </div>
-        <div className={`p-2 rounded-md ${color.replace('border-', 'bg-').replace('-500', '-100')} text-${color.split('-')[1]}-600`}>
-          {icon}
-        </div>
+        {alert && (
+          <div className="absolute bottom-0 right-0 left-0 bg-red-100 text-red-700 text-xs text-center py-0.5 font-medium">
+            {alert}
+          </div>
+        )}
       </div>
-      {alert && (
-        <div className="absolute bottom-0 right-0 left-0 bg-red-100 text-red-700 text-xs text-center py-0.5 font-medium">
-          {alert}
-        </div>
-      )}
-    </div>
+    </Tooltip>
   );
 
   // SLA Lógica
@@ -53,52 +69,60 @@ export function MPRKPICards({ data, config, isLoading }: MPRKPICardsProps) {
     : false;
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 mb-6">
-      <Card 
-        title="Volumetria (Ids)"
-        value={data.total_ids_solicitadas.toString()}
-        subtitle={`${data.total_ids_entregues} entregues`}
-        icon={<Hash size={20} />}
-        color="border-blue-500"
-      />
-      
-      <Card 
-        title="Tempo de Concepção"
-        value={formatMinToHours(data.tempo_medio_concepcao_min)}
-        icon={<PenTool size={20} />}
-        color="border-purple-500"
-      />
+    <TooltipProvider>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 mb-6">
+        <Card 
+          title="Volumetria (Ids)"
+          value={data.total_ids_solicitadas.toString()}
+          subtitle={`${data.total_ids_entregues} entregues`}
+          icon={<Hash size={20} />}
+          color="border-blue-500"
+          tooltip="Volume total de requisições abertas no período selecionado."
+        />
+        
+        <Card 
+          title="Tempo de Concepção"
+          value={formatMinToHours(data.tempo_medio_concepcao_min)}
+          icon={<PenTool size={20} />}
+          color="border-purple-500"
+          tooltip="Tempo decorrido entre o início do trabalho e a conclusão interna da ID Visual."
+        />
 
-      <Card 
-        title="Tempo Médio de Ciclo"
-        value={formatMinToHours(data.tempo_medio_ciclo_completo_min)}
-        subtitle={config ? `SLA: ${config.sla_critico_horas}h` : 'Carregando SLA...'}
-        icon={<Clock size={20} />}
-        color={alertCycle ? 'border-red-500' : 'border-emerald-500'}
-        alert={alertCycle ? 'SLA Estourado' : null}
-      />
+        <Card 
+          title="Tempo Médio de Ciclo"
+          value={formatMinToHours(data.tempo_medio_ciclo_completo_min)}
+          subtitle={config ? `SLA: ${config.sla_critico_horas}h` : 'Carregando SLA...'}
+          icon={<Clock size={20} />}
+          color={alertCycle ? 'border-red-500' : 'border-emerald-500'}
+          alert={alertCycle ? 'SLA Estourado' : null}
+          tooltip="Tempo total desde a solicitação pela produção até a entrega final na linha."
+        />
 
-      <Card 
-        title="Entregas no Prazo (%)"
-        value={formatPct(data.taxa_entrega_no_prazo_pct)}
-        icon={<CheckCircle size={20} />}
-        color="border-green-500"
-      />
+        <Card 
+          title="Entregas no Prazo (%)"
+          value={formatPct(data.taxa_entrega_no_prazo_pct)}
+          icon={<CheckCircle size={20} />}
+          color="border-green-500"
+          tooltip="Porcentagem de IDs entregues dentro do tempo limite (SLA) configurado."
+        />
 
-      <Card 
-        title="Taxa de Retrabalho"
-        value={formatPct(data.taxa_retrabalho_pct)}
-        icon={<AlertTriangle size={20} />}
-        color={data.taxa_retrabalho_pct && data.taxa_retrabalho_pct > 15 ? 'border-orange-500' : 'border-blue-400'}
-      />
+        <Card 
+          title="Taxa de Retrabalho"
+          value={formatPct(data.taxa_retrabalho_pct)}
+          icon={<AlertTriangle size={20} />}
+          color={data.taxa_retrabalho_pct && data.taxa_retrabalho_pct > 15 ? 'border-orange-500' : 'border-blue-400'}
+          tooltip="Porcentagem de IDs que retornaram para revisão após a entrega inicial."
+        />
 
-      <Card 
-        title="Impacto na Produção (OF)"
-        value={formatMinToHours(data.tempo_medio_parada_of_min)}
-        subtitle={`${data.ofs_impactadas} OFs afetadas`}
-        icon={<Activity size={20} />}
-        color={data.ofs_impactadas > 0 ? 'border-red-400' : 'border-gray-400'}
-      />
-    </div>
+        <Card 
+          title="Impacto na Produção (OF)"
+          value={formatMinToHours(data.tempo_medio_parada_of_min)}
+          subtitle={`${data.ofs_impactadas} OFs afetadas`}
+          icon={<Activity size={20} />}
+          color={data.ofs_impactadas > 0 ? 'border-red-400' : 'border-gray-400'}
+          tooltip="Quantidade de Ordens de Fabricação que tiveram o fluxo bloqueado/aguardando essa ID."
+        />
+      </div>
+    </TooltipProvider>
   );
 }
