@@ -76,6 +76,13 @@ class IDRequest(SQLModel, table=True):
     started_at: Optional[datetime] = None
     finished_at: Optional[datetime] = None
     
+    # Analytics & Lifecycle Timestamps (MPR Dashboard)
+    solicitado_em: Optional[datetime] = Field(default=None, index=True)
+    iniciado_em: Optional[datetime] = Field(default=None, index=True)
+    concluido_em: Optional[datetime] = Field(default=None, index=True)
+    entregue_em: Optional[datetime] = Field(default=None, index=True)
+    aprovado_em: Optional[datetime] = Field(default=None, index=True)
+    
     version: int = Field(default=1) # Optimistic locking
     
     created_by: Optional[uuid.UUID] = Field(default=None, foreign_key="user.id")
