@@ -373,6 +373,14 @@ async def create_manual_request(
             await session.commit()
             await session.refresh(mo)
 
+        # Integração do Gatilho de Bloqueio (AGUARDANDO_ID_VISUAL)
+        from app.services.factory_block_service import FactoryBlockService
+        if mo.state.lower() == "aguardando_id_visual":
+            await FactoryBlockService.bloquear_of(session, mo.id)
+        else:
+            await FactoryBlockService.desbloquear_of(session, mo.id)
+
+
         # ── 5. Create IDRequest ──
         # Use raw notes as requested
         
