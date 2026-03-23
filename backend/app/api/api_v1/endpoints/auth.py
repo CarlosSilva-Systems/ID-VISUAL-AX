@@ -1,8 +1,12 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.security import OAuth2PasswordRequestForm
 from typing import Any
 import uuid
 import logging
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+
+limiter = Limiter(key_func=get_remote_address)
 
 from app.core.config import settings
 
@@ -15,7 +19,9 @@ from app.api.api_v1.endpoints.odoo import get_odoo_client
 router = APIRouter()
 
 @router.post("/login")
+@limiter.limit("5/minute")
 async def login_access_token(
+    request: Request,
     form_data: OAuth2PasswordRequestForm = Depends(),
     service_odoo: Any = Depends(get_odoo_client) # This is the service account
 ) -> Any:
@@ -39,7 +45,6 @@ async def login_access_token(
         try:
             session_id = await temp_odoo._jsonrpc_authenticate()
             # If we reach here, Odoo auth succeeded
-            await temp_odoo.close()
             return {
                 "access_token": create_access_token(subject=form_data.username),
                 "token_type": "bearer",
