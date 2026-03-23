@@ -123,3 +123,37 @@ export const KPICard = ({ label, value, subtext, variant = "default", onClick }:
   );
 };
 
+import * as TooltipPrimitive from "@radix-ui/react-tooltip";
+
+// Tooltip Component
+export const TooltipProvider = TooltipPrimitive.Provider;
+
+interface TooltipProps {
+  children: React.ReactNode;
+  content: React.ReactNode;
+  className?: string;
+}
+
+export const Tooltip = ({ children, content, className }: TooltipProps) => {
+  return (
+    <TooltipPrimitive.Root delayDuration={200}>
+      <TooltipPrimitive.Trigger asChild>
+        {children}
+      </TooltipPrimitive.Trigger>
+      <TooltipPrimitive.Portal>
+        <TooltipPrimitive.Content
+          side="top"
+          align="center"
+          sideOffset={5}
+          className={cn(
+            "z-[100] overflow-hidden rounded-lg bg-slate-900 px-3 py-1.5 text-xs text-white shadow-md animate-in fade-in-0 zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2",
+            className
+          )}
+        >
+          {content}
+          <TooltipPrimitive.Arrow className="fill-slate-900" />
+        </TooltipPrimitive.Content>
+      </TooltipPrimitive.Portal>
+    </TooltipPrimitive.Root>
+  );
+};
