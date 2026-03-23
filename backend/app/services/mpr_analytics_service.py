@@ -5,13 +5,25 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from typing import Optional, Dict, Any, List
 
 from app.models.id_request import IDRequest, IDRequestStatus
-from app.models.analytics import FabricacaoBlock, RevisaoIDVisual
+from app.models.analytics import FabricacaoBlock, RevisaoIDVisual, MPRConfig
 from app.models.manufacturing import ManufacturingOrder
 from app.models.user import User
 
 logger = logging.getLogger(__name__)
 
 class MPRAnalyticsService:
+    @staticmethod
+    async def get_or_create_default_config(session: AsyncSession) -> MPRConfig:
+        stmt = select(MPRConfig).limit(1)
+        res = await session.execute(stmt)
+        config = res.scalars().first()
+        if not config:
+            config = MPRConfig(sla_atencao_horas=8, sla_critico_horas=24)
+            session.add(config)
+            await session.commit()
+            await session.refresh(config)
+        return config
+
     @staticmethod
     async def get_kpis_resumo(session: AsyncSession, start_date: datetime, end_date: datetime) -> Dict[str, Any]:
         """

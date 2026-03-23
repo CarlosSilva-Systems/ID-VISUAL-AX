@@ -63,3 +63,13 @@ class MetadadosResponse(BaseModel):
     motivos_revisao: List[str]
     status_options: List[str]
     responsaveis: List[str] # Or objects with id/name
+
+class MPRConfigResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    sla_atencao_horas: int
+    sla_critico_horas: int
+
+class MPRConfigUpdate(BaseModel):
+    model_config = ConfigDict(from_attributes=True, extra="forbid")
+    sla_atencao_horas: Optional[int] = None
+    sla_critico_horas: Optional[int] = None

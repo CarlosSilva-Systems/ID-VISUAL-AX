@@ -7,10 +7,11 @@ import logging
 from app.api.deps import get_session, get_current_active_user
 from app.schemas.mpr_analytics import (
     KPIResumoResponse, FilaAtivaResponse, VolumePorPeriodoItem,
-    EvolucaoTempoCicloItem, RankingResponsaveisItem
+    EvolucaoTempoCicloItem, RankingResponsaveisItem,
+    MPRConfigResponse, MPRConfigUpdate
 )
 from app.services.mpr_analytics_service import MPRAnalyticsService
-from app.models.user import User
+from app.models.user import User, UserRole
 
 logger = logging.getLogger(__name__)
 
@@ -101,3 +102,33 @@ async def get_ranking_responsaveis(
     start_date, end_date = dates
     data = await MPRAnalyticsService.get_ranking_responsaveis(session, start_date, end_date)
     return [RankingResponsaveisItem(**item) for item in data]
+
+@router.get("/config", response_model=MPRConfigResponse)
+async def get_mpr_config(
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_active_user)
+):
+    config = await MPRAnalyticsService.get_or_create_default_config(session)
+    return MPRConfigResponse.model_validate(config)
+
+@router.patch("/config", response_model=MPRConfigResponse)
+async def update_mpr_config(
+    payload: MPRConfigUpdate,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_active_user)
+):
+    if current_user.role not in [UserRole.GESTOR, UserRole.ADMIN]:
+        raise HTTPException(status_code=403, detail="Apenas GESTOR ou ADMIN podem alterar o SLA.")
+        
+    config = await MPRAnalyticsService.get_or_create_default_config(session)
+    
+    if payload.sla_atencao_horas is not None:
+        config.sla_atencao_horas = payload.sla_atencao_horas
+    if payload.sla_critico_horas is not None:
+        config.sla_critico_horas = payload.sla_critico_horas
+        
+    session.add(config)
+    await session.commit()
+    await session.refresh(config)
+    
+    return MPRConfigResponse.model_validate(config)
