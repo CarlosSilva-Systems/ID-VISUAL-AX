@@ -42,45 +42,52 @@ function fmtTime(iso: string | null | undefined): string {
 
 // ── Log Panel ────────────────────────────────────────────────────
 
-const LOG_STYLES: Record<LogType, { bg: string; badge: string; text: string; highlight?: string }> = {
-    INFO: { bg: 'bg-slate-800/60', badge: 'bg-slate-600 text-slate-200', text: 'text-slate-300' },
+const LOG_STYLES: Record<LogType, { bg: string; badge: string; text: string; highlight?: string; dot: string; }> = {
+    INFO: { bg: 'transparent', badge: 'text-slate-400', text: 'text-slate-200', dot: 'bg-slate-500' },
     AMARELO: {
-        bg: 'bg-amber-950/60 border border-amber-700/40',
-        badge: 'bg-amber-500 text-slate-900 font-black',
-        text: 'text-amber-200',
-        highlight: 'ring-2 ring-amber-400/50',
+        bg: 'transparent',
+        badge: 'text-amber-400 font-bold',
+        text: 'text-amber-100 font-semibold',
+        highlight: 'bg-amber-900/40 rounded-lg',
+        dot: 'bg-amber-400',
     },
     VERMELHO: {
-        bg: 'bg-red-950/70 border border-red-700/50',
-        badge: 'bg-red-600 text-white font-black animate-pulse',
-        text: 'text-red-200',
-        highlight: 'ring-2 ring-red-500/60',
+        bg: 'transparent',
+        badge: 'text-red-400 font-black animate-pulse',
+        text: 'text-red-100 font-bold',
+        highlight: 'bg-red-900/50 rounded-lg',
+        dot: 'bg-red-500',
     },
     ID_VISUAL_PENDENTE: {
-        bg: 'bg-blue-950/60 border border-blue-700/30',
-        badge: 'bg-blue-600 text-white font-bold',
-        text: 'text-blue-200',
+        bg: 'transparent',
+        badge: 'text-blue-400 font-bold',
+        text: 'text-blue-100',
+        dot: 'bg-blue-400',
     },
     ID_VISUAL_EM_ANDAMENTO: {
-        bg: 'bg-orange-950/60 border border-orange-700/30',
-        badge: 'bg-orange-500 text-white font-bold',
-        text: 'text-orange-200',
+        bg: 'transparent',
+        badge: 'text-orange-400 font-bold',
+        text: 'text-orange-100',
+        dot: 'bg-orange-400',
     },
     ID_VISUAL_OK: {
-        bg: 'bg-emerald-950/70 border border-emerald-500/60',
-        badge: 'bg-emerald-500 text-white font-black',
-        text: 'text-emerald-200',
-        highlight: 'ring-2 ring-emerald-400/60 shadow-lg shadow-emerald-500/20',
+        bg: 'transparent',
+        badge: 'text-emerald-400 font-black',
+        text: 'text-emerald-100 font-bold',
+        highlight: 'bg-emerald-900/40 rounded-lg',
+        dot: 'bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.8)]',
     },
     ID_VISUAL_TRANSFERRED: {
-        bg: 'bg-orange-950/60 border border-orange-700/30',
-        badge: 'bg-orange-500 text-white font-bold',
-        text: 'text-orange-200',
+        bg: 'transparent',
+        badge: 'text-orange-400 font-bold',
+        text: 'text-orange-100',
+        dot: 'bg-orange-400',
     },
     RESOLVIDO: {
-        bg: 'bg-emerald-950/50 border border-emerald-700/30',
-        badge: 'bg-emerald-700 text-white font-bold',
-        text: 'text-emerald-300',
+        bg: 'transparent',
+        badge: 'text-emerald-600 font-bold',
+        text: 'text-emerald-400',
+        dot: 'bg-emerald-600',
     },
 };
 
@@ -93,16 +100,37 @@ function LogItem({ log }: { log: TVLog }) {
         return () => clearTimeout(t);
     }, []);
 
+    // Extrair o timestamp e o texto separados, pois o backend (AndonTVContext) 
+    // manda o texto com "[HH:MM] " prefixado, vamos limpar isso se existir.
+    const cleanText = log.text.replace(/^\[\d{2}:\d{2}\]\s*/, '');
+    const timeOnly = new Date(log.timestamp).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+
     return (
-        <div className={`rounded-xl px-3 py-2.5 transition-all duration-700 ${style.bg} ${flash ? style.highlight ?? '' : ''}`}>
-            <div className="flex items-start gap-2">
-                <span className={`shrink-0 text-[10px] px-1.5 py-0.5 rounded-md mt-0.5 ${style.badge}`}>
-                    {log.type.replace('_', ' ')}
-                </span>
-                <div className="min-w-0">
-                    <p className={`text-xs leading-snug ${style.text} break-words`}>{normalizeLabel(log.text)}</p>
+        <div className={`relative pl-6 py-3 transition-all duration-700 ${flash ? style.highlight ?? '' : ''}`}>
+            {/* Linha vertical da timeline */}
+            <div className="absolute left-[11px] top-0 bottom-0 w-[2px] bg-slate-800" />
+            
+            {/* Ponto da timeline */}
+            <div className={`absolute left-2.5 top-5 w-2 h-2 rounded-full -translate-x-[3px] ring-4 ring-slate-950 ${style.dot}`} />
+
+            <div className="flex flex-col gap-1">
+                <div className="flex items-baseline gap-2">
+                    <span className="text-[13px] font-black tracking-widest text-slate-500 shrink-0">
+                        {timeOnly}
+                    </span>
+                    <span className={`text-[11px] uppercase tracking-wider ${style.badge}`}>
+                        {log.type.replace(/_/g, ' ')}
+                    </span>
+                </div>
+                
+                <div className="min-w-0 pr-2">
+                    <p className={`text-base leading-snug tracking-wide ${style.text} break-words drop-shadow-md`}>
+                        {normalizeLabel(cleanText)}
+                    </p>
                     {log.requester && (
-                        <p className="text-[10px] text-slate-500 mt-0.5">por {normalizeLabel(log.requester)}</p>
+                        <p className="text-sm text-slate-500 font-semibold mt-1">
+                            por {normalizeLabel(log.requester)}
+                        </p>
                     )}
                 </div>
             </div>
@@ -121,24 +149,26 @@ function LogPanel({ logs }: { logs: TVLog[] }) {
     }, [logs.length]);
 
     return (
-        <aside className="w-[26%] min-w-[280px] h-full bg-slate-950 border-l border-slate-800 flex flex-col">
+        <aside className="w-[30%] min-w-[320px] h-full bg-slate-950 border-l border-slate-800/60 flex flex-col shadow-2xl relative z-10">
             {/* Header */}
-            <div className="px-4 py-3 border-b border-slate-800 shrink-0">
-                <div className="flex items-center gap-2">
-                    <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
-                    <h2 className="text-xs font-black tracking-[0.15em] uppercase text-slate-400">
+            <div className="px-6 py-5 border-b border-slate-800/80 shrink-0 bg-slate-900/40">
+                <div className="flex items-center gap-3">
+                    <div className="w-3 h-3 rounded-full bg-emerald-500 shadow-[0_0_12px_rgba(16,185,129,0.8)] animate-pulse" />
+                    <h2 className="text-lg font-black tracking-[0.2em] uppercase text-slate-200">
                         Registro de Eventos
                     </h2>
                 </div>
-                <p className="text-[10px] text-slate-600 mt-0.5">Últimas {logs.length} mensagens</p>
+                <p className="text-xs text-slate-500 font-bold mt-1 tracking-wide uppercase">Histórico Recente</p>
             </div>
 
-            {/* Log list */}
-            <div ref={ref} className="flex-1 overflow-y-auto px-3 py-3 space-y-2 scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent">
+            {/* Log list (Timeline) */}
+            <div ref={ref} className="flex-1 overflow-y-auto px-4 py-4 scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent">
                 {logs.length === 0 ? (
-                    <p className="text-center text-slate-600 text-xs mt-8">Sem eventos recentes</p>
+                    <p className="text-center text-slate-600 text-sm font-bold mt-12 tracking-widest uppercase">Nenhum evento</p>
                 ) : (
-                    logs.map(log => <LogItem key={log.id} log={log} />)
+                    <div className="relative pb-8">
+                        {logs.map(log => <LogItem key={log.id} log={log} />)}
+                    </div>
                 )}
             </div>
         </aside>

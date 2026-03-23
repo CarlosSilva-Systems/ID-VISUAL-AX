@@ -174,12 +174,15 @@ function eventToLog(ev: any): TVLog | null {
             };
         }
         case 'IDVISUAL_CREATED': {
+            // A entrada na fila SÓ DEVE gerar log quando a ID visual entrar na fila E SOMENTE SE tiver sido solicitada pela produção.
+            if (!ev.requester_name && ev.source !== 'manual') return null;
+
             return {
                 id: makeLogId(),
                 timestamp: ts,
                 type: 'ID_VISUAL_PENDENTE',
                 source: 'Produção',
-                text: `[${time}] ID VISUAL — Em espera — ${ev.mo_number}`,
+                text: `Nova solicitação recebida da produção.`,
                 requester: ev.requester_name,
             };
         }
@@ -189,33 +192,25 @@ function eventToLog(ev: any): TVLog | null {
                 timestamp: ts,
                 type: 'ID_VISUAL_EM_ANDAMENTO',
                 source: 'Engenharia',
-                text: `[${time}] ID VISUAL — Trabalhando — ${ev.mo_number}`,
+                text: `Trabalhando.`,
                 requester: ev.requester_name,
             };
         }
         case 'IDVISUAL_DONE': {
-            const dur = formatDuration(ev.duration_minutes);
             return {
                 id: makeLogId(),
                 timestamp: ts,
                 type: 'ID_VISUAL_OK',
                 source: 'Engenharia',
-                text: `[${time}] ✅ ID VISUAL PRONTA — ${ev.mo_number}${dur ? ` — Tempo: ${dur}` : ''}${ev.notes ? ` — ${ev.notes}` : ''}`,
+                text: `ID visual pronta, favor buscar na mesa da engenharia.`,
                 requester: ev.requester_name,
                 highlight: true,
                 finishedAt: ev.finished_at,
             };
         }
         case 'IDVISUAL_TRANSFERRED': {
-            return {
-                id: makeLogId(),
-                timestamp: ts,
-                type: 'ID_VISUAL_EM_ANDAMENTO', // Display with Working style
-                source: 'Produção',
-                text: `[${time}] ID VISUAL — Trabalhando — Transferida para o Dashboard — ${ev.mo_number}${ev.requester_name ? ` — Solicitante: ${ev.requester_name}` : ''}`,
-                requester: ev.requester_name,
-                highlight: true,
-            };
+            // Transição silenciosa: não gera log quando transferido da aba solicitações para a fila principal.
+            return null;
         }
         default:
             return null;
