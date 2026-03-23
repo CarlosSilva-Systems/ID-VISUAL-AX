@@ -4,7 +4,7 @@ from typing import List, Tuple
 from datetime import datetime, timezone
 import logging
 
-from app.api.deps import get_session, get_current_active_user
+from app.api.deps import get_session, get_current_user
 from app.schemas.mpr_analytics import (
     KPIResumoResponse, FilaAtivaResponse, VolumePorPeriodoItem,
     EvolucaoTempoCicloItem, RankingResponsaveisItem,
@@ -47,40 +47,32 @@ def parse_dates_utc(periodo_inicio: str = Query(..., description="ISO 8601 forma
 async def get_kpis_resumo(
     dates: Tuple[datetime, datetime] = Depends(parse_dates_utc),
     session: AsyncSession = Depends(get_session),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_user)
 ):
     """
     Retorna os KPIs resumidos (Tempo de Concepção, Ciclo, Retrabalho, Entregas)
     com base no período filtrado.
     """
     start_date, end_date = dates
-    try:
-        data = await MPRAnalyticsService.get_kpis_resumo(session, start_date, end_date)
-        return KPIResumoResponse(**data)
-    except Exception as e:
-        logger.error(f"Erro em get_kpis_resumo: {str(e)}")
-        raise HTTPException(status_code=500, detail="Erro interno ao calcular KPIs")
+    data = await MPRAnalyticsService.get_kpis_resumo(session, start_date, end_date)
+    return KPIResumoResponse(**data)
 
 @router.get("/fila-ativa", response_model=List[FilaAtivaResponse])
 async def get_fila_ativa(
     session: AsyncSession = Depends(get_session),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_user)
 ):
     """
     Retorna a fila ativa (WIP) de IDs em andamento, incluindo aging_horas.
     """
-    try:
-        data = await MPRAnalyticsService.get_fila_ativa(session)
-        return [FilaAtivaResponse(**item) for item in data]
-    except Exception as e:
-        logger.error(f"Erro em get_fila_ativa: {str(e)}")
-        raise HTTPException(status_code=500, detail="Erro interno ao buscar fila ativa")
+    data = await MPRAnalyticsService.get_fila_ativa(session)
+    return [FilaAtivaResponse(**item) for item in data]
 
 @router.get("/volume-por-periodo", response_model=List[VolumePorPeriodoItem])
 async def get_volume_por_periodo(
     dates: Tuple[datetime, datetime] = Depends(parse_dates_utc),
     session: AsyncSession = Depends(get_session),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_user)
 ):
     start_date, end_date = dates
     data = await MPRAnalyticsService.get_volume_por_periodo(session, start_date, end_date)
@@ -90,7 +82,7 @@ async def get_volume_por_periodo(
 async def get_evolucao_tempo_ciclo(
     dates: Tuple[datetime, datetime] = Depends(parse_dates_utc),
     session: AsyncSession = Depends(get_session),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_user)
 ):
     start_date, end_date = dates
     data = await MPRAnalyticsService.get_evolucao_tempo_ciclo(session, start_date, end_date)
@@ -100,7 +92,7 @@ async def get_evolucao_tempo_ciclo(
 async def get_ranking_responsaveis(
     dates: Tuple[datetime, datetime] = Depends(parse_dates_utc),
     session: AsyncSession = Depends(get_session),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_user)
 ):
     start_date, end_date = dates
     data = await MPRAnalyticsService.get_ranking_responsaveis(session, start_date, end_date)
@@ -109,7 +101,7 @@ async def get_ranking_responsaveis(
 @router.get("/config", response_model=MPRConfigResponse)
 async def get_mpr_config(
     session: AsyncSession = Depends(get_session),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_user)
 ):
     config = await MPRAnalyticsService.get_or_create_default_config(session)
     return MPRConfigResponse.model_validate(config)
@@ -118,7 +110,7 @@ async def get_mpr_config(
 async def update_mpr_config(
     payload: MPRConfigUpdate,
     session: AsyncSession = Depends(get_session),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_user)
 ):
     if current_user.role not in [UserRole.GESTOR, UserRole.ADMIN]:
         raise HTTPException(status_code=403, detail="Apenas GESTOR ou ADMIN podem alterar o SLA.")
@@ -140,7 +132,7 @@ async def update_mpr_config(
 async def get_impacto_fabricacao(
     dates: Tuple[datetime, datetime] = Depends(parse_dates_utc),
     session: AsyncSession = Depends(get_session),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_user)
 ):
     start_date, end_date = dates
     data = await MPRAnalyticsService.get_impacto_fabricacao(session, start_date, end_date)
@@ -150,7 +142,7 @@ async def get_impacto_fabricacao(
 async def get_motivos_revisao(
     dates: Tuple[datetime, datetime] = Depends(parse_dates_utc),
     session: AsyncSession = Depends(get_session),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_user)
 ):
     start_date, end_date = dates
     data = await MPRAnalyticsService.get_motivos_revisao(session, start_date, end_date)
@@ -159,7 +151,7 @@ async def get_motivos_revisao(
 @router.get("/metadados", response_model=MetadadosResponse)
 async def get_metadados(
     session: AsyncSession = Depends(get_session),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_user)
 ):
     from sqlmodel import select
     # Busca responsaveis do banco (ex: full_name não nulos)
