@@ -32,3 +32,7 @@ Thumbs.db
 backend/alembic/versions/*.pyc
 frontend/.next/
 .gemini/
+*.db
+backend/id_visual.db
+backend/id_visual_2.db
+backend/backend.db
