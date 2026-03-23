@@ -432,6 +432,8 @@ async def get_tv_data(
     session: AsyncSession = Depends(get_session),
     odoo: Any = Depends(get_odoo_client)
 ):
+    from app.api.api_v1.endpoints.sync import _sync_state
+    import time
     try:
         # 1. Obter todos os Workcenters do Odoo
         odoo_wcs = await odoo.get_workcenters()
@@ -448,29 +450,157 @@ async def get_tv_data(
         for c in all_active_calls:
             wc_calls_map.setdefault(c.workcenter_id, []).append(c)
 
-        # 3. Mapear e Enriquecer
-        tv_data = []
+        # 3. Mapear Workcenters
+        workcenters_data = []
         for wc in odoo_wcs:
             wc_id = wc["id"]
             local_status = local_statuses.get(wc_id, "cinza")
             active_calls = wc_calls_map.get(wc_id, [])
             
-            # Decisão de status para TV: se houver chamado aberto, reflete a cor do chamado mais crítico
             if active_calls:
                 is_red = any(c.color == "RED" for c in active_calls)
                 status_color = "vermelho" if is_red else "amarelo"
             else:
                 status_color = local_status
 
-            tv_data.append({
+            workcenters_data.append({
                 "id": wc_id,
                 "name": normalize_label(wc["name"]),
                 "code": normalize_label(wc.get("code", "")),
                 "status": status_color,
-                "active_calls_count": len(active_calls)
+                "active_calls_count": len(active_calls),
+                "operational_status": "PRODUÇÃO LIGADA" if status_color == "verde" else "PARADO",
+                "has_active_production": status_color in ["verde", "amarelo_suave"],
+                "operator_name": "---", 
+                "fabrication_code": "---",
+                "obra_name": "---",
+                "stage": "Livre",
+                "started_at": None,
+                "is_online": True,
+                "sync_pending": False
             })
             
-        return tv_data
+        # 4. Construir recent_events
+        recent_date = datetime.now(timezone.utc) - timedelta(hours=24)
+        stmt_calls = select(AndonCall).where(AndonCall.created_at >= recent_date)
+        recent_calls = (await session.execute(stmt_calls)).scalars().all()
+        
+        stmt_idrs = select(IDRequest, ManufacturingOrder).join(ManufacturingOrder).where(
+            (IDRequest.status != IDRequestStatus.CONCLUIDA) | 
+            (IDRequest.updated_at >= recent_date)
+        )
+        recent_idrs_joined = (await session.execute(stmt_idrs)).all()
+        
+        id_reqs_data = []
+        recent_events = []
+        
+        # Build Call Events
+        for c in recent_calls:
+            recent_events.append({
+                "event_type": "CALL_OPENED",
+                "color": c.color,
+                "reason": c.reason,
+                "workcenter_name": c.workcenter_name,
+                "triggered_by": c.triggered_by,
+                "created_at": c.created_at.isoformat() if c.created_at else None
+            })
+            if c.status == "IN_PROGRESS":
+                recent_events.append({
+                    "event_type": "CALL_IN_PROGRESS",
+                    "reason": c.reason,
+                    "workcenter_name": c.workcenter_name,
+                    "triggered_by": c.triggered_by,
+                    "created_at": c.updated_at.isoformat() if c.updated_at else None
+                })
+            if c.status == "RESOLVED":
+                dur = (c.updated_at - c.created_at).total_seconds() / 60 if c.updated_at and c.created_at else 0
+                recent_events.append({
+                    "event_type": "CALL_RESOLVED",
+                    "workcenter_name": c.workcenter_name,
+                    "triggered_by": c.triggered_by,
+                    "duration_minutes": dur,
+                    "resolved_note": c.resolved_note,
+                    "resolved_at": c.updated_at.isoformat() if c.updated_at else None
+                })
+        
+        # Build IDRequests and ID Request Events
+        for idr, mo in recent_idrs_joined:
+            prod_status = "waiting"
+            if idr.status == IDRequestStatus.CONCLUIDA:
+                prod_status = "done"
+            elif idr.status in [IDRequestStatus.EM_PROGRESSO, IDRequestStatus.EM_LOTE, IDRequestStatus.TRIAGEM]:
+                prod_status = "in_progress"
+                
+            id_reqs_data.append({
+                "id": str(idr.id),
+                "mo_number": mo.name,
+                "obra": mo.x_studio_nome_da_obra or "Sem Obra",
+                "package_code": idr.package_code,
+                "status": idr.status,
+                "production_status": prod_status,
+                "requester_name": idr.requester_name,
+                "notes": idr.notes,
+                "priority": idr.priority,
+                "is_transferred": idr.transferred_to_queue,
+                "created_at": idr.created_at.isoformat() if idr.created_at else None,
+                "started_at": idr.started_at.isoformat() if idr.started_at else None,
+                "finished_at": idr.finished_at.isoformat() if idr.finished_at else None,
+            })
+            
+            recent_events.append({
+                "event_type": "IDVISUAL_CREATED",
+                "mo_number": mo.name,
+                "requester_name": idr.requester_name,
+                "source": idr.source,
+                "created_at": idr.created_at.isoformat() if idr.created_at else None
+            })
+            if idr.transferred_to_queue and idr.transferred_at:
+                recent_events.append({
+                    "event_type": "IDVISUAL_TRANSFERRED",
+                    "mo_number": mo.name,
+                    "requester_name": idr.requester_name,
+                    "created_at": idr.transferred_at.isoformat()
+                })
+            if idr.started_at:
+                recent_events.append({
+                    "event_type": "IDVISUAL_STARTED",
+                    "mo_number": mo.name,
+                    "requester_name": idr.requester_name,
+                    "created_at": idr.started_at.isoformat()
+                })
+            if idr.status == IDRequestStatus.CONCLUIDA and idr.finished_at:
+                dur = (idr.finished_at - (idr.started_at or idr.created_at)).total_seconds() / 60
+                recent_events.append({
+                    "event_type": "IDVISUAL_DONE",
+                    "mo_number": mo.name,
+                    "requester_name": idr.requester_name,
+                    "notes": idr.notes,
+                    "duration_minutes": dur,
+                    "finished_at": idr.finished_at.isoformat()
+                })
+
+        def get_time(ev):
+            return ev.get('finished_at') or ev.get('resolved_at') or ev.get('created_at') or ""
+        recent_events.sort(key=get_time)
+            
+        calls_data = []
+        for c in all_active_calls:
+            calls_data.append({
+                "id": c.id, "color": c.color, "category": c.category, "reason": c.reason,
+                "description": c.description, "workcenter_id": c.workcenter_id,
+                "workcenter_name": c.workcenter_name, "mo_id": c.mo_id, "status": c.status,
+                "triggered_by": c.triggered_by, "assigned_team": c.assigned_team,
+                "created_at": c.created_at.isoformat() if c.created_at else None,
+                "updated_at": c.updated_at.isoformat() if c.updated_at else None
+            })
+
+        return {
+            "version": _sync_state.get("andon_version", str(int(time.time()))),
+            "workcenters": workcenters_data,
+            "calls": calls_data,
+            "id_requests": id_reqs_data,
+            "recent_events": recent_events[-60:]
+        }
     except Exception as e:
         request_id = str(uuid.uuid4())[:8]
         logger.error(f"Error in get_tv_data [ref:{request_id}]: {traceback.format_exc()}")
