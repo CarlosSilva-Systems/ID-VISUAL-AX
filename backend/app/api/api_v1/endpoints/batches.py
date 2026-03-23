@@ -601,6 +601,7 @@ async def finalize_batch(
     from app.models.id_request import IDRequestStatus
     from app.services.odoo_client import OdooClient
     from app.core.config import settings
+    from app.services.id_request_service import update_id_request_status
     
     # 0. Fetch batch
     batch = await session.get(Batch, batch_id)
@@ -684,7 +685,7 @@ async def finalize_batch(
     
     # Update IDRequest statuses
     for req in requests:
-        req.status = IDRequestStatus.CONCLUIDA
+        update_id_request_status(req, IDRequestStatus.CONCLUIDA)
         session.add(req)
     
     await session.commit()
