@@ -334,6 +334,44 @@ async def create_andon_call(
     await session.commit()
     await session.refresh(call)
 
+    # ── Integração Retrabalho ID Visual (Commit 7) ──
+    if req.category == "ID Visual" and req.mo_id:
+        from app.models.id_request import IDRequest
+        from app.models.manufacturing import ManufacturingOrder
+        from app.models.analytics import RevisaoIDVisual, MotivoRevisao
+        from sqlmodel import select
+
+        stmt_mo = select(ManufacturingOrder).where(ManufacturingOrder.odoo_id == req.mo_id)
+        res_mo = await session.execute(stmt_mo)
+        local_mo = res_mo.scalars().first()
+
+        if local_mo:
+            stmt_idr = select(IDRequest).where(IDRequest.mo_id == local_mo.id).order_by(IDRequest.created_at.desc())
+            res_idr = await session.execute(stmt_idr)
+            id_request = res_idr.scalars().first()
+            
+            if id_request:
+                # Map reason to MotivoRevisao Enum
+                mapped_motivo = MotivoRevisao.OUTRO
+                reason_lower = req.reason.lower() if req.reason else ""
+                if "informa" in reason_lower or "incorret" in reason_lower:
+                    mapped_motivo = MotivoRevisao.INFORMACAO_INCORRETA
+                elif "falta" in reason_lower or "componente" in reason_lower:
+                    mapped_motivo = MotivoRevisao.FALTA_COMPONENTE
+                elif "diagrama" in reason_lower:
+                    mapped_motivo = MotivoRevisao.ERRO_DIAGRAMACAO
+                elif "especifica" in reason_lower or "mudança" in reason_lower:
+                    mapped_motivo = MotivoRevisao.MUDANCA_ESPECIFICACAO
+                
+                revisao = RevisaoIDVisual(
+                    id_visual_id=id_request.id,
+                    motivo=mapped_motivo,
+                    revisao_solicitada_em=datetime.now(timezone.utc)
+                )
+                session.add(revisao)
+                await session.commit()
+
+
     # 1. Integração Odoo via Background Tasks para não travar a UI
     async def process_odoo_integration(call_id: int, req: AndonCallCreate):
         from app.db.session import async_session_factory
