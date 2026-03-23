@@ -2,7 +2,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 from typing import Optional, List
-from sqlmodel import Field, SQLModel, Relationship, JSON, Column
+from sqlmodel import Field, SQLModel, JSON, Column
 from enum import Enum
 
 # --- Enums ---
@@ -13,43 +13,22 @@ class IDRequestStatus(str, Enum):
     EM_PROGRESSO = "em_progresso"
     BLOQUEADA = "bloqueada"
     CONCLUIDA = "concluida"
+    ENTREGUE = "entregue"
     CANCELADA = "cancelada"
 
 OPEN_STATUSES = [
     IDRequestStatus.NOVA,
     IDRequestStatus.TRIAGEM,
     IDRequestStatus.EM_LOTE,
-    IDRequestStatus.EM_PROGRESSO
+    IDRequestStatus.EM_PROGRESSO,
+    IDRequestStatus.BLOQUEADA
 ]
-
-class TaskStatusV2(str, Enum):
-    NAO_INICIADO = "nao_iniciado"
-    MONTADO = "montado"
-    IMPRIMINDO = "imprimindo" # Doc specific
-    IMPRESSO = "impresso"     # Doc specific
-    EM_ANDAMENTO = "em_andamento"
-    CONCLUIDO = "concluido"
-    BLOQUEADO = "bloqueado"
-    NAO_APLICAVEL = "nao_aplicavel"
 
 class PackageType(str, Enum):
     COMANDO = "comando"
-    DISTRIBUICAO = "distribuicao"
-    APARTAMENTO = "apartamento"
-    PERSONALIZADO = "personalizado"
-
-# --- Blueprints (Catalog) ---
-class TaskBlueprint(SQLModel):
-    code: str = Field(primary_key=True)
-    label: str
-    order: int
-    is_mandatory: bool = False
-    allow_parallel: bool = True
-    # JSON schemas for checklists or block reasons could be stored here or hardcoded/config
-    
-class PackageBlueprint(SQLModel):
-    code: PackageType = Field(primary_key=True)
-    name: str
+    POTENCIA = "potencia"
+    BARRAGEM = "barragem"
+    OUTRO = "outro"
 
 # --- Models ---
 
@@ -71,7 +50,7 @@ class IDRequest(SQLModel, table=True):
     transferred_at: Optional[datetime] = None
     odoo_activity_id: Optional[int] = None
     transfer_note: Optional[str] = None
-
+    
     # Production Tracking
     started_at: Optional[datetime] = None
     finished_at: Optional[datetime] = None
@@ -88,8 +67,6 @@ class IDRequest(SQLModel, table=True):
     created_by: Optional[uuid.UUID] = Field(default=None, foreign_key="user.id")
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow, sa_column_kwargs={"onupdate": datetime.utcnow})
-
-    # tasks: List["IDRequestTask"] = Relationship(back_populates="request")
 
 class IDRequestTask(SQLModel, table=True):
     __tablename__ = "id_request_task"
@@ -114,5 +91,21 @@ class IDRequestTask(SQLModel, table=True):
     
     updated_by: Optional[uuid.UUID] = Field(default=None, foreign_key="user.id")
     updated_at: datetime = Field(default_factory=datetime.utcnow, sa_column_kwargs={"onupdate": datetime.utcnow})
+
+class TaskBlueprint(SQLModel, table=True):
+    __tablename__ = "task_blueprint"
     
-    # request: IDRequest = Relationship(back_populates="tasks")
+    id: Optional[uuid.UUID] = Field(default_factory=uuid.uuid4, primary_key=True)
+    code: str = Field(unique=True, index=True) # e.g. "concepcao", "diagramacao"
+    name: str
+    description: Optional[str] = None
+    package_type: PackageType = Field(default=PackageType.COMANDO) # Which package does this apply to
+    order_index: int = Field(default=0) # Order in the list
+
+class PackageBlueprint(SQLModel, table=True):
+    __tablename__ = "package_blueprint"
+    
+    id: Optional[uuid.UUID] = Field(default_factory=uuid.uuid4, primary_key=True)
+    code: PackageType = Field(unique=True, index=True)
+    name: str # e.g. "Comando", "Potencia"
+    task_codes: str # Comma-separated or JSON list of task codes
