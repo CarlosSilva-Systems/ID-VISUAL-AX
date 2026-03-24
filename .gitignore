@@ -36,3 +36,4 @@ frontend/.next/
 backend/id_visual.db
 backend/id_visual_2.db
 backend/backend.db
+*.json

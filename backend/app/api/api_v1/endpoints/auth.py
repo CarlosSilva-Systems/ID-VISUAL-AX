@@ -117,7 +117,7 @@ async def login_access_token(
                 logger.error(f"Fallback Error [{request_id}]: {inner_e}")
                 raise HTTPException(
                     status_code=502, 
-                    detail={"message": "Erro ao validar funcionário", "stage": "fallback", "request_id": request_id}
+                    detail={"message": f"Erro ao validar funcionário: {str(inner_e)}", "stage": "fallback", "request_id": request_id}
                 )
         
         elif error_msg == "ODOO_UNAVAILABLE":
@@ -131,7 +131,7 @@ async def login_access_token(
             # Other errors (500, etc)
             import uuid
             request_id = str(uuid.uuid4())[:8]
-            logger.error(f"Odoo Auth Error [{request_id}]: {e}")
+            logger.error(f"Falha Crítica no login Odoo (Produção) [ref: {request_id}]")
             raise HTTPException(
                 status_code=502, 
                 detail={"message": "Erro de infraestrutura Odoo", "stage": "auth", "request_id": request_id}

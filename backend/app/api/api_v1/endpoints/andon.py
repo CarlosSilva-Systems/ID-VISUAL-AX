@@ -373,16 +373,16 @@ async def create_andon_call(
 
 
     # 1. Integração Odoo via Background Tasks para não travar a UI
-    async def process_odoo_integration(call_id: int, req: AndonCallCreate, odoo_url: str):
+    async def process_odoo_integration(call_id: int, req: AndonCallCreate, odoo_url: str, odoo_db: str, odoo_login: str, odoo_secret: str, odoo_auth_type: str):
         from app.db.session import async_session_factory
         from app.services.odoo_client import OdooClient
         
         local_odoo = OdooClient(
             url=odoo_url,
-            db=settings.ODOO_DB,
-            auth_type=settings.ODOO_AUTH_TYPE,
-            login=settings.ODOO_LOGIN,
-            secret=settings.ODOO_PASSWORD
+            db=odoo_db,
+            auth_type=odoo_auth_type,
+            login=odoo_login,
+            secret=odoo_secret
         )
         try:
             async with async_session_factory() as local_session:
@@ -423,7 +423,16 @@ async def create_andon_call(
         finally:
             await local_odoo.close()
 
-    background_tasks.add_task(process_odoo_integration, call.id, req, odoo.url)
+    background_tasks.add_task(
+        process_odoo_integration, 
+        call.id, 
+        req, 
+        odoo.url, 
+        odoo.db, 
+        odoo.login, 
+        odoo.secret, 
+        odoo.auth_type
+    )
 
     await update_or_create_status(session, req.workcenter_id, req.workcenter_name, req.color.lower(), req.triggered_by)
     update_sync_version("andon_version")
