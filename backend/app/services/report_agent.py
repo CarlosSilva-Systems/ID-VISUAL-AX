@@ -98,7 +98,16 @@ async def generate_report_layout(user_prompt: str, current_layout: Optional[Dict
         if "charts" in data and "widgets" not in data: data["widgets"] = data["charts"]
         
         if "widgets" in data and isinstance(data["widgets"], list):
+            valid_widgets = []
             for w in data["widgets"]:
+                if not isinstance(w, dict):
+                    if isinstance(w, str):
+                        valid_widgets.append({
+                            "type": "kpi",
+                            "title": w,
+                            "data_source_endpoint": "/mpr/analytics/kpis/resumo"
+                        })
+                    continue
                 # Normalização de Tipos (IA as vezes usa sufixos)
                 # Normalização de Tipos (IA as vezes usa sufixos ou nomes semânticos)
                 t = str(w.get("type", "")).lower()
@@ -138,13 +147,20 @@ async def generate_report_layout(user_prompt: str, current_layout: Optional[Dict
                         w["data_source_endpoint"] = ep.replace("/api/v1", "", 1)
                     if not ep.startswith("/"):
                         w["data_source_endpoint"] = "/" + ep
+                
+                valid_widgets.append(w)
+            data["widgets"] = valid_widgets
         
         # 3. Normalização de Insights
         if "insights" in data and "proactive_insights" not in data:
             data["proactive_insights"] = data["insights"]
         
         if "proactive_insights" in data and isinstance(data["proactive_insights"], list):
+            valid_insights = []
             for i in data["proactive_insights"]:
+                if not isinstance(i, dict):
+                    continue
+                
                 it = str(i.get("type", "")).lower()
                 if "alert" in it or "warning" in it or "danger" in it or "erro" in it:
                     i["type"] = "warning"
@@ -152,6 +168,8 @@ async def generate_report_layout(user_prompt: str, current_layout: Optional[Dict
                     i["type"] = "odoo_tip"
                 else:
                     i["type"] = "opportunity"
+                valid_insights.append(i)
+            data["proactive_insights"] = valid_insights
 
         return DashboardLayout(**data)
     except Exception as e:
