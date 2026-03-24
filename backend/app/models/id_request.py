@@ -38,9 +38,10 @@ class IDRequest(SQLModel, table=True):
     id: Optional[uuid.UUID] = Field(default_factory=uuid.uuid4, primary_key=True)
     mo_id: uuid.UUID = Field(foreign_key="manufacturing_order.id", index=True)
     batch_id: Optional[uuid.UUID] = Field(default=None, foreign_key="batch.id", index=True)
-    package_code: PackageType = Field(default=PackageType.COMANDO)
-    status: IDRequestStatus = Field(default=IDRequestStatus.NOVA, index=True)
-    priority: str = Field(default="normal") # normal, urgente
+    # Usando str para evitar LookupError intermitente no SQLAlchemy/SQLite
+    package_code: str = Field(default=PackageType.COMANDO.value, index=True)
+    status: str = Field(default=IDRequestStatus.NOVA.value, index=True)
+    priority: str = Field(default="normal", index=True) # normal, urgente
     source: str = Field(default="odoo")  # "odoo" | "manual"
     requester_name: Optional[str] = None
     notes: Optional[str] = None
@@ -99,13 +100,13 @@ class TaskBlueprint(SQLModel, table=True):
     code: str = Field(unique=True, index=True) # e.g. "concepcao", "diagramacao"
     name: str
     description: Optional[str] = None
-    package_type: PackageType = Field(default=PackageType.COMANDO) # Which package does this apply to
+    package_type: str = Field(default=PackageType.COMANDO.value) # str fallback
     order_index: int = Field(default=0) # Order in the list
 
 class PackageBlueprint(SQLModel, table=True):
     __tablename__ = "package_blueprint"
     
     id: Optional[uuid.UUID] = Field(default_factory=uuid.uuid4, primary_key=True)
-    code: PackageType = Field(unique=True, index=True)
+    code: str = Field(unique=True, index=True) # str fallback
     name: str # e.g. "Comando", "Potencia"
     task_codes: str # Comma-separated or JSON list of task codes
