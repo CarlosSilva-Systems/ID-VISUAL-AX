@@ -15,11 +15,12 @@ from app.services.odoo_utils import normalize_many2one_display
 from app.services.status_mappers import map_mrp_state
 from app.core.config import settings
 from app.api.api_v1.endpoints.sync import update_sync_version
+from app.schemas.id_request import ManualRequestResponse
 from app.services.task_service import initialize_request_tasks
 
 router = APIRouter()
 
-@router.get("/manual", response_model=List[Dict[str, Any]])
+@router.get("/manual", response_model=List[ManualRequestResponse])
 async def get_manual_requests(
     session: AsyncSession = Depends(deps.get_session),
     current_user: Any = Depends(deps.get_current_user)
@@ -99,19 +100,18 @@ async def get_manual_requests(
         response.append({
             "request_id": req.id,
             "odoo_mo_id": mo.odoo_id,
-            "mo_number": mo.name,
+            "mo_number": str(mo.name),
             "obra_nome": normalize_many2one_display(mo.x_studio_nome_da_obra),
-            "product_qty": mo.product_qty,
+            "product_qty": float(mo.product_qty),
             "date_start": mo.date_start,
             "requester_name": req.requester_name,
             "notes": req.notes,
-            "priority": req.priority,
-            "status": req.status,
+            "priority": str(req.priority.value if hasattr(req.priority, 'value') else req.priority),
+            "status": str(req.status.value if hasattr(req.status, 'value') else req.status),
             "created_at": req.created_at,
-            # New Fields
-            "mo_state": current_state,
-            "mo_state_label": status_info["label"],
-            "mo_state_variant": status_info["variant"]
+            "mo_state": str(current_state),
+            "mo_state_label": str(status_info["label"]),
+            "mo_state_variant": str(status_info["variant"])
         })
     return response
 
@@ -365,3 +365,16 @@ async def bulk_transfer_manual_requests(
         "fail_count": fail_count,
         "results": results
     }
+
+@router.get("/stats")
+async def get_id_requests_stats(
+    session: AsyncSession = Depends(deps.get_session),
+    current_user: Any = Depends(deps.get_current_user)
+) -> Any:
+    """Retorna estatísticas de volume de IDs por status para o Dashboard BI."""
+    stmt = select(IDRequest.status, func.count(IDRequest.id)).group_by(IDRequest.status)
+    results = await session.execute(stmt)
+    rows = results.all()
+    # Converte status enum para string para o JSON
+    return [{"label": str(r[0].value if hasattr(r[0], 'value') else r[0]), "value": r[1]} for r in rows]
+
