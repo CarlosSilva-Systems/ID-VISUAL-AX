@@ -93,13 +93,13 @@ TOOLS_LIST = [
     get_business_rules_tool
 ]
 
-# --- Static Rule Engine (Mock for Business Rules) ---
+# --- Rule Engine (Business Rules & Definitions) ---
 def resolve_business_rule(termo: str) -> str:
     term_lower = termo.lower()
     if "sla" in term_lower:
-        return "SLA Padrão: 8 horas (Atenção) a 24 horas (Crítico). Em caso de estouro, impacta as Entregas no Prazo."
-    elif "5s" in term_lower:
-        return "5S refere-se a Padrões de Organização (Seiri, Seiton, Seiso, Seiketsu, Shitsuke). É verificado via rotina."
-    elif "amarelo" in term_lower or "andon" in term_lower:
-        return "Andon Amarelo é usado para requisição local de material onde não se pausa a OF. Vermelho pausa a OF e cria ticket de atividade urgente."
-    return f"Nenhuma regra específica encontrada estritamente para o termo: {termo}."
+        return "SLA ID Visual: Atenção em 8h, Crítico em 24h. Afeta o KPI 'Entregas no Prazo'."
+    elif "andon" in term_lower:
+        return "Andon: Vermelho (Para OF, gera ticket), Amarelo (Requisição de material, não para OF)."
+    elif "retrabalho" in term_lower or "revisao" in term_lower:
+        return "Retrabalho: Ocorre quando uma ID Visual é reprovada no QA ou pela produção. Gera métrica de 'Taxa de Retrabalho'."
+    return f"Termo '{termo}' não encontrado na base de regras padrão."
