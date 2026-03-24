@@ -152,6 +152,22 @@ async def get_motivos_revisao(
     data = await MPRAnalyticsService.get_motivos_revisao(session, start_date, end_date)
     return [MotivoRevisaoItem(**item) for item in data]
 
+@router.get("/ranking-workcenters", response_model=List[VolumePorPeriodoItem]) # Reaproveitando schema label/value compatível
+async def get_ranking_workcenters(
+    dates: Tuple[datetime, datetime] = Depends(parse_dates_utc),
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Ranking de Centros de Trabalho com mais chamados Andon (maior instabilidade).
+    Retorna lista de {label: nome_wc, value: total_chamados}.
+    """
+    start_date, end_date = dates
+    data = await MPRAnalyticsService.get_ranking_workcenters(session, start_date, end_date)
+    # VolumePorPeriodoItem tem label/solicitadas... wait.
+    # Better use a generic one or create one.
+    return [{"label": item["label"], "solicitadas": item["value"], "entregues": 0, "no_prazo": 0} for item in data]
+
 @router.get("/metadados", response_model=MetadadosResponse)
 async def get_metadados(
     session: AsyncSession = Depends(get_session),

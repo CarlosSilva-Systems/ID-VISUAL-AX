@@ -71,7 +71,22 @@ export const DynamicDashboard = () => {
 
             const results = await Promise.all(dataPromises);
             const newData: Record<string, any[]> = {};
-            results.forEach(r => newData[r.id] = r.data);
+            results.forEach(r => {
+                // Normalização inteligente para Recharts (necessita label/value)
+                const normalized = r.data.map((item: any) => {
+                    const newItem = { ...item };
+                    // Se não tem label, tenta chaves comuns
+                    if (!newItem.label) {
+                        newItem.label = item.nome || item.name || item.dia || item.date || item.motivo || item.category || 'N/A';
+                    }
+                    // Se não tem value, tenta chaves numéricas comuns
+                    if (newItem.value === undefined) {
+                        newItem.value = item.ids_concluidas || item.solicitadas || item.total || item.quantidade || item.qtd || item.horas_paradas_total || 0;
+                    }
+                    return newItem;
+                });
+                newData[r.id] = normalized;
+            });
             setChartData(newData);
         } catch (e) {
             toast.error("Erro ao carregar dashboard");

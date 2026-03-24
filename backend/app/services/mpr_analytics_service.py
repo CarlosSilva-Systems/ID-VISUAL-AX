@@ -178,10 +178,9 @@ class MPRAnalyticsService:
         
         return [
             {
-                "nome": r[0] if r[0] else "N/A",
-                "ids_concluidas": r[1],
-                "tempo_medio_ciclo_min": round(r[2], 1) if r[2] else 0,
-                "responsavel_id": 0 # Simulado pois requester_name é apenas str no modelo atual
+                "label": r[0] if r[0] else "N/A",
+                "value": r[1],
+                "tempo_medio_ciclo_min": round(r[2], 1) if r[2] else 0
             } for r in rows
         ]
 
@@ -262,7 +261,7 @@ class MPRAnalyticsService:
         return [
             {
                 "label": r[0] if r[0] else "Outros",
-                "horas_paradas_total": round(r[1]/60, 1) if r[1] else 0,
+                "value": round(r[1]/60, 1) if r[1] else 0,
                 "ofs_afetadas": r[2]
             } for r in res.all()
         ]
@@ -291,4 +290,25 @@ class MPRAnalyticsService:
                 "quantidade": r[1],
                 "percentual": round((r[1]/total)*100, 1) if total > 0 else 0
             } for r in rows
+        ]
+
+    @staticmethod
+    async def get_ranking_workcenters(session: AsyncSession, start_date: datetime, end_date: datetime) -> List[Dict]:
+        """Ranking de Centros de Trabalho com mais chamados (instabilidade)."""
+        from app.models.andon import AndonCall
+        start_naive = start_date.replace(tzinfo=None) if start_date.tzinfo else start_date
+        end_naive = end_date.replace(tzinfo=None) if end_date.tzinfo else end_date
+
+        stmt = sm_select(
+            AndonCall.workcenter_name,
+            func.count(AndonCall.id).label("total")
+        ).where(
+            AndonCall.created_at >= start_naive,
+            AndonCall.created_at <= end_naive
+        ).group_by(AndonCall.workcenter_name)
+        
+        res = await session.execute(stmt)
+        return [
+            {"label": r[0] if r[0] else "Desconhecido", "value": r[1]} 
+            for r in res.all()
         ]
