@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlmodel.ext.asyncio.session import AsyncSession
-from typing import List, Tuple
-from datetime import datetime, timezone
+from typing import List, Tuple, Optional
+from datetime import datetime, timezone, timedelta
 import logging
 
 from app.api.deps import get_session, get_current_user
@@ -20,12 +20,16 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-def parse_dates_utc(periodo_inicio: str = Query(..., description="ISO 8601 format"), 
-                    periodo_fim: str = Query(..., description="ISO 8601 format")) -> Tuple[datetime, datetime]:
-    """Validador Pydantic/FastAPI para o Timezone Contract (Correção D)"""
-    def _parse(date_str: str) -> datetime:
-        # Substitui 'Z' por '+00:00' para que o fromisoformat entenda.
-        # Caso não haja offset (timezone naive), definimos como UTC.
+def parse_dates_utc(periodo_inicio: Optional[str] = Query(None, description="ISO 8601 format"), 
+                    periodo_fim: Optional[str] = Query(None, description="ISO 8601 format")) -> Tuple[datetime, datetime]:
+    """Validador Pydantic/FastAPI para o Timezone Contract (Opcional com Default de 30 dias)"""
+    
+    now = datetime.now(timezone.utc)
+    
+    def _parse(date_str: Optional[str], default_dt: datetime) -> datetime:
+        if not date_str:
+            return default_dt
+            
         clean_str = date_str.replace("Z", "+00:00")
         try:
             dt = datetime.fromisoformat(clean_str)
@@ -33,13 +37,13 @@ def parse_dates_utc(periodo_inicio: str = Query(..., description="ISO 8601 forma
                 dt = dt.replace(tzinfo=timezone.utc)
             return dt
         except ValueError:
-            raise HTTPException(status_code=400, detail=f"Invalid date format: {date_str}. Expected ISO 8601.")
+            return default_dt
             
-    start = _parse(periodo_inicio)
-    end = _parse(periodo_fim)
+    start = _parse(periodo_inicio, now - timedelta(days=30))
+    end = _parse(periodo_fim, now)
     
     if end < start:
-        raise HTTPException(status_code=400, detail="periodo_fim não pode ser anterior a periodo_inicio")
+        return now - timedelta(days=30), now
         
     return start, end
 

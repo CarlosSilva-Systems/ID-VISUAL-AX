@@ -17,6 +17,9 @@ class Settings(BaseSettings):
     # Generate one e.g. with: cryptography.fernet.Fernet.generate_key().decode()
     ENCRYPTION_KEY: str = "gX2scx5P9p8w-d5c2J5q3k5P9p8w-d5c2J5q3k5P9p8="
 
+    # Integration
+    OPENROUTER_API_KEY: str = "your_key_here"
+
     # CORS
     BACKEND_CORS_ORIGINS: List[str] = []
 
@@ -89,6 +92,7 @@ _INSECURE_DEFAULTS = {
     "SECRET_KEY": "CHANGE_THIS_TO_A_SECURE_SECRET_KEY",
     "ENCRYPTION_KEY": "gX2scx5P9p8w-d5c2J5q3k5P9p8w-d5c2J5q3k5P9p8=",
     "ODOO_WEBHOOK_SECRET": "SET_THIS_IN_ENV_FOR_SECURITY",
+    "OPENROUTER_API_KEY": "your_key_here",
 }
 
 for _key, _default in _INSECURE_DEFAULTS.items():
