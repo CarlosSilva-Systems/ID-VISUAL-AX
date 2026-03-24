@@ -323,4 +323,26 @@ export const api = {
     resetDatabase: async () => {
         return api.post('/settings/reset-database', {});
     },
+
+    // ── Custom Reports (IA) ──
+    getCustomReports: async () => {
+        return api.get('/reports/');
+    },
+
+    getCustomReport: async (id: string) => {
+        return api.get(`/reports/${id}`);
+    },
+
+    deleteCustomReport: async (id: string) => {
+        const response = await fetch(`${API_URL}/reports/${id}`, {
+            method: 'DELETE',
+            headers: getHeaders(),
+        });
+        return await response.json();
+    },
+
+    generateIAReport: async (prompt: string) => {
+        return api.post('/reports/generate', { prompt });
+    },
 };
+

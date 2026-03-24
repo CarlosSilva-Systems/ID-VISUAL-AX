@@ -104,8 +104,10 @@ export const Layout = ({ children, isAdmin = false, username = "Usuário" }: Lay
         { id: "andon", label: "Painel Andon", icon: Activity, path: "/andon/painel" },
       ]
     },
-    { id: "relatorios", label: "Relatórios", icon: BarChart3, path: "/relatorios" },
+    { id: "relatorios", label: "Relatórios MPR", icon: BarChart3, path: "/relatorios" },
+    { id: "meus-relatorios", label: "Meus Relatórios (IA)", icon: FileText, path: "/relatorios/meus" },
     { id: "templates", label: "Padrões (5S)", icon: LayoutTemplate, path: "/templates" },
+
     { id: "config", label: "Configurações", icon: Settings, path: "/admin" },
   ];
 

@@ -9,7 +9,10 @@ import { VisaoProducao } from './components/VisaoProducao';
 import { Configuracoes } from './components/Configuracoes';
 import { Padroes5S } from './components/Padroes5S';
 import { ActiveBatch } from '../components/ActiveBatch';
+import { MyReports } from './pages/reports/MyReports';
+import { DynamicDashboard } from './pages/reports/DynamicDashboard';
 import { Login } from './components/Login';
+
 import { AndonGrid } from './components/AndonGrid';
 import { AndonTV } from './components/AndonTV';
 import { Fabrication } from './types';
@@ -95,7 +98,10 @@ function AppContent() {
               <Route path="/id-visual/producao" element={<VisaoProducao />} />
               <Route path="/andon/painel" element={<AndonGrid username={username} />} />
               <Route path="/relatorios" element={<MPRAnalyticsDashboard />} />
+              <Route path="/relatorios/meus" element={<MyReports />} />
+              <Route path="/relatorios/visualizar/:reportId" element={<DynamicDashboard />} />
               <Route path="/templates" element={<Padroes5S />} />
+
               <Route path="/admin" element={<Configuracoes />} />
               <Route path="/id-visual/batch/:batchId" element={
                 <ActiveBatch
