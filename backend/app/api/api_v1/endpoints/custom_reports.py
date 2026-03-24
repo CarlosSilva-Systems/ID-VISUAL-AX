@@ -11,6 +11,9 @@ from app.db.session import get_session
 from app.models.user import User
 from app.models.custom_report import CustomReport, CustomReportRead
 from app.services.report_agent import generate_report_layout
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -24,38 +27,61 @@ async def create_ia_report(
     current_user: User = Depends(deps.get_current_user),
 ) -> Any:
     """
-    Recebe um prompt, a IA gera o layout, e nós salvamos como um Relatório Privado.
+    Cria um novo relatório do zero baseado no prompt.
     """
-    if not current_user:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-
     try:
-        # 1. Chamar o motor de IA
+        # Chama a IA para gerar o layout inicial
         layout = await generate_report_layout(payload.prompt)
         
-        # 2. Persistir no Banco
         new_report = CustomReport(
             user_id=current_user.id,
             title=layout.title,
             description=layout.description,
-            layout_config=layout.dict()
+            layout_config=layout.model_dump() if hasattr(layout, "model_dump") else layout.dict()
         )
         
         session.add(new_report)
         await session.commit()
         await session.refresh(new_report)
         
-        return {
-            "status": "success",
-            "report_id": str(new_report.id),
-            "title": new_report.title
-        }
+        return new_report
     except Exception as e:
-        # Tratamento seguro de erros
-        raise HTTPException(
-            status_code=500, 
-            detail=f"Erro na geração do relatório por IA. Tente novamente mais tarde."
-        )
+        logger.error(f"Erro na geração de relatório: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.patch("/{id}/refine", response_model=CustomReportRead)
+async def refine_ia_report(
+    id: uuid.UUID,
+    payload: GenerateRequest,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(deps.get_current_user),
+) -> Any:
+    """
+    Refina um relatório existente usando IA (Modo Iterativo).
+    """
+    report = await session.get(CustomReport, id)
+    if not report:
+        raise HTTPException(status_code=404, detail="Relatório não encontrado")
+    if report.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Acesso negado")
+
+    try:
+        # Passa o layout atual para a IA refinar
+        new_layout = await generate_report_layout(payload.prompt, current_layout=report.layout_config)
+        
+        # Atualiza os campos
+        report.title = new_layout.title
+        report.description = new_layout.description
+        report.layout_config = new_layout.model_dump() if hasattr(new_layout, "model_dump") else new_layout.dict()
+        
+        session.add(report)
+        await session.commit()
+        await session.refresh(report)
+        
+        return report
+    except Exception as e:
+        logger.error(f"Erro no refinamento do relatório: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Erro ao refinar: {str(e)}")
 
 @router.get("/", response_model=List[CustomReportRead])
 
