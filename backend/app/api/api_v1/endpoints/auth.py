@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 from app.api import deps
 from app.models.user import User
 from app.core.security import create_access_token
-from app.api.api_v1.endpoints.odoo import get_odoo_client
+from app.api.deps import get_system_odoo_client, get_odoo_client
 
 router = APIRouter()
 
@@ -26,7 +26,7 @@ router = APIRouter()
 async def login_access_token(
     request: Request,
     form_data: OAuth2PasswordRequestForm = Depends(),
-    service_odoo: Any = Depends(get_odoo_client) # This is the service account
+    service_odoo: Any = Depends(get_system_odoo_client) # Sempre usa o Odoo do sistema para login
 ) -> Any:
     """
     OAuth2 compatible token login.
@@ -141,7 +141,7 @@ async def login_access_token(
 async def read_users_me(
     user_token: str = Depends(deps.reusable_oauth2),
     session: AsyncSession = Depends(deps.get_session),
-    odoo: Any = Depends(get_odoo_client)
+    odoo: Any = Depends(get_system_odoo_client) # Identidade sempre verificada no Odoo do sistema
 ) -> dict:
 
     """
@@ -206,8 +206,11 @@ async def read_users_me(
                 "is_admin": is_admin,
                 "auth_source": "odoo",
                 "uid_odoo": uid,
-                "id": local_user.id, # Importante: Retornar o UUID local
+                "id": local_user.id,
                 "employee_id": None,
+                "department": local_user.department,
+                "is_odoo_test_mode": local_user.is_odoo_test_mode,
+                "odoo_test_url": local_user.odoo_test_url,
                 "roles": groups_id
             }
 
@@ -255,6 +258,9 @@ async def read_users_me(
                 "uid_odoo": None,
                 "id": local_user.id,
                 "employee_id": emp["id"],
+                "department": local_user.department,
+                "is_odoo_test_mode": local_user.is_odoo_test_mode,
+                "odoo_test_url": local_user.odoo_test_url,
                 "roles": []
             }
 

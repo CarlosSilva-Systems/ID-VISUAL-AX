@@ -36,9 +36,9 @@ def is_previewable(mimetype: str) -> bool:
 
 # --- Endpoints ---
 
-@router.get("/mos/{odoo_mo_id}/documents")
 async def list_mo_documents(
     odoo_mo_id: int,
+    client: OdooClient = Depends(deps.get_odoo_client)
 ):
     """
     List documents linked to the product of a specific Manufacturing Order.
@@ -100,16 +100,16 @@ async def list_mo_documents(
         await client.close()
 
 @router.get("/mos/{odoo_mo_id}/documents/{doc_id}/view")
-async def view_document(odoo_mo_id: int, doc_id: str):
+async def view_document(odoo_mo_id: int, doc_id: str, client: OdooClient = Depends(deps.get_odoo_client)):
     """Proxy document content for inline viewing."""
-    return await proxy_document(doc_id, "inline")
+    return await proxy_document(doc_id, "inline", client)
 
 @router.get("/mos/{odoo_mo_id}/documents/{doc_id}/download")
-async def download_document(odoo_mo_id: int, doc_id: str):
+async def download_document(odoo_mo_id: int, doc_id: str, client: OdooClient = Depends(deps.get_odoo_client)):
     """Proxy document content for download."""
-    return await proxy_document(doc_id, "attachment")
+    return await proxy_document(doc_id, "attachment", client)
 
-async def proxy_document(doc_id: str, disposition: str):
+async def proxy_document(doc_id: str, disposition: str, client: OdooClient):
     """
     Generic proxy logic for Odoo documents.
     doc_id format: {model}_{id}

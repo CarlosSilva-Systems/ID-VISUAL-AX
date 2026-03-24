@@ -62,18 +62,39 @@ async def get_current_user(
 
 
 
+async def get_system_odoo_client():
+    """
+    Cliente Odoo fixo no servidor de PRODUÇÃO (Autenticação/Identity).
+    Sempre usa as credenciais globais do .env.
+    """
+    from app.services.odoo_client import OdooClient
+    
+    client = OdooClient(
+        url=settings.ODOO_URL,
+        db=settings.ODOO_DB,
+        auth_type=settings.ODOO_AUTH_TYPE,
+        login=settings.ODOO_LOGIN,
+        secret=settings.ODOO_PASSWORD
+    )
+    try:
+        yield client
+    finally:
+        await client.close()
+
 async def get_odoo_client(
     current_user: Optional[User] = Depends(get_current_user)
 ):
+    """
+    Cliente Odoo DINÂMICO (Operações de BI, MOs, Inventário).
+    Respeita a escolha de Produção vs Teste do usuário logado.
+    """
     from app.services.odoo_client import OdooClient
     
-    # URL Dinâmica: Staging vs Produção
-    # Se o usuário está em modo teste e tem uma URL configurada, usamos ela.
-    # Caso contrário, fallback para a URL padrão dos settings.
+    # URL Dinâmica: Staging vs Produção do Usuário
     odoo_url = settings.ODOO_URL
     if current_user and current_user.is_odoo_test_mode and current_user.odoo_test_url:
         odoo_url = current_user.odoo_test_url
-        logger.info(f"Usuário {current_user.username} operando em MODO TESTE: {odoo_url}")
+        logger.info(f"Usuário {current_user.username} operando em MODO TESTE (Dados): {odoo_url}")
 
     client = OdooClient(
         url=odoo_url,

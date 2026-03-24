@@ -8,7 +8,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.services.odoo_client import OdooClient
 from app.core.config import settings
-from app.api.deps import get_session, get_odoo_client, get_current_user
+from app.api.deps import get_session, get_odoo_client, get_current_user, get_system_odoo_client
 from app.models.id_request import IDRequest, IDRequestStatus
 from app.models.manufacturing import ManufacturingOrder
 
@@ -19,21 +19,14 @@ router = APIRouter()
 
 @router.get("/mos", response_model=List[dict])
 async def get_odoo_mos(
-    session: AsyncSession = Depends(get_session)
+    session: AsyncSession = Depends(get_session),
+    client: OdooClient = Depends(get_odoo_client)
 ) -> Any:
     """
     Fetch Manufacturing Orders (MOs) that have a pending 'Imprimir ID Visual' activity.
     AND pending Manual Requests from local DB.
     Sorted by activity deadline (urgency) and then date_start.
     """
-    client = OdooClient(
-        url=settings.ODOO_URL,
-        db=settings.ODOO_DB,
-        auth_type=settings.ODOO_AUTH_TYPE,
-        login=settings.ODOO_LOGIN,
-        secret=settings.ODOO_PASSWORD
-    )
-
     try:
         # ── Step 1: Find 'Imprimir ID Visual' Activity Type ──
         activity_type_id = None
@@ -208,18 +201,13 @@ async def get_odoo_mos(
 
 @router.get("/users", response_model=List[dict])
 async def get_odoo_users(
-    current_user: Any = Depends(get_current_user)
+    current_user: Any = Depends(get_current_user),
+    client: OdooClient = Depends(get_odoo_client)
 ) -> Any:
     """
     Fetch active users from Odoo to populate settings selection.
     """
-    client = OdooClient(
-        url=settings.ODOO_URL,
-        db=settings.ODOO_DB,
-        auth_type=settings.ODOO_AUTH_TYPE,
-        login=settings.ODOO_LOGIN,
-        secret=settings.ODOO_PASSWORD
-    )
+    # O cliente injetado já respeita o ambiente do usuário
     try:
         domain = [['active', '=', True]]
         users = await client.search_read(

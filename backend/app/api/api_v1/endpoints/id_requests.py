@@ -23,7 +23,8 @@ router = APIRouter()
 @router.get("/manual", response_model=List[ManualRequestResponse])
 async def get_manual_requests(
     session: AsyncSession = Depends(deps.get_session),
-    current_user: Any = Depends(deps.get_current_user)
+    current_user: Any = Depends(deps.get_current_user),
+    client: OdooClient = Depends(deps.get_odoo_client)
 ) -> Any:
     """
     List open manual requests that are NOT yet transferred to standard queue.
@@ -50,20 +51,14 @@ async def get_manual_requests(
     
     if odoo_ids:
         try:
-            client = OdooClient(
-                url=settings.ODOO_URL,
-                db=settings.ODOO_DB,
-                auth_type="jsonrpc_password",
-                login=settings.ODOO_LOGIN,
-                secret=settings.ODOO_PASSWORD
-            )
+            # O cliente injetado já respeita o ambiente do usuário
             # Read 'state' for these IDs
             fresh_data = await client.search_read(
                 'mrp.production',
                 domain=[['id', 'in', odoo_ids]],
                 fields=['id', 'state']
             )
-            await client.close()
+            # await client.close() -> Gerenciado pela dependência
             
             # Update local map and DB
             for item in fresh_data:
@@ -138,7 +133,8 @@ async def count_manual_requests(
 async def transfer_manual_request(
     request_id: str,
     session: AsyncSession = Depends(deps.get_session),
-    current_user: Any = Depends(deps.get_current_user)
+    current_user: Any = Depends(deps.get_current_user),
+    client: OdooClient = Depends(deps.get_odoo_client)
 ) -> Any:
     """
     Transfer a manual request to the Standard Queue (Odoo Activity).
@@ -181,13 +177,7 @@ async def transfer_manual_request(
         )
 
     # 2. Odoo Interaction (Idempotent)
-    client = OdooClient(
-        url=settings.ODOO_URL,
-        db=settings.ODOO_DB,
-        auth_type="jsonrpc_password",
-        login=settings.ODOO_LOGIN,
-        secret=settings.ODOO_PASSWORD
-    )
+    # O cliente injetado já respeita o ambiente do usuário
     
     activity_id = None
     created = False
@@ -294,8 +284,7 @@ async def transfer_manual_request(
         print(error_msg)
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=error_msg)
-    finally:
-        await client.close()
+    # finally: client.close() -> Gerenciado pela dependência
         
     # 3. Update Local State
     req.transferred_to_queue = True
