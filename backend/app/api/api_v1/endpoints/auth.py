@@ -137,8 +137,10 @@ async def login_access_token(
 @router.get("/me")
 async def read_users_me(
     user_token: str = Depends(deps.reusable_oauth2),
+    session: AsyncSession = Depends(deps.get_session),
     odoo: Any = Depends(get_odoo_client)
 ) -> dict:
+
     """
     Returns the profile of the current user.
     Handles both Odoo users and Fallback employees.
@@ -172,15 +174,40 @@ async def read_users_me(
                 is_admin = True
 
             logger.info(f"Auth /me: Successfully matched Odoo user '{subject}' (ID: {uid})")
+            logger.info(f"Auth /me: Successfully matched Odoo user '{subject}' (ID: {uid})")
+            
+            # --- JIT User Sync (Ensures UUID for Reports/Agent) ---
+            from sqlmodel import select
+            from app.models.user import User, UserRole
+            
+            # Check if user exists in local DB
+            stmt = select(User).where(User.username == subject)
+            result = await session.execute(stmt)
+            local_user = result.scalars().first()
+            
+            if not local_user:
+                logger.info(f"Auth /me: Creating local shadow user for Odoo user '{subject}'")
+                local_user = User(
+                    username=subject,
+                    hashed_password="EXTERNAL_AUTH_ODOO", # Placeholder
+                    role=UserRole.ADMIN if is_admin else UserRole.OPERATOR,
+                    is_active=True
+                )
+                session.add(local_user)
+                await session.commit()
+                await session.refresh(local_user)
+            
             return {
                 "user": subject,
                 "name": user_data.get("name"),
                 "is_admin": is_admin,
                 "auth_source": "odoo",
                 "uid_odoo": uid,
+                "id": local_user.id, # Importante: Retornar o UUID local
                 "employee_id": None,
                 "roles": groups_id
             }
+
     except Exception as e:
         logger.warning(f"Failed to fetch Odoo user info for {subject}: {e}")
 
@@ -196,15 +223,38 @@ async def read_users_me(
         if employees:
             emp = employees[0]
             logger.info(f"Auth /me: Successfully matched employee fallback '{subject}' (ID: {emp['id']})")
+            logger.info(f"Auth /me: Successfully matched employee fallback '{subject}' (ID: {emp['id']})")
+            
+            # --- JIT User Sync ---
+            from sqlmodel import select
+            from app.models.user import User, UserRole
+            
+            stmt = select(User).where(User.username == subject)
+            result = await session.execute(stmt)
+            local_user = result.scalars().first()
+            
+            if not local_user:
+                local_user = User(
+                    username=subject,
+                    hashed_password="EXTERNAL_AUTH_EMPLOYEE",
+                    role=UserRole.OPERATOR,
+                    is_active=True
+                )
+                session.add(local_user)
+                await session.commit()
+                await session.refresh(local_user)
+                
             return {
                 "user": subject,
                 "name": emp.get("name"),
                 "is_admin": False,
                 "auth_source": "employee",
                 "uid_odoo": None,
+                "id": local_user.id,
                 "employee_id": emp["id"],
                 "roles": []
             }
+
     except Exception as e:
         logger.error(f"Failed to fetch employee info for {subject}: {e}")
 

@@ -35,24 +35,32 @@ async def get_current_user(
         if token_data is None:
             return None
             
-        # Ensure token_data is a valid UUID to avoid SQLAlchemy errors
-        user_id = uuid.UUID(str(token_data))
+        user_identifier = str(token_data)
     except (JWTError, ValidationError, ValueError, TypeError):
         return None
     
     from sqlmodel import select
     try:
-        stmt = select(User).where(User.id == user_id)
+        # Tenta interpretar como UUID (usuários locais), se falhar usa como string (usuários Odoo)
+        try:
+            user_id = uuid.UUID(user_identifier)
+            stmt = select(User).where(User.id == user_id)
+        except ValueError:
+            # Se não for UUID, busca por username (Odoo users)
+            stmt = select(User).where(User.username == user_identifier)
+            
         result = await session.execute(stmt)
         user = result.scalars().first()
+        
+        if not user or not user.is_active:
+            return None
+            
+        return user
     except Exception as e:
-        logger.error(f"User lookup failed: {e}")
+        logger.error(f"User lookup failed for {user_identifier}: {e}")
         return None
-        
-    if not user or not user.is_active:
-        return None
-        
-    return user
+
+
 
 async def get_odoo_client():
     from app.services.odoo_client import OdooClient
