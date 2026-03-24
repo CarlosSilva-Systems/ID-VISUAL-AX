@@ -90,15 +90,20 @@ async def get_odoo_client(
     """
     from app.services.odoo_client import OdooClient
     
-    # URL Dinâmica: Staging vs Produção do Usuário
+    # URL e DB Dinâmicos: Staging vs Produção do Usuário
     odoo_url = settings.ODOO_URL
-    if current_user and current_user.is_odoo_test_mode and current_user.odoo_test_url:
-        odoo_url = current_user.odoo_test_url
-        logger.info(f"Usuário {current_user.username} operando em MODO TESTE (Dados): {odoo_url}")
+    odoo_db = settings.ODOO_DB
+    
+    if current_user and current_user.is_odoo_test_mode:
+        if current_user.odoo_test_url:
+            odoo_url = current_user.odoo_test_url
+        if current_user.odoo_test_db:
+            odoo_db = current_user.odoo_test_db
+        logger.info(f"Usuário {current_user.username} operando em MODO TESTE (Dados). URL: {odoo_url}, DB: {odoo_db}")
 
     client = OdooClient(
         url=odoo_url,
-        db=settings.ODOO_DB,
+        db=odoo_db,
         auth_type=settings.ODOO_AUTH_TYPE,
         login=settings.ODOO_LOGIN,
         secret=settings.ODOO_PASSWORD

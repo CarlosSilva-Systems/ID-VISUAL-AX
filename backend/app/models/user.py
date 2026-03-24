@@ -20,6 +20,7 @@ class UserBase(SQLModel):
     # Odoo Dynamic Environment (Staging/Production)
     is_odoo_test_mode: bool = Field(default=False)
     odoo_test_url: Optional[str] = Field(default=None)
+    odoo_test_db: Optional[str] = Field(default=None)
 
 class User(UserBase, table=True):
     id: Optional[uuid.UUID] = Field(default_factory=uuid.uuid4, primary_key=True)

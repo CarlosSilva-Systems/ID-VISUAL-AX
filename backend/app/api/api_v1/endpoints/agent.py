@@ -61,11 +61,12 @@ async def execute_tool_call(tool_name: str, arguments: Dict[str, Any]) -> str:
                 return json.dumps({"status": "info", "message": "Funcionalidade de detalhamento de ID via Chat em implementação."})
             
             elif tool_name == "get_obra_status":
-                # Consulta real no Odoo
+                # Consulta real no Odoo (usa credenciais do sistema)
                 try:
+                    from app.api.deps import get_system_odoo_client
                     odoo = OdooClient(
                         url=settings.ODOO_URL, db=settings.ODOO_DB, 
-                        auth_type="jsonrpc_password", login=settings.ODOO_LOGIN, 
+                        auth_type=settings.ODOO_AUTH_TYPE, login=settings.ODOO_LOGIN, 
                         secret=settings.ODOO_PASSWORD
                     )
                     obra_id = arguments.get("obra_id", "")

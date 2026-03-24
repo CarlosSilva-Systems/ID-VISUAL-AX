@@ -8,7 +8,11 @@ from sqlmodel import select, col, SQLModel
 from pydantic import BaseModel
 from sqlalchemy import func, case, text
 
+import logging
 from app.api import deps
+from app.api.deps import get_odoo_client
+
+logger = logging.getLogger(__name__)
 from app.models.batch import Batch, BatchStatus
 from app.models.id_request import IDRequest, IDRequestTask
 from app.models.manufacturing import ManufacturingOrder
@@ -386,7 +390,8 @@ from app.models.manufacturing import ManufacturingOrder
 @router.post("/", response_model=Dict[str, Any])
 async def create_batch(
     payload: CreateBatchRequest,
-    session: AsyncSession = Depends(deps.get_session)
+    session: AsyncSession = Depends(deps.get_session),
+    client: OdooClient = Depends(deps.get_odoo_client)
 ) -> Any:
     """
     Create a new Batch from Odoo Manufacturing Orders.
@@ -394,23 +399,13 @@ async def create_batch(
     if not payload.mo_ids:
         raise HTTPException(status_code=400, detail="No MO IDs provided")
 
-    # 1. Fetch MOs from Odoo
+    # 1. Fetch MOs from Odoo (cliente injetado respeita ambiente do usuário)
     try:
-        client = OdooClient(
-           url=settings.ODOO_URL,
-           db=settings.ODOO_DB,
-           auth_type="jsonrpc_password",
-           login=settings.ODOO_LOGIN,
-           secret=settings.ODOO_PASSWORD
-        )
-        
-        # Read details for selected MOs
         mos_data = await client.search_read(
             'mrp.production', 
             domain=[['id', 'in', payload.mo_ids]],
             fields=['id', 'name', 'product_qty', 'date_start', 'state', 'origin', 'x_studio_nome_da_obra']
         )
-        await client.close()
     except Exception as e:
         request_id = str(uuid.uuid4())[:8]
         # logger.error(f"Odoo Fetch Error [ref:{request_id}]: {e}")
@@ -587,7 +582,8 @@ async def get_finished_batches(
 @router.patch("/{batch_id}/finalize", response_model=Dict[str, Any])
 async def finalize_batch(
     batch_id: UUID,
-    session: AsyncSession = Depends(deps.get_session)
+    session: AsyncSession = Depends(deps.get_session),
+    client: OdooClient = Depends(deps.get_odoo_client)
 ) -> Any:
     """
     Finalize a batch with Lean validation and Odoo activity closure.
@@ -698,14 +694,7 @@ async def finalize_batch(
     odoo_errors = []
     odoo_closed_count = 0
     
-    client = OdooClient(
-        url=settings.ODOO_URL,
-        db=settings.ODOO_DB,
-        auth_type="jsonrpc_password",
-        login=settings.ODOO_LOGIN,
-        secret=settings.ODOO_PASSWORD
-    )
-    
+    # Cliente injetado respeita o ambiente do usuário
     try:
         # Get activity type ID once
         activity_type_id = await client.get_activity_type_id("Imprimir ID Visual")
@@ -726,7 +715,6 @@ async def finalize_batch(
                     activity_ids = [a['id'] for a in activities]
                     await client.close_activities(activity_ids)
                     odoo_closed_count += len(activity_ids)
-                # No activities found = idempotent success
                 
             except Exception as e:
                 odoo_errors.append({
@@ -734,8 +722,8 @@ async def finalize_batch(
                     "mo_name": mo.name,
                     "reason": str(e)
                 })
-    finally:
-        await client.close()
+    except Exception as e:
+        logger.error(f"Error closing Odoo activities: {e}")
     
     # D) RETURN RESPONSE
     return {
