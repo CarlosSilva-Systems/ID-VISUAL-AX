@@ -54,6 +54,7 @@ DICIONÁRIO DE NEGÓCIO:
 - "Eficiência", "Produtividade", "Gargalo" -> Use rankings ou resumo.
 
 REGRAS DE OURO:
+- Retorne SEMPRE um objeto JSON válido seguindo estritamente o schema.
 - NUNCA invente tipos de widget. Use APENAS 'bar', 'line', 'pie' ou 'kpi'.
 - O campo 'data_source_endpoint' deve ser um dos endpoints listados acima.
 - Idioma: Português-Brasil (PT-BR)."""
@@ -75,7 +76,7 @@ async def generate_report_layout(user_prompt: str, current_layout: Optional[Dict
     if current_layout:
         prompt = f"LAYOUT ATUAL: {json.dumps(current_layout)}\n\nINSTRUÇÃO DE REFINAMENTO: {user_prompt}\n\nAplique a mudança e retorne o JSON completo atualizado."
     else:
-        prompt = f"O usuário quer um novo dashboard para: {user_prompt}"
+        prompt = f"Gere um novo dashboard em formato JSON para a seguinte solicitação: {user_prompt}"
 
     response = await client.chat.completions.create(
         model="openai/gpt-4o-mini",
