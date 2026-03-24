@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Download } from 'lucide-react';
+import { Download, Sparkles } from 'lucide-react';
 import { MPRFilterBar, MPRFilters } from '../../components/mpr/MPRFilterBar';
 import { MPRKPICards } from '../../components/mpr/MPRKPICards';
 import { MPRFilaAtivaTable } from '../../components/mpr/MPRFilaAtivaTable';
@@ -122,12 +122,26 @@ export function MPRAnalyticsDashboard() {
           <button 
             onClick={handleExportCSV}
             disabled={exportLoading || !kpiData}
-            className="flex items-center gap-2 bg-indigo-600 outline-none text-white px-4 py-2 rounded-md hover:bg-indigo-700 disabled:opacity-50 transition-colors shadow"
+            className="flex items-center gap-2 bg-white border border-slate-200 text-slate-700 px-4 py-2 rounded-md hover:bg-slate-50 disabled:opacity-50 transition-colors shadow-sm"
           >
             <Download size={18} />
-            {exportLoading ? 'Gerando...' : 'Exportar Relatório CSV'}
+            {exportLoading ? 'Gerando...' : 'Exportar CSV'}
+          </button>
+
+          <button 
+            onClick={() => {
+              const event = new CustomEvent('trigger-agent', { 
+                detail: { initialMessage: "Quero criar um relatório analítico de produção (MPR). Pode me ajudar?" } 
+              });
+              window.dispatchEvent(event);
+            }}
+            className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition-colors shadow-lg active:scale-95"
+          >
+            <Sparkles size={18} />
+            Criar Relatório com IA
           </button>
         </div>
+
 
         <MPRFilterBar onFilterChange={handleFilterChange} />
         
