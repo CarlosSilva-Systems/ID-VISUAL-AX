@@ -51,18 +51,28 @@ ESTRUTURA JSON OBRIGATÓRIA (STRICT):
 {
   "title": "str",
   "description": "str",
-  "widgets": [/* Widgets padrão */],
+  "widgets": [
+    {
+      "type": "bar" | "line" | "pie" | "kpi",  <-- PROIBIDO usar outros nomes como 'chart', 'summary', 'analysis'
+      "title": "str",
+      "data_source_endpoint": "str (endpoint relativo)",
+      "grid_size": "half" | "full"
+    }
+  ],
   "proactive_insights": [
     {
       "type": "warning" | "opportunity" | "odoo_tip",
-      "title": "Ex: Gargalo na Engenharia",
-      "description": "Texto explicando a anomalia detectada...",
-      "actionable_suggestion": "Ação prática no sistema ou processo..."
+      "title": "str",
+      "description": "str",
+      "actionable_suggestion": "str"
     }
   ]
 }
 
-Idioma: Português-Brasil (PT-BR)."""
+REGRAS DE OURO:
+- NUNCA invente tipos de widget. Use APENAS 'bar', 'line', 'pie' ou 'kpi'.
+- O campo 'data_source_endpoint' deve ser um dos endpoints listados acima.
+- Idioma: Português-Brasil (PT-BR)."""
 
 # --- Agent Engine ---
 
@@ -105,12 +115,20 @@ async def generate_report_layout(user_prompt: str, current_layout: Optional[Dict
         if "widgets" in data and isinstance(data["widgets"], list):
             for w in data["widgets"]:
                 # Normalização de Tipos (IA as vezes usa sufixos)
-                t = w.get("type", "")
-                if t in ["line_chart", "area"]: w["type"] = "line"
-                if t in ["bar_chart", "histogram"]: w["type"] = "bar"
-                if t in ["pie_chart", "donut"]: w["type"] = "pie"
-                if t in ["kpi_card", "stat", "metric"]: w["type"] = "kpi"
-                if t == "table": w["type"] = "bar" # Fallback seguro
+                # Normalização de Tipos (IA as vezes usa sufixos ou nomes semânticos)
+                t = str(w.get("type", "")).lower()
+                
+                # Heurística Indestrutível
+                if "line" in t or "area" in t or "evolucao" in t or "tendencia" in t:
+                    w["type"] = "line"
+                elif "pie" in t or "donut" in t or "distribuicao" in t or "pizza" in t:
+                    w["type"] = "pie"
+                elif "kpi" in t or "stat" in t or "metric" in t or "summary" in t or "val" in t or "total" in t:
+                    w["type"] = "kpi"
+                elif "bar" in t or "chart" in t or "graph" in t or "plot" in t or "efficiency" in t or "analys" in t:
+                    w["type"] = "bar"
+                else:
+                    w["type"] = "bar" # Fallback universal
                 
                 # Normalização de Grid Size
                 if "grid_span" in w:
@@ -139,6 +157,16 @@ async def generate_report_layout(user_prompt: str, current_layout: Optional[Dict
         # 3. Normalização de Insights
         if "insights" in data and "proactive_insights" not in data:
             data["proactive_insights"] = data["insights"]
+        
+        if "proactive_insights" in data and isinstance(data["proactive_insights"], list):
+            for i in data["proactive_insights"]:
+                it = str(i.get("type", "")).lower()
+                if "alert" in it or "warning" in it or "danger" in it or "erro" in it:
+                    i["type"] = "warning"
+                elif "tip" in it or "odoo" in it or "dica" in it:
+                    i["type"] = "odoo_tip"
+                else:
+                    i["type"] = "opportunity"
 
         return DashboardLayout(**data)
     except Exception as e:
