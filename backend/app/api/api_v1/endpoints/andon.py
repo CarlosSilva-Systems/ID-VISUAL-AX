@@ -661,3 +661,23 @@ async def get_downtime_report(
         report[c.workcenter_name]["total"] += 1
         
     return report
+
+@router.get("/history")
+async def get_andon_history(
+    session: AsyncSession = Depends(get_session),
+    days: int = 7
+):
+    """Retorna o histórico de chamados Andon para o Dashboard BI."""
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    stmt = select(AndonCall).where(AndonCall.created_at >= cutoff)
+    result = await session.execute(stmt)
+    calls = result.scalars().all()
+    
+    # Agrupa por categoria para o gráfico
+    stats = {}
+    for c in calls:
+        cat = c.category or "Outros"
+        stats[cat] = stats.get(cat, 0) + 1
+        
+    return [{"label": k, "value": v} for k, v in stats.items()]
+
