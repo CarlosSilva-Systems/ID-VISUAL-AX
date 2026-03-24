@@ -160,20 +160,135 @@ class MPRAnalyticsService:
 
     @staticmethod
     async def get_ranking_responsaveis(session: AsyncSession, start_date: datetime, end_date: datetime) -> List[Dict]:
-        return []
+        """Calcula produtividade por responsável (designer/solicitante)."""
+        start_naive = start_date.replace(tzinfo=None) if start_date.tzinfo else start_date
+        end_naive = end_date.replace(tzinfo=None) if end_date.tzinfo else end_date
+
+        stmt = sm_select(
+            IDRequest.requester_name,
+            func.count(IDRequest.id).label("concluidas"),
+            func.avg((func.julianday(IDRequest.concluido_em) - func.julianday(IDRequest.solicitado_em)) * 1440).label("avg_ciclo")
+        ).where(
+            IDRequest.concluido_em >= start_naive,
+            IDRequest.concluido_em <= end_naive
+        ).group_by(IDRequest.requester_name)
+        
+        res = await session.execute(stmt)
+        rows = res.all()
+        
+        return [
+            {
+                "nome": r[0] if r[0] else "N/A",
+                "ids_concluidas": r[1],
+                "tempo_medio_ciclo_min": round(r[2], 1) if r[2] else 0,
+                "responsavel_id": 0 # Simulado pois requester_name é apenas str no modelo atual
+            } for r in rows
+        ]
 
     @staticmethod
     async def get_volume_por_periodo(session: AsyncSession, start_date: datetime, end_date: datetime) -> List[Dict]:
-        return []
+        """Retorna volume de solicitações vs entregas por dia."""
+        start_naive = start_date.replace(tzinfo=None) if start_date.tzinfo else start_date
+        end_naive = end_date.replace(tzinfo=None) if end_date.tzinfo else end_date
+
+        # Solicitações por dia
+        stmt_sol = sm_select(
+            func.date(IDRequest.created_at).label("dia"),
+            func.count(IDRequest.id).label("qtd")
+        ).where(
+            IDRequest.created_at >= start_naive,
+            IDRequest.created_at <= end_naive
+        ).group_by(func.date(IDRequest.created_at))
+        
+        res_sol = await session.execute(stmt_sol)
+        sol_data = {r[0]: r[1] for r in res_sol.all()}
+        
+        # Conclusões por dia
+        stmt_con = sm_select(
+            func.date(IDRequest.concluido_em).label("dia"),
+            func.count(IDRequest.id).label("qtd")
+        ).where(
+            IDRequest.concluido_em >= start_naive,
+            IDRequest.concluido_em <= end_naive
+        ).group_by(func.date(IDRequest.concluido_em))
+        
+        res_con = await session.execute(stmt_con)
+        con_data = {r[0]: r[1] for r in res_con.all()}
+        
+        all_days = sorted(list(set(list(sol_data.keys()) + list(con_data.keys()))))
+        
+        return [
+            {
+                "label": day,
+                "solicitadas": sol_data.get(day, 0),
+                "entregues": con_data.get(day, 0),
+                "no_prazo": con_data.get(day, 0) # Simplificado
+            } for day in all_days
+        ]
 
     @staticmethod
     async def get_evolucao_tempo_ciclo(session: AsyncSession, start_date: datetime, end_date: datetime) -> List[Dict]:
-        return []
+        """Tendência do Lead Time médio diário."""
+        start_naive = start_date.replace(tzinfo=None) if start_date.tzinfo else start_date
+        end_naive = end_date.replace(tzinfo=None) if end_date.tzinfo else end_date
+
+        stmt = sm_select(
+            func.date(IDRequest.concluido_em).label("dia"),
+            func.avg((func.julianday(IDRequest.concluido_em) - func.julianday(IDRequest.solicitado_em)) * 1440).label("avg_min")
+        ).where(
+            IDRequest.concluido_em >= start_naive,
+            IDRequest.concluido_em <= end_naive
+        ).group_by(func.date(IDRequest.concluido_em))
+        
+        res = await session.execute(stmt)
+        return [{"label": r[0], "tempo_medio_ciclo_min": round(r[1], 1) if r[1] else 0} for r in res.all()]
 
     @staticmethod
     async def get_impacto_fabricacao(session: AsyncSession, start_date: datetime, end_date: datetime) -> List[Dict]:
-        return []
+        """Gargalos de fabricação por motivo."""
+        start_naive = start_date.replace(tzinfo=None) if start_date.tzinfo else start_date
+        end_naive = end_date.replace(tzinfo=None) if end_date.tzinfo else end_naive
+
+        stmt = sm_select(
+            FabricacaoBlock.motivo,
+            func.sum(FabricacaoBlock.tempo_parado_minutos).label("total_min"),
+            func.count(FabricacaoBlock.id).label("ocorrencias")
+        ).where(
+            FabricacaoBlock.of_bloqueada_em >= start_naive,
+            FabricacaoBlock.of_bloqueada_em <= end_naive
+        ).group_by(FabricacaoBlock.motivo)
+        
+        res = await session.execute(stmt)
+        return [
+            {
+                "label": r[0] if r[0] else "Outros",
+                "horas_paradas_total": round(r[1]/60, 1) if r[1] else 0,
+                "ofs_afetadas": r[2]
+            } for r in res.all()
+        ]
 
     @staticmethod
     async def get_motivos_revisao(session: AsyncSession, start_date: datetime, end_date: datetime) -> List[Dict]:
-        return []
+        """Análise de Pareto de motivos de retrabalho."""
+        start_naive = start_date.replace(tzinfo=None) if start_date.tzinfo else start_date
+        end_naive = end_date.replace(tzinfo=None) if end_date.tzinfo else end_date
+
+        stmt = sm_select(
+            RevisaoIDVisual.motivo,
+            func.count(RevisaoIDVisual.id).label("qtd")
+        ).where(
+            RevisaoIDVisual.revisao_solicitada_em >= start_naive,
+            RevisaoIDVisual.revisao_solicitada_em <= end_naive
+        ).group_by(RevisaoIDVisual.motivo)
+        
+        res = await session.execute(stmt)
+        rows = res.all()
+        total = sum(r[1] for r in rows)
+        
+        return [
+            {
+                "motivo": str(r[0].value if hasattr(r[0], 'value') else r[0]),
+                "quantidade": r[1],
+                "percentual": round((r[1]/total)*100, 1) if total > 0 else 0
+            } for r in rows
+        ]
