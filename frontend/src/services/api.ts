@@ -351,5 +351,14 @@ export const api = {
     generateIAReport: async (prompt: string) => {
         return api.post('/reports/generate', { prompt });
     },
+
+    // ── User Specific Odoo Environment ──
+    getUserOdooConfig: async () => {
+        return api.get('/user/odoo-config');
+    },
+
+    updateUserOdooConfig: async (payload: { is_odoo_test_mode?: boolean, odoo_test_url?: string }) => {
+        return api.patch('/user/odoo-config', payload);
+    },
 };
 

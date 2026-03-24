@@ -15,7 +15,7 @@ import { Login } from './components/Login';
 
 import { AndonGrid } from './components/AndonGrid';
 import { AndonTV } from './components/AndonTV';
-import { Fabrication } from './types';
+import { Fabrication, User } from './types';
 import { api } from '../services/api';
 
 import { DataProvider } from './contexts/DataContext';
@@ -27,8 +27,7 @@ function AppContent() {
 
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [authLoading, setAuthLoading] = useState(true);
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [username, setUsername] = useState('');
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
 
   React.useEffect(() => {
     const checkAuth = async () => {
@@ -52,8 +51,10 @@ function AppContent() {
 
   const handleLoginSuccess = (meData: any) => {
     setIsAuthenticated(true);
-    setIsAdmin(meData.is_admin);
-    setUsername(meData.user);
+    setCurrentUser({
+      ...meData,
+      username: meData.user // Mapeamento para interface unificada
+    });
   };
 
   const handleCreateBatch = async (itemsOrId: Fabrication[] | string) => {
@@ -90,19 +91,19 @@ function AppContent() {
       <Routes>
         <Route path="/andon-tv" element={<AndonTV />} />
         <Route path="/*" element={
-          <Layout isAdmin={isAdmin} username={username}>
+          <Layout user={currentUser}>
             <Routes>
               <Route path="/" element={<Navigate to="/id-visual/dashboard" replace />} />
               <Route path="/id-visual/dashboard" element={<Dashboard onCreateBatch={handleCreateBatch} />} />
               <Route path="/id-visual/solicitacoes" element={<Solicitacoes onCreateBatch={handleCreateBatch} />} />
               <Route path="/id-visual/producao" element={<VisaoProducao />} />
-              <Route path="/andon/painel" element={<AndonGrid username={username} />} />
+              <Route path="/andon/painel" element={<AndonGrid username={currentUser?.username || ''} />} />
               <Route path="/relatorios" element={<MPRAnalyticsDashboard />} />
               <Route path="/relatorios/meus" element={<MyReports />} />
               <Route path="/relatorios/visualizar/:reportId" element={<DynamicDashboard />} />
               <Route path="/templates" element={<Padroes5S />} />
 
-              <Route path="/admin" element={<Configuracoes />} />
+              <Route path="/admin" element={<Configuracoes user={currentUser} />} />
               <Route path="/id-visual/batch/:batchId" element={
                 <ActiveBatch
                   onBack={() => navigate('/id-visual/dashboard')}

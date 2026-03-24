@@ -1,5 +1,15 @@
 import { LucideIcon, FileText, Tag, Layers, ClipboardCheck, Box, Settings, ShieldCheck } from "lucide-react";
 
+export interface User {
+  username: string;
+  user: string; // Alias para compatibilidade com respostas da API
+  role: "operator" | "responsible" | "admin";
+  is_admin: boolean;
+  department: string | null;
+  is_odoo_test_mode: boolean;
+  odoo_test_url: string | null;
+}
+
 export type StatusID = "Nova" | "Triagem" | "Em Lote" | "Bloqueada" | "Concluída" | "Sem Solicitação";
 export type Priority = "Normal" | "Alta" | "Urgente";
 

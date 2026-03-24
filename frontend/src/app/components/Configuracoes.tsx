@@ -5,9 +5,13 @@ import {
   Save,
   RefreshCw,
   Layout,
-  User,
-  AlertTriangle
+  User as UserIcon,
+  AlertTriangle,
+  Globe,
+  Settings as SettingsIcon,
+  ShieldCheck
 } from 'lucide-react';
+import { User } from '../types';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { toast } from 'sonner';
@@ -19,13 +23,22 @@ function cn(...inputs: ClassValue[]) {
 
 type Tab = 'odoo' | 'lean' | 'permissoes';
 
-export function Configuracoes() {
+interface ConfiguracoesProps {
+  user: User | null;
+}
+
+export function Configuracoes({ user }: ConfiguracoesProps) {
   const [activeTab, setActiveTab] = useState<Tab>('odoo');
   const [isSaving, setIsSaving] = useState(false);
   const [users, setUsers] = useState<any[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
   const [selectedRespId, setSelectedRespId] = useState<string>('');
   const [initialRespId, setInitialRespId] = useState<string>('');
+
+  // Odoo Dynamic Environment State
+  const [isTestMode, setIsTestMode] = useState(user?.is_odoo_test_mode || false);
+  const [testUrl, setTestUrl] = useState(user?.odoo_test_url || '');
+  const [isUpdatingConfig, setIsUpdatingConfig] = useState(false);
 
   const tabs = [
     { id: 'odoo', label: 'Integração Odoo', icon: Server },
@@ -131,7 +144,7 @@ export function Configuracoes() {
 
                 <div className="space-y-2">
                   <label className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                    <User size={14} /> Usuário Responsável (Odoo)
+                    <UserIcon size={14} /> Usuário Responsável (Odoo)
                   </label>
                   <select
                     value={selectedRespId}
@@ -147,6 +160,98 @@ export function Configuracoes() {
                   {loadingUsers && <p className="text-[10px] text-blue-500 font-bold animate-pulse">Carregando usuários do Odoo...</p>}
                 </div>
               </section>
+
+              {/* Seção Exclusiva de T.I: Ambiente Dinâmico */}
+              {(user?.department?.toUpperCase() === 'T.I' || user?.is_admin) && (
+                <section className="space-y-6 pt-6 border-t border-slate-50">
+                  <div className="flex items-center justify-between">
+                    <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                      <Globe size={18} className="text-blue-500" /> Ambiente de Dados Odoo
+                    </h3>
+                    <div className={cn(
+                        "px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider",
+                        isTestMode ? "bg-rose-100 text-rose-700" : "bg-emerald-100 text-emerald-700"
+                    )}>
+                      {isTestMode ? "Modo Teste Ativo" : "Produção Ativa"}
+                    </div>
+                  </div>
+
+                  <div className="bg-blue-50 border border-blue-100 p-4 rounded-xl flex gap-3">
+                    <ShieldCheck className="text-blue-500 shrink-0" size={20} />
+                    <p className="text-xs text-blue-800 leading-relaxed">
+                      <strong>Acesso Restrito:</strong> Como membro do departamento de T.I, você pode alternar entre os servidores de Produção e Staging de forma isolada.
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <button
+                      onClick={() => setIsTestMode(false)}
+                      className={cn(
+                        "flex items-center justify-center gap-3 p-4 rounded-2xl border-2 transition-all font-bold",
+                        !isTestMode 
+                          ? "bg-emerald-50 border-emerald-500 text-emerald-700 shadow-sm" 
+                          : "bg-white border-slate-100 text-slate-400 hover:border-slate-200"
+                      )}
+                    >
+                      <div className={cn("w-3 h-3 rounded-full", !isTestMode ? "bg-emerald-500 animate-pulse" : "bg-slate-200")} />
+                      Produção (Real)
+                    </button>
+
+                    <button
+                      onClick={() => setIsTestMode(true)}
+                      className={cn(
+                        "flex items-center justify-center gap-3 p-4 rounded-2xl border-2 transition-all font-bold",
+                        isTestMode 
+                          ? "bg-rose-50 border-rose-500 text-rose-700 shadow-sm" 
+                          : "bg-white border-slate-100 text-slate-400 hover:border-slate-200"
+                      )}
+                    >
+                      <div className={cn("w-3 h-3 rounded-full", isTestMode ? "bg-rose-500 animate-pulse" : "bg-slate-200")} />
+                      Modo Teste / Staging
+                    </button>
+                  </div>
+
+                  {isTestMode && (
+                    <div className="space-y-2 animate-in slide-in-from-top-2 duration-200">
+                      <label className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                        <Server size={14} /> URL do Banco de Teste (Odoo)
+                      </label>
+                      <input
+                        type="text"
+                        value={testUrl}
+                        onChange={(e) => setTestUrl(e.target.value)}
+                        placeholder="https://sua-instancia-teste.odoo.com"
+                        className="w-full p-4 rounded-xl border border-rose-100 bg-rose-50/30 font-bold text-sm focus:bg-white focus:ring-4 focus:ring-rose-500/10 focus:border-rose-600 transition-all outline-none"
+                      />
+                    </div>
+                  )}
+
+                  <div className="flex justify-end pt-2">
+                    <button
+                      onClick={async () => {
+                        setIsUpdatingConfig(true);
+                        try {
+                          await api.updateUserOdooConfig({
+                            is_odoo_test_mode: isTestMode,
+                            odoo_test_url: testUrl
+                          });
+                          toast.success("Ambiente Odoo atualizado com sucesso!");
+                          // Recarrega para aplicar a nova conexão
+                          setTimeout(() => window.location.reload(), 1000);
+                        } catch (err: any) {
+                          toast.error("Erro ao atualizar ambiente: " + err.message);
+                        } finally {
+                          setIsUpdatingConfig(false);
+                        }
+                      }}
+                      disabled={isUpdatingConfig || (isTestMode && !testUrl)}
+                      className="px-4 py-2 bg-slate-800 text-white rounded-lg text-xs font-bold hover:bg-slate-900 transition-all disabled:opacity-50"
+                    >
+                      {isUpdatingConfig ? "Atualizando..." : "Aplicar Mudança de Ambiente"}
+                    </button>
+                  </div>
+                </section>
+              )}
 
               <section className="space-y-4 pt-4 border-t border-slate-50">
                 <div className="flex items-center gap-2 font-bold text-slate-400">

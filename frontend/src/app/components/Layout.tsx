@@ -24,12 +24,12 @@ import { useLocation, useNavigate, Link } from "react-router-dom";
 import { cn, Button } from "./ui";
 import { api } from "../../services/api";
 import { AgentSidebar } from "./AgentSidebar";
+import { User as UserType } from "../types";
 
 
 interface LayoutProps {
   children: React.ReactNode;
-  isAdmin?: boolean;
-  username?: string;
+  user: UserType | null;
 }
 
 interface MenuItem {
@@ -49,7 +49,9 @@ interface MenuGroup {
   isAdminOnly?: boolean;
 }
 
-export const Layout = ({ children, isAdmin = false, username = "Usuário" }: LayoutProps) => {
+export const Layout = ({ children, user }: LayoutProps) => {
+  const isAdmin = user?.is_admin || false;
+  const username = user?.username || "Usuário";
   const location = useLocation();
   const navigate = useNavigate();
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
