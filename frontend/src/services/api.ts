@@ -38,11 +38,17 @@ export const api = {
     },
 
     get: async (endpoint: string) => {
+        // Prevent double prefixing if endpoint already contains API_URL
+        const cleanEndpoint = endpoint.startsWith(API_URL) 
+            ? endpoint.slice(API_URL.length) 
+            : endpoint;
+
         try {
-            const response = await fetch(`${API_URL}${endpoint}`, {
+            const response = await fetch(`${API_URL}${cleanEndpoint}`, {
                 method: 'GET',
                 headers: getHeaders(),
             });
+
             if (!response.ok) {
                 if (response.status === 401) {
                     localStorage.removeItem('id_visual_token');

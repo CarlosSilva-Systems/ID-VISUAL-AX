@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { 
     ChevronLeft, Download, Share2, Calendar, Layout, 
     BarChart3, PieChart as PieIcon, LineChart as LineIcon, Activity,
-    Loader2, AlertCircle, RefreshCw
+    Loader2, AlertCircle, RefreshCw, Sparkles
 } from 'lucide-react';
 import { 
     ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
@@ -17,20 +17,19 @@ import { toast } from 'sonner';
 
 const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#6366F1'];
 
-const ChartWrapper = ({ chart, children }: { chart: any, children: React.ReactNode }) => (
+const ChartWrapper = ({ widget, children }: { widget: any, children: React.ReactNode }) => (
     <div className={cn(
         "bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col h-[400px]",
-        chart.grid_span === 4 ? "lg:col-span-4" : 
-        chart.grid_span === 3 ? "lg:col-span-3" : 
-        chart.grid_span === 2 ? "lg:col-span-2" : "lg:col-span-1"
+        widget.grid_size === 'full' ? "lg:col-span-4" : 
+        widget.grid_size === 'half' ? "lg:col-span-2" : "lg:col-span-1"
     )}>
         <div className="flex items-center justify-between mb-6">
             <h4 className="font-bold text-slate-800 flex items-center gap-2">
-                {chart.type === 'bar' && <BarChart3 size={18} className="text-blue-500" />}
-                {chart.type === 'pie' && <PieIcon size={18} className="text-emerald-500" />}
-                {chart.type === 'line' && <LineIcon size={18} className="text-amber-500" />}
-                {chart.type === 'kpi_card' && <Activity size={18} className="text-rose-500" />}
-                {chart.title}
+                {widget.type === 'bar' && <BarChart3 size={18} className="text-blue-500" />}
+                {widget.type === 'pie' && <PieIcon size={18} className="text-emerald-500" />}
+                {widget.type === 'line' && <LineIcon size={18} className="text-amber-500" />}
+                {widget.type === 'kpi' && <Activity size={18} className="text-rose-500" />}
+                {widget.title}
             </h4>
             <Badge variant="neutral">Auto-Sync</Badge>
         </div>
@@ -56,15 +55,17 @@ export const DynamicDashboard = () => {
             const reportData = await api.getCustomReport(reportId!);
             setReport(reportData);
 
-            // Fetch data for each chart
-            const dataPromises = reportData.layout_config.charts.map(async (chart: any) => {
+            // Fetch data for each widget
+            const items = reportData.layout_config.widgets || reportData.layout_config.charts || [];
+            const dataPromises = items.map(async (widget: any) => {
                 try {
-                    const data = await api.get(chart.data_source_url);
-                    // Adaptação: se a API retornar um objeto complexo e o recharts precisar de array
+                    const endpoint = widget.data_source_endpoint || widget.data_source_url;
+                    const queryString = widget.params ? '?' + new URLSearchParams(widget.params).toString() : '';
+                    const data = await api.get(`${endpoint}${queryString}`);
                     const finalData = Array.isArray(data) ? data : (data.data || [data]);
-                    return { id: chart.title, data: finalData };
+                    return { id: widget.title, data: finalData };
                 } catch (e) {
-                    return { id: chart.title, data: [], error: true };
+                    return { id: widget.title, data: [], error: true };
                 }
             });
 
@@ -125,18 +126,59 @@ export const DynamicDashboard = () => {
                 </div>
             </div>
 
+            {/* Proactive Insights Section (BI v3) */}
+            {report.layout_config.proactive_insights && report.layout_config.proactive_insights.length > 0 && (
+                <div className="mb-10 space-y-4">
+                    <div className="flex items-center gap-2 text-blue-700 font-bold text-sm uppercase tracking-widest mb-4 px-1">
+                        <Sparkles size={16} />
+                        Consultoria Proativa Lean & Odoo
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        {report.layout_config.proactive_insights.map((insight: any, idx: number) => (
+                            <div key={idx} className={cn(
+                                "p-6 rounded-2xl border transition-all hover:translate-y-[-4px]",
+                                insight.type === 'warning' ? "bg-red-50 border-red-100 text-red-900 shadow-sm shadow-red-500/10" :
+                                insight.type === 'odoo_tip' ? "bg-blue-50 border-blue-100 text-blue-900 shadow-sm shadow-blue-500/10" :
+                                "bg-emerald-50 border-emerald-100 text-emerald-900 shadow-sm shadow-emerald-500/10"
+                            )}>
+                                <div className="flex items-center gap-3 mb-3">
+                                    <div className={cn(
+                                        "p-2 rounded-lg",
+                                        insight.type === 'warning' ? "bg-red-500 text-white" :
+                                        insight.type === 'odoo_tip' ? "bg-blue-600 text-white" :
+                                        "bg-emerald-600 text-white"
+                                    )}>
+                                        {insight.type === 'warning' ? <AlertCircle size={18} /> : 
+                                         insight.type === 'odoo_tip' ? <Layout size={18} /> : <Sparkles size={18} />}
+                                    </div>
+                                    <h5 className="font-bold text-lg">{insight.title}</h5>
+                                </div>
+                                <p className="text-sm opacity-80 mb-4 leading-relaxed">{insight.description}</p>
+                                <div className={cn(
+                                    "p-3 rounded-xl text-xs font-medium border",
+                                    insight.type === 'warning' ? "bg-white/50 border-red-200" :
+                                    insight.type === 'odoo_tip' ? "bg-white/50 border-blue-200" :
+                                    "bg-white/50 border-emerald-200"
+                                )}>
+                                    <span className="font-bold uppercase tracking-tighter mr-2">Ação Sugerida:</span>
+                                    {insight.actionable_suggestion}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
             {/* Dashboard Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                {report.layout_config.charts.map((chart: any, idx: number) => {
-                    const data = chartData[chart.title] || [];
+                {(report.layout_config.widgets || report.layout_config.charts || []).map((widget: any, idx: number) => {
+                    const data = chartData[widget.title] || [];
                     
-                    if (chart.type === 'kpi_card') {
-                        // Assuming the first item is the KPI value
+                    if (widget.type === 'kpi' || widget.type === 'kpi_card') {
                         const val = data[0]?.value || 'N/A';
-                        const label = data[0]?.label || chart.title;
                         return (
                             <div key={idx} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-center gap-2 lg:col-span-1">
-                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{chart.title}</span>
+                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{widget.title}</span>
                                 <span className="text-3xl font-black text-slate-900 tabular-nums">{val}</span>
                                 <div className="flex items-center gap-1 text-[10px] text-emerald-600 font-bold bg-emerald-50 w-fit px-1.5 py-0.5 rounded">
                                     <Activity size={10} /> ESTÁVEL
@@ -146,9 +188,9 @@ export const DynamicDashboard = () => {
                     }
 
                     return (
-                        <ChartWrapper key={idx} chart={chart}>
+                        <ChartWrapper key={idx} widget={widget}>
                             <ResponsiveContainer width="100%" height="100%">
-                                {chart.type === 'bar' ? (
+                                {widget.type === 'bar' ? (
                                     <BarChart data={data}>
                                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                                         <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{fontSize: 10, fill: '#64748b'}} />
@@ -156,7 +198,7 @@ export const DynamicDashboard = () => {
                                         <Tooltip cursor={{ fill: '#f8fafc' }} contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }} />
                                         <Bar dataKey="value" fill={COLORS[idx % COLORS.length]} radius={[4, 4, 0, 0]} />
                                     </BarChart>
-                                ) : chart.type === 'line' ? (
+                                ) : widget.type === 'line' ? (
                                     <AreaChart data={data}>
                                         <defs>
                                             <linearGradient id={`color-${idx}`} x1="0" y1="0" x2="0" y2="1">
@@ -195,7 +237,7 @@ export const DynamicDashboard = () => {
             </div>
 
             {/* Empty State / Footer */}
-            {report.layout_config.charts.length === 0 && (
+            {(report.layout_config.widgets || report.layout_config.charts || []).length === 0 && (
                 <div className="flex flex-col items-center justify-center py-20 bg-white rounded-3xl border-2 border-dashed border-slate-100 italic text-slate-400">
                     <Layout size={40} className="mb-4 opacity-10" />
                     Este dashboard ainda não contém gráficos.
