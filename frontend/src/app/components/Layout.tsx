@@ -23,6 +23,8 @@ import {
 import { useLocation, useNavigate, Link } from "react-router-dom";
 import { cn, Button } from "./ui";
 import { api } from "../../services/api";
+import { AgentSidebar } from "./AgentSidebar";
+
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -285,6 +287,9 @@ export const Layout = ({ children, isAdmin = false, username = "Usuário" }: Lay
         </main>
       </div>
 
+      {/* Sidebar de IA (Co-pilot) */}
+      <AgentSidebar />
+
       {/* Mobile Overlay */}
       {isMobileMenuOpen && (
         <div
@@ -295,3 +300,4 @@ export const Layout = ({ children, isAdmin = false, username = "Usuário" }: Lay
     </div>
   );
 };
+
