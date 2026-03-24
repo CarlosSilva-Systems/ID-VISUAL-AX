@@ -121,10 +121,14 @@ async def get_odoo_mos(
             act = activity_map[rid]
             
             # Standardize Output
+            obra_val = mo.get('x_studio_nome_da_obra')
+            if isinstance(obra_val, (list, tuple)) and len(obra_val) > 1:
+                obra_val = obra_val[1]
+                
             item = {
                 "odoo_mo_id": mo.get('id'),
                 "mo_number": mo.get('name', 'N/A'),
-                "obra": mo.get('x_studio_nome_da_obra') or 'Sem Obra',
+                "obra": obra_val or 'Sem Obra',
                 "product_qty": mo.get('product_qty', 0),
                 "date_start": mo.get('date_start'), # Can be None
                 "state": mo.get('state', 'unknown'),
