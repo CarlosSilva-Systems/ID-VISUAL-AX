@@ -90,12 +90,29 @@ async def generate_report_layout(user_prompt: str, current_layout: Optional[Dict
     content = response.choices[0].message.content
     try:
         data = json.loads(content)
-        # 1. Normalização de Raiz (Envoltórios)
+        # 1. Normalização de Raiz (Envoltórios e Fallbacks)
+        if not isinstance(data, dict):
+            data = {"title": "Relatório de Manufatura", "description": str(data), "widgets": []}
+            
         if "dashboard" in data: data = data["dashboard"]
         if "layout" in data: data = data["layout"]
         
-        # 2. Normalização de widgets/charts
-        if "charts" in data and "widgets" not in data: data["widgets"] = data["charts"]
+        # Recuperação de Campos Básicos (Sinônimos)
+        if "name" in data and "title" not in data: data["title"] = data["name"]
+        if "report_name" in data and "title" not in data: data["title"] = data["report_name"]
+        if "summary" in data and "description" not in data: data["description"] = data["summary"]
+        if "intro" in data and "description" not in data: data["description"] = data["intro"]
+
+        if not data.get("title"): data["title"] = "Novo Relatório Gerencial"
+        if not data.get("description"): data["description"] = "Análise automatizada baseada em parâmetros Lean."
+        
+        # 2. Normalização de widgets/charts (Mapeamento de sinônimos de listas)
+        for list_key in ["charts", "kpis", "data", "elements", "metrics"]:
+            if list_key in data and "widgets" not in data:
+                data["widgets"] = data[list_key]
+                break
+        
+        if "widgets" not in data: data["widgets"] = []
         
         if "widgets" in data and isinstance(data["widgets"], list):
             valid_widgets = []
@@ -152,13 +169,32 @@ async def generate_report_layout(user_prompt: str, current_layout: Optional[Dict
             data["widgets"] = valid_widgets
         
         # 3. Normalização de Insights
-        if "insights" in data and "proactive_insights" not in data:
-            data["proactive_insights"] = data["insights"]
+        for insight_key in ["insights", "alerts", "suggestions", "tips"]:
+            if insight_key in data and "proactive_insights" not in data:
+                data["proactive_insights"] = data[insight_key]
+                break
+        
+        pi = data.get("proactive_insights", [])
+        # Caso a IA retorne uma string pura em vez de lista
+        if isinstance(pi, str):
+            data["proactive_insights"] = [{
+                "type": "opportunity",
+                "title": "Análise Consultiva",
+                "description": pi,
+                "actionable_suggestion": "Verificar detalhes no Odoo."
+            }]
         
         if "proactive_insights" in data and isinstance(data["proactive_insights"], list):
             valid_insights = []
             for i in data["proactive_insights"]:
                 if not isinstance(i, dict):
+                    if isinstance(i, str):
+                        valid_insights.append({
+                            "type": "opportunity",
+                            "title": "Insight Adicional",
+                            "description": i,
+                            "actionable_suggestion": "Revisar processo no chão de fábrica."
+                        })
                     continue
                 
                 it = str(i.get("type", "")).lower()
@@ -168,6 +204,12 @@ async def generate_report_layout(user_prompt: str, current_layout: Optional[Dict
                     i["type"] = "odoo_tip"
                 else:
                     i["type"] = "opportunity"
+                
+                # Garantir campos obrigatórios no insight
+                if not i.get("title"): i["title"] = "Observação Lean"
+                if not i.get("description"): i["description"] = "Sem descrição detalhada."
+                if not i.get("actionable_suggestion"): i["actionable_suggestion"] = "Consultar gestor de área."
+                
                 valid_insights.append(i)
             data["proactive_insights"] = valid_insights
 
