@@ -12,8 +12,14 @@ class UserRole(str, Enum):
 
 class UserBase(SQLModel):
     username: str = Field(index=True, unique=True)
+    full_name: Optional[str] = None
+    department: Optional[str] = Field(default=None, index=True)
     role: UserRole = Field(default=UserRole.OPERATOR)
     is_active: bool = Field(default=True)
+    
+    # Odoo Dynamic Environment (Staging/Production)
+    is_odoo_test_mode: bool = Field(default=False)
+    odoo_test_url: Optional[str] = Field(default=None)
 
 class User(UserBase, table=True):
     id: Optional[uuid.UUID] = Field(default_factory=uuid.uuid4, primary_key=True)
