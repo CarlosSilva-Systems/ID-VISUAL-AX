@@ -8,7 +8,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.services.odoo_client import OdooClient
 from app.core.config import settings
-from app.api.deps import get_session, get_odoo_client, get_current_user, get_system_odoo_client
+from app.api.deps import get_session, get_odoo_client, get_current_user
 from app.models.id_request import IDRequest, IDRequestStatus
 from app.models.manufacturing import ManufacturingOrder
 
@@ -19,14 +19,21 @@ router = APIRouter()
 
 @router.get("/mos", response_model=List[dict])
 async def get_odoo_mos(
-    session: AsyncSession = Depends(get_session),
-    client: OdooClient = Depends(get_odoo_client)
+    session: AsyncSession = Depends(get_session)
 ) -> Any:
     """
     Fetch Manufacturing Orders (MOs) that have a pending 'Imprimir ID Visual' activity.
     AND pending Manual Requests from local DB.
     Sorted by activity deadline (urgency) and then date_start.
     """
+    client = OdooClient(
+        url=settings.ODOO_URL,
+        db=settings.ODOO_DB,
+        auth_type=settings.ODOO_AUTH_TYPE,
+        login=settings.ODOO_LOGIN,
+        secret=settings.ODOO_PASSWORD
+    )
+
     try:
         # ── Step 1: Find 'Imprimir ID Visual' Activity Type ──
         activity_type_id = None
@@ -121,14 +128,10 @@ async def get_odoo_mos(
             act = activity_map[rid]
             
             # Standardize Output
-            obra_val = mo.get('x_studio_nome_da_obra')
-            if isinstance(obra_val, (list, tuple)) and len(obra_val) > 1:
-                obra_val = obra_val[1]
-                
             item = {
                 "odoo_mo_id": mo.get('id'),
                 "mo_number": mo.get('name', 'N/A'),
-                "obra": obra_val or 'Sem Obra',
+                "obra": mo.get('x_studio_nome_da_obra') or 'Sem Obra',
                 "product_qty": mo.get('product_qty', 0),
                 "date_start": mo.get('date_start'), # Can be None
                 "state": mo.get('state', 'unknown'),
@@ -205,13 +208,18 @@ async def get_odoo_mos(
 
 @router.get("/users", response_model=List[dict])
 async def get_odoo_users(
-    current_user: Any = Depends(get_current_user),
-    client: OdooClient = Depends(get_odoo_client)
+    current_user: Any = Depends(get_current_user)
 ) -> Any:
     """
     Fetch active users from Odoo to populate settings selection.
     """
-    # O cliente injetado já respeita o ambiente do usuário
+    client = OdooClient(
+        url=settings.ODOO_URL,
+        db=settings.ODOO_DB,
+        auth_type=settings.ODOO_AUTH_TYPE,
+        login=settings.ODOO_LOGIN,
+        secret=settings.ODOO_PASSWORD
+    )
     try:
         domain = [['active', '=', True]]
         users = await client.search_read(

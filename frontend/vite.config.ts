@@ -1,33 +1,34 @@
-import { defineConfig } from 'vite'
-import path from 'path'
-import tailwindcss from '@tailwindcss/vite'
-import react from '@vitejs/plugin-react'
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+import tailwindcss from '@tailwindcss/vite';
+import { fileURLToPath } from 'url';
+import { dirname, resolve } from 'path';
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+// https://vitejs.dev/config/
 export default defineConfig({
   plugins: [
-    // The React and Tailwind plugins are both required for Make, even if
-    // Tailwind is not being actively used – do not remove them
     react(),
     tailwindcss(),
   ],
-  server: {
-    host: '0.0.0.0',
-    port: 5173,
-    strictPort: true,
-    proxy: {
-      '/api': {
-        target: 'http://127.0.0.1:8001',
-        changeOrigin: true,
-      }
-    }
-  },
   resolve: {
     alias: {
-      // Alias @ to the src directory
-      '@': path.resolve(__dirname, './src'),
+      '@': resolve(__dirname, './src'),
     },
   },
-
-  // File types to support raw imports. Never add .css, .tsx, or .ts files to this.
-  assetsInclude: ['**/*.svg', '**/*.csv'],
-})
+  server: {
+    port: 5200,
+    strictPort: true,
+    host: '127.0.0.1',
+    proxy: {
+      '/api': {
+        target: 'http://127.0.0.1:8000',
+        changeOrigin: true,
+        timeout: 30000,
+        proxyTimeout: 30000,
+      },
+    },
+  },
+});

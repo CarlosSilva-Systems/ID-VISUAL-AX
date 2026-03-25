@@ -30,7 +30,7 @@ def is_previewable(mimetype: str) -> bool:
         "image/jpeg",
         "image/gif",
         "text/plain",
-        "text/html"
+        "text/html" # Careful with HTML, but allowed for preview if trusted
     ]
     return any(mimetype.startswith(t) for t in previewable)
 
@@ -39,11 +39,18 @@ def is_previewable(mimetype: str) -> bool:
 @router.get("/mos/{odoo_mo_id}/documents")
 async def list_mo_documents(
     odoo_mo_id: int,
-    client: OdooClient = Depends(deps.get_odoo_client)
 ):
     """
     List documents linked to the product of a specific Manufacturing Order.
     """
+    client = OdooClient(
+        url=settings.ODOO_URL,
+        db=settings.ODOO_DB,
+        auth_type=settings.ODOO_AUTH_TYPE,
+        login=settings.ODOO_LOGIN,
+        secret=settings.ODOO_PASSWORD
+    )
+    
     try:
         # 1. Fetch MO to get product_id
         mo_data = await client.search_read(
@@ -86,31 +93,23 @@ async def list_mo_documents(
             "documents": normalized,
             "total": len(normalized)
         }
-    except HTTPException:
-        raise
     except Exception as e:
         logger.error(f"Error listing documents for MO {odoo_mo_id}: {e}")
         raise HTTPException(status_code=502, detail=f"Erro ao buscar documentos no Odoo: {str(e)}")
+    finally:
+        await client.close()
 
 @router.get("/mos/{odoo_mo_id}/documents/{doc_id}/view")
-async def view_document(
-    odoo_mo_id: int,
-    doc_id: str,
-    client: OdooClient = Depends(deps.get_odoo_client)
-):
+async def view_document(odoo_mo_id: int, doc_id: str):
     """Proxy document content for inline viewing."""
-    return await proxy_document(doc_id, "inline", client)
+    return await proxy_document(doc_id, "inline")
 
 @router.get("/mos/{odoo_mo_id}/documents/{doc_id}/download")
-async def download_document(
-    odoo_mo_id: int,
-    doc_id: str,
-    client: OdooClient = Depends(deps.get_odoo_client)
-):
+async def download_document(odoo_mo_id: int, doc_id: str):
     """Proxy document content for download."""
-    return await proxy_document(doc_id, "attachment", client)
+    return await proxy_document(doc_id, "attachment")
 
-async def proxy_document(doc_id: str, disposition: str, client: OdooClient):
+async def proxy_document(doc_id: str, disposition: str):
     """
     Generic proxy logic for Odoo documents.
     doc_id format: {model}_{id}
@@ -121,6 +120,14 @@ async def proxy_document(doc_id: str, disposition: str, client: OdooClient):
     except ValueError:
         raise HTTPException(status_code=400, detail="ID de documento inválido")
 
+    client = OdooClient(
+        url=settings.ODOO_URL,
+        db=settings.ODOO_DB,
+        auth_type=settings.ODOO_AUTH_TYPE,
+        login=settings.ODOO_LOGIN,
+        secret=settings.ODOO_PASSWORD
+    )
+
     try:
         # 1. Fetch binary data
         doc_data = await client.get_attachment_data(model, record_id)
@@ -130,7 +137,10 @@ async def proxy_document(doc_id: str, disposition: str, client: OdooClient):
         content_raw = doc_data['content']
         
         # 2. Check for HTML/Login masking
+        # Some Odoo versions return a login page if session is invalid or access denied
+        # even if RPC call seemed to succeed (depending on implementation)
         if isinstance(content_raw, str):
+            # Check if it starts with <html (case insensitive)
             if content_raw.strip().lower().startswith("<!doctype html") or content_raw.strip().lower().startswith("<html"):
                 logger.warning(f"Detected HTML masking for doc {doc_id}")
                 raise HTTPException(status_code=502, detail="Odoo retornou uma página de login em vez do arquivo")
@@ -139,13 +149,15 @@ async def proxy_document(doc_id: str, disposition: str, client: OdooClient):
             try:
                 binary_content = base64.b64decode(content_raw)
             except Exception:
+                # If not base64, maybe it's raw string? Odoo usually sends base64 for binary fields.
                 binary_content = content_raw.encode('utf-8')
         else:
             binary_content = content_raw
 
-        # 3. Safety check on binary content
+        # 3. Safety check on binary content for common PDF signature if mimetype says so
         mimetype = doc_data.get('mimetype', 'application/octet-stream')
         if mimetype == "application/pdf" and not binary_content.startswith(b"%PDF"):
+             # If it looks like HTML inside binary
              if b"<html" in binary_content[:512].lower():
                  logger.warning(f"Detected HTML body in binary for doc {doc_id}")
                  raise HTTPException(status_code=502, detail="Conteúdo do arquivo parece inválido (HTML detectado)")
@@ -168,3 +180,5 @@ async def proxy_document(doc_id: str, disposition: str, client: OdooClient):
     except Exception as e:
         logger.error(f"Error proxying document {doc_id}: {e}")
         raise HTTPException(status_code=502, detail=f"Erro ao processar documento: {str(e)}")
+    finally:
+        await client.close()

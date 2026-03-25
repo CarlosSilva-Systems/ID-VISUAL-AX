@@ -94,8 +94,7 @@ class ManualRequestResponse(BaseModel):
 @router.get("/search", response_model=List[MOSearchResult])
 async def search_mos(
     q: str = "",
-    current_user: Any = Depends(deps.get_current_user),
-    client: OdooClient = Depends(deps.get_odoo_client)
+    current_user: Any = Depends(deps.get_current_user)
 ) -> Any:
     """
     Search Odoo MOs by fabrication number. Filters out cancel/done.
@@ -104,7 +103,13 @@ async def search_mos(
     if not q or len(q) < 2:
         raise HTTPException(status_code=400, detail="Query must be at least 2 characters")
 
-    # O cliente injetado já respeita o ambiente do usuário
+    client = OdooClient(
+        url=settings.ODOO_URL,
+        db=settings.ODOO_DB,
+        auth_type="jsonrpc_password",
+        login=settings.ODOO_LOGIN,
+        secret=settings.ODOO_PASSWORD,
+    )
 
     try:
         # Search MOs matching query, exclude cancel/done
@@ -178,7 +183,8 @@ async def search_mos(
         request_id = str(uuid.uuid4())[:8]
         logger.exception(f"Odoo MO search error [ref:{request_id}]: {e}")
         raise HTTPException(status_code=502, detail=f"Falha ao consultar Odoo [ref: {request_id}]")
-    # finally: await client.close() -> Gerenciado pela dependência
+    finally:
+        await client.close()
 
 
 # ── POST /production/request ──────────────────────────────────────
@@ -186,8 +192,7 @@ async def search_mos(
 async def create_manual_request(
     payload: ManualRequestPayload,
     session: AsyncSession = Depends(deps.get_session),
-    current_user: Any = Depends(deps.get_current_user),
-    client: OdooClient = Depends(deps.get_odoo_client)
+    current_user: Any = Depends(deps.get_current_user)
 ) -> Any:
     """
     Create a manual ID Visual request from the production floor.
@@ -285,7 +290,13 @@ async def create_manual_request(
             )
 
     # ── 3. Fetch MO from Odoo (source of truth) ──
-    # O cliente injetado já respeita o ambiente do usuário
+    client = OdooClient(
+        url=settings.ODOO_URL,
+        db=settings.ODOO_DB,
+        auth_type="jsonrpc_password",
+        login=settings.ODOO_LOGIN,
+        secret=settings.ODOO_PASSWORD,
+    )
 
     try:
         odoo_mos = await client.search_read(
@@ -294,9 +305,8 @@ async def create_manual_request(
             fields=["id", "name", "product_qty", "date_start", "state", "x_studio_nome_da_obra", "company_id"],
             limit=1,
         )
-    except Exception as oe:
-        logger.error(f"Error fetching MO from Odoo: {oe}")
-        raise HTTPException(status_code=502, detail="Erro ao consultar Odoo.")
+    finally:
+        await client.close()
 
     if not odoo_mos:
         raise HTTPException(status_code=404, detail=f"MO {payload.odoo_mo_id} not found in Odoo")

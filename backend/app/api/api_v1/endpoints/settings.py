@@ -1,17 +1,14 @@
 from typing import Any, List, Dict
-import logging
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.api import deps
-from app.api.deps import get_odoo_client
 from app.models.system_setting import SystemSetting
 from app.services.odoo_client import OdooClient
 from app.core.config import settings
 
 router = APIRouter()
-logger = logging.getLogger(__name__)
 
 @router.get("/", response_model=List[Dict[str, Any]])
 async def get_all_settings(
@@ -28,8 +25,7 @@ async def get_all_settings(
 async def update_settings(
     updates: Dict[str, str],
     session: AsyncSession = Depends(deps.get_session),
-    current_user: Any = Depends(deps.get_current_user),
-    client: OdooClient = Depends(deps.get_odoo_client)
+    current_user: Any = Depends(deps.get_current_user)
 ) -> Any:
     """
     Update system settings with validation.
@@ -42,16 +38,20 @@ async def update_settings(
         except ValueError:
             raise HTTPException(status_code=400, detail="ID de usuário inválido (deve ser um número)")
             
-        # Verify in Odoo (cliente injetado respeita ambiente do usuário)
+        # Verify in Odoo
+        client = OdooClient(
+            url=settings.ODOO_URL,
+            db=settings.ODOO_DB,
+            auth_type=settings.ODOO_AUTH_TYPE,
+            login=settings.ODOO_LOGIN,
+            secret=settings.ODOO_PASSWORD
+        )
         try:
             user = await client.search_read('res.users', domain=[['id', '=', user_id]], fields=['id', 'active'])
             if not user or not user[0]['active']:
                 raise HTTPException(status_code=422, detail="Usuário inexistente ou inativo no Odoo.")
-        except HTTPException:
-            raise
-        except Exception as e:
-            logger.error(f"Error verifying Odoo user: {e}")
-            raise HTTPException(status_code=502, detail="Falha ao verificar usuário no Odoo.")
+        finally:
+            await client.close()
 
     # 2. Persist
     for key, value in updates.items():
