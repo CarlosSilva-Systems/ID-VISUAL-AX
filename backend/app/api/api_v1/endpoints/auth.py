@@ -36,7 +36,6 @@ async def login_access_token(
     import re
     from app.services.odoo_client import OdooClient
     
-    # 1. Attempt Odoo Authentication
     try:
         temp_odoo = OdooClient(
             url=settings.ODOO_URL,

@@ -76,7 +76,7 @@ async def get_odoo_client(
         logger.info(f"Usuário {current_user.username} operando em MODO TESTE: {odoo_url}")
 
     client = OdooClient(
-        url=odoo_url,
+        url=settings.ODOO_URL,
         db=settings.ODOO_DB,
         auth_type=settings.ODOO_AUTH_TYPE,
         login=settings.ODOO_LOGIN,
