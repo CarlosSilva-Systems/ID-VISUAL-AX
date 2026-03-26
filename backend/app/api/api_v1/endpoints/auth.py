@@ -166,10 +166,10 @@ async def read_users_me(
     session: AsyncSession = Depends(deps.get_session),
     odoo: Any = Depends(get_odoo_client)
 ) -> dict:
-
     """
     Returns the profile of the current user.
-    Handles both Odoo users and Fallback employees.
+    JWT-first: always returns a valid profile from the token.
+    Odoo enrichment (name, admin, groups) is optional.
     """
     from jose import jwt, JWTError
     from app.core import security
@@ -182,135 +182,61 @@ async def read_users_me(
             user_token, settings.SECRET_KEY, algorithms=[security.ALGORITHM]
         )
         subject = payload.get("sub")
-        logger.info(f"Auth /me: Extracted subject '{subject}' from token")
         if not subject:
             raise HTTPException(status_code=401, detail="Invalid token")
     except JWTError:
         raise HTTPException(status_code=401, detail="Invalid token")
 
-    # 1. Try to find as Odoo User
+    # Base profile from JWT (always available, no external dependency)
+    profile = {
+        "user": subject,
+        "name": subject,
+        "is_admin": False,
+        "auth_source": "jwt",
+        "uid_odoo": None,
+        "id": None,
+        "employee_id": None,
+        "roles": []
+    }
+
+    # --- JIT User Sync (ensures local UUID for Reports/Agent) ---
+    try:
+        from app.models.user import User, UserRole
+        stmt = select(User).where(User.username == subject)
+        result = await session.execute(stmt)
+        local_user = result.scalars().first()
+        if not local_user:
+            local_user = User(
+                username=subject,
+                hashed_password="EXTERNAL_AUTH_ODOO",
+                role=UserRole.OPERATOR,
+                is_active=True
+            )
+            session.add(local_user)
+            await session.commit()
+            await session.refresh(local_user)
+        profile["id"] = local_user.id
+    except Exception as e:
+        logger.warning(f"Auth /me: JIT user sync failed for '{subject}': {e}")
+
+    # --- Optional Odoo enrichment (never blocks the response) ---
     try:
         user_data = await odoo.get_user_info(subject)
         if user_data:
             uid = user_data["id"]
             groups_id = user_data.get("groups_id", [])
             admin_group_id = settings.ID_VISUAL_ADMIN_GROUP_ID
-            is_admin = False
-            if admin_group_id and int(admin_group_id) in groups_id:
-                is_admin = True
+            is_admin = admin_group_id and int(admin_group_id) in groups_id
 
-            logger.info(f"Auth /me: Successfully matched Odoo user '{subject}' (ID: {uid})")
-            logger.info(f"Auth /me: Successfully matched Odoo user '{subject}' (ID: {uid})")
-            
-            # --- JIT User Sync (Ensures UUID for Reports/Agent) ---
-            from sqlmodel import select
-            from app.models.user import User, UserRole
-            
-            # Check if user exists in local DB
-            stmt = select(User).where(User.username == subject)
-            result = await session.execute(stmt)
-            local_user = result.scalars().first()
-            
-            if not local_user:
-                logger.info(f"Auth /me: Creating local shadow user for Odoo user '{subject}'")
-                local_user = User(
-                    username=subject,
-                    hashed_password="EXTERNAL_AUTH_ODOO", # Placeholder
-                    role=UserRole.ADMIN if is_admin else UserRole.OPERATOR,
-                    is_active=True
-                )
-                session.add(local_user)
-                await session.commit()
-                await session.refresh(local_user)
-            
-            return {
-                "user": subject,
-                "name": user_data.get("name"),
-                "is_admin": is_admin,
-                "auth_source": "odoo",
-                "uid_odoo": uid,
-                "id": local_user.id, # Importante: Retornar o UUID local
-                "employee_id": None,
-                "roles": groups_id
-            }
-
+            profile["name"] = user_data.get("name", subject)
+            profile["is_admin"] = bool(is_admin)
+            profile["auth_source"] = "odoo"
+            profile["uid_odoo"] = uid
+            profile["roles"] = groups_id
+            logger.info(f"Auth /me: Enriched with Odoo data for '{subject}' (ID: {uid})")
     except Exception as e:
-        logger.warning(f"Failed to fetch Odoo user info for {subject}: {e}")
+        logger.warning(f"Auth /me: Odoo enrichment skipped for '{subject}': {e}")
 
-    # 2. Try to find as Employee
-    try:
-        logger.info(f"Auth /me: Attempting employee fallback for '{subject}'")
-        employees = await odoo.search_read(
-            "hr.employee",
-            [["name", "ilike", subject], ["active", "=", True]],
-            fields=["id", "name"],
-            limit=1
-        )
-        if employees:
-            emp = employees[0]
-            logger.info(f"Auth /me: Successfully matched employee fallback '{subject}' (ID: {emp['id']})")
-            logger.info(f"Auth /me: Successfully matched employee fallback '{subject}' (ID: {emp['id']})")
-            
-            # --- JIT User Sync ---
-            from sqlmodel import select
-            from app.models.user import User, UserRole
-            
-            stmt = select(User).where(User.username == subject)
-            result = await session.execute(stmt)
-            local_user = result.scalars().first()
-            
-            if not local_user:
-                local_user = User(
-                    username=subject,
-                    hashed_password="EXTERNAL_AUTH_EMPLOYEE",
-                    role=UserRole.OPERATOR,
-                    is_active=True
-                )
-                session.add(local_user)
-                await session.commit()
-                await session.refresh(local_user)
-                
-            return {
-                "user": subject,
-                "name": emp.get("name"),
-                "is_admin": False,
-                "auth_source": "employee",
-                "uid_odoo": None,
-                "id": local_user.id,
-                "employee_id": emp["id"],
-                "roles": []
-            }
+    logger.info(f"Auth /me: Returning profile for '{subject}' (source: {profile['auth_source']})")
+    return profile
 
-    except Exception as e:
-        logger.error(f"Failed to fetch employee info for {subject}: {e}")
-
-    # 3. Final fallback: check local DB directly (user may have been created during login)
-    try:
-        from app.models.user import User as UserModel, UserRole
-        stmt = select(UserModel).where(UserModel.username == subject)
-        result = await session.execute(stmt)
-        local_user = result.scalars().first()
-        if local_user:
-            logger.info(f"Auth /me: Found local fallback user '{subject}' (ID: {local_user.id})")
-            return {
-                "user": subject,
-                "name": local_user.full_name or local_user.username,
-                "is_admin": local_user.role == UserRole.ADMIN,
-                "auth_source": "local",
-                "uid_odoo": None,
-                "id": local_user.id,
-                "employee_id": None,
-                "roles": []
-            }
-    except Exception as e:
-        logger.error(f"Auth /me: Local DB fallback also failed for '{subject}': {e}")
-
-    logger.error(f"Auth /me: User '{subject}' not found anywhere (Odoo, Employees, or Local DB)")
-    raise HTTPException(
-        status_code=502,
-        detail=(
-            f"Não foi possível validar o usuário '{subject}'. "
-            "Verifique se as credenciais do Odoo (ODOO_URL, ODOO_DB, ODOO_LOGIN, ODOO_PASSWORD) "
-            "estão corretamente preenchidas no arquivo .env."
-        )
-    )
