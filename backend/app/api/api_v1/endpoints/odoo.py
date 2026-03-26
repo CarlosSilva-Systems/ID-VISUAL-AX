@@ -201,7 +201,11 @@ async def get_odoo_mos(
             
         raise HTTPException(
             status_code=502, 
-            detail=f"Erro de Conectividade Odoo [ref: {request_id}]"
+            detail=(
+                f"Erro de Conectividade Odoo [{error_type}] [ref: {request_id}]. "
+                "Verifique se ODOO_URL, ODOO_DB, ODOO_LOGIN e ODOO_PASSWORD "
+                "estão corretamente preenchidos no arquivo .env."
+            )
         )
     finally:
         await client.close()

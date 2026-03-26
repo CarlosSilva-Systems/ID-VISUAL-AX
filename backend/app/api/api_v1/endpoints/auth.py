@@ -261,4 +261,11 @@ async def read_users_me(
         logger.error(f"Failed to fetch employee info for {subject}: {e}")
 
     logger.error(f"Auth /me: User '{subject}' not found in Odoo or Employees")
-    raise HTTPException(status_code=404, detail=f"Usuário '{subject}' não encontrado.")
+    raise HTTPException(
+        status_code=502,
+        detail=(
+            f"Não foi possível validar o usuário '{subject}'. "
+            "Verifique se as credenciais do Odoo (ODOO_URL, ODOO_DB, ODOO_LOGIN, ODOO_PASSWORD) "
+            "estão corretamente preenchidas no arquivo .env."
+        )
+    )
