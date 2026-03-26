@@ -4,12 +4,19 @@ import { Users, AlertTriangle, MonitorPlay, Activity, Clock, Package, Calendar }
 import { cn } from '../../lib/utils';
 import { AndonOperador } from './AndonOperador';
 import { PlanningModal } from './PlanningModal';
+import {
+    Tooltip,
+    TooltipContent,
+    TooltipProvider,
+    TooltipTrigger,
+} from './ui/tooltip';
 
 interface Workcenter {
     id: number;
     name: string;
     code: string;
-    status: 'verde' | 'amarelo' | 'vermelho' | 'cinza';
+    status: 'verde' | 'amarelo' | 'vermelho' | 'cinza' | 'amarelo_suave';
+    status_reason?: string;
     owner_name: string;
     current_mo: string;
     started_at: string | null;
@@ -147,7 +154,22 @@ export const AndonGrid: React.FC<AndonGridProps> = ({ username }) => {
                         {/* Header: WC Name + Status Indicator */}
                         <div className="flex items-center justify-between mb-4">
                             <h3 className="font-black text-lg text-slate-900 truncate pr-2">{wc.name}</h3>
-                            <div className={cn("w-3 h-3 rounded-full flex-shrink-0", getStatusBadge(wc.status))} />
+                            <TooltipProvider>
+                                <Tooltip delayDuration={300}>
+                                    <TooltipTrigger asChild>
+                                        <div className={cn(
+                                            "w-3 h-3 rounded-full flex-shrink-0 cursor-help transition-transform hover:scale-125", 
+                                            getStatusBadge(wc.status)
+                                        )} />
+                                    </TooltipTrigger>
+                                    <TooltipContent 
+                                        side="top" 
+                                        className="bg-slate-900 text-white border-slate-800 text-[10px] font-bold py-1.5 px-3 rounded-lg shadow-xl"
+                                    >
+                                        <p>{wc.status_reason || 'Operação Normal'}</p>
+                                    </TooltipContent>
+                                </Tooltip>
+                            </TooltipProvider>
                         </div>
 
                         {/* Content: New Hierarchy */}

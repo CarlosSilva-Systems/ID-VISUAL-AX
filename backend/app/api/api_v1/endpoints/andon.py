@@ -183,29 +183,33 @@ async def get_workcenters_status(
             active_calls = wc_calls_map.get(wc_id, [])
             enriched = wc_data_enriched.get(wc_id, {"current": None, "planned": []})
             
-            # --- Regra de Precedência ---
+            # --- Regra de Precedência e Motivo ---
             red_calls = [c for c in active_calls if c.color == "RED"]
             yellow_stop_calls = [c for c in active_calls if c.color == "YELLOW" and c.is_stop]
             yellow_soft_calls = [c for c in active_calls if c.color == "YELLOW" and not c.is_stop]
             
             status_color = "cinza"
+            status_reason = "Mesa disponível"
+            
             if red_calls:
                 status_color = "vermelho"
+                status_reason = f"PARADA CRÍTICA: {red_calls[0].reason}"
             elif yellow_stop_calls:
                 status_color = "amarelo"
+                status_reason = f"ALERTA (PARADO): {yellow_stop_calls[0].reason}"
             elif yellow_soft_calls:
-                # Amarelo Suave: se estiver produzindo (progress), prevalece o verde como fundo
-                # mas mantemos a flag para o frontend mostrar o ícone/alerta
                 status_color = "amarelo_suave" if enriched["current"] else "amarelo"
+                status_reason = f"ALERTA: {yellow_soft_calls[0].reason}"
             elif enriched["current"]:
                 status_color = "verde"
+                status_reason = "Produção em andamento"
             elif enriched["planned"]:
-                status_color = "cinza" # Ou algum status de "preparado"
+                status_color = "cinza"
+                status_reason = "Aguardando início de OP"
             
-            # Se o Odoo diz que está pausado mas não temos chamado bloqueante, 
-            # forçamos cinza (Produção Parada)
             if status_color == "verde" and enriched["current"] and enriched["current"]["state"] in ["pause", "pending"]:
                 status_color = "cinza"
+                status_reason = "Produção pausada no Odoo"
 
             current_mo = enriched["current"]["mo_name"] if enriched["current"] else "Sem fabricação em andamento"
             owner_name = enriched["current"]["user_name"] if enriched["current"] else "Sem responsável definido"
@@ -219,6 +223,7 @@ async def get_workcenters_status(
                 "name": normalize_label(wc["name"]),
                 "code": normalize_label(wc.get("code", "")),
                 "status": status_color,
+                "status_reason": status_reason,
                 "owner_name": owner_name,
                 "current_mo": current_mo,
                 "started_at": started_at,
