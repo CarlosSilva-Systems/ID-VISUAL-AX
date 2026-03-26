@@ -1,4 +1,4 @@
-from typing import List, Optional, Union
+from typing import List, Optional, Union, Any
 import os
 from pydantic import AnyHttpUrl, PostgresDsn, field_validator, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -61,7 +61,14 @@ class Settings(BaseSettings):
     ODOO_DB: str = "teste-dres"
     ODOO_LOGIN: str = ""
     ODOO_PASSWORD: str = ""
+    ODOO_API_KEY: str = ""
     ODOO_AUTH_TYPE: str = "jsonrpc_password"
+    
+    @field_validator("ODOO_URL", "ODOO_DB", "ODOO_LOGIN", "ODOO_PASSWORD", "ODOO_API_KEY", mode="before")
+    def strip_string(cls, v: Any) -> Any:
+        if isinstance(v, str):
+            return v.strip()
+        return v
     
     # Odoo Activity Configuration
     ODOO_ID_VISUAL_ACTIVITY_TYPE_ID: Optional[int] = None
