@@ -139,7 +139,8 @@ async def chat_stream(request: ChatRequest):
                     func_name = tc_data["function"]["name"]
                     func_args = json.loads(tc_data["function"]["arguments"])
                     
-                    yield f"data: {json.dumps({'content': f'\\n> Executando ferramenta sistêmica: `{func_name}`...\\n'})}\n\n"
+                    tool_msg = "\n> Executando ferramenta sistêmica: `" + func_name + "`...\n"
+                    yield f"data: {json.dumps({'content': tool_msg})}\n\n"
                     
                     tool_result = await execute_tool_call(func_name, func_args)
                     

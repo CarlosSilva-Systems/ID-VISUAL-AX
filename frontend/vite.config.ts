@@ -19,12 +19,12 @@ export default defineConfig({
     },
   },
   server: {
-    port: 5200,
+    port: 5173,
     strictPort: true,
-    host: '127.0.0.1',
+    host: '0.0.0.0',
     proxy: {
       '/api': {
-        target: 'http://127.0.0.1:8000',
+        target: 'http://api:8000',
         changeOrigin: true,
         timeout: 30000,
         proxyTimeout: 30000,

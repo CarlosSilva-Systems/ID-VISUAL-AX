@@ -24,15 +24,10 @@ logger = logging.getLogger(__name__)
 
 async def init_db():
     try:
-        logger.info("Initializing database (sync fallback)...")
-        from sqlalchemy import create_engine
-        # Convert aiosqlite URL to standard sqlite
-        sync_url = settings.DATABASE_URL.replace("+aiosqlite", "")
-        sync_engine = create_engine(sync_url)
-        
-        # Run create_all synchronously
-        SQLModel.metadata.create_all(sync_engine)
-        logger.info("Tables created/verified successfully via sync engine.")
+        logger.info("Initializing database via async engine...")
+        async with engine.begin() as conn:
+            await conn.run_sync(SQLModel.metadata.create_all)
+        logger.info("Tables created/verified successfully.")
     except Exception as e:
         logger.error(f"Database initialization failed: {e}")
         raise e
