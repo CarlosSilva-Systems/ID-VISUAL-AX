@@ -1,0 +1,17 @@
+__pycache__
+*.py[cod]
+*$py.class
+.venv
+env
+venv
+.pytest_cache
+.coverage
+htmlcov
+.env*
+!.env.example
+*.db
+Dockerfile
+.dockerignore
+.git
+.vscode
+alembic/versions/*.pyc
