@@ -80,7 +80,7 @@ async def update_or_create_status(
         session.add(record)
     else:
         record.status = status
-        record.updated_at = datetime.now(timezone.utc)
+        record.updated_at = datetime.utcnow()
         record.updated_by = user
     
     await session.commit()
@@ -296,7 +296,7 @@ async def trigger_andon_basic(
         for call in active_calls:
             call.status = "RESOLVED"
             call.resolved_note = f"Resolvido por {req.triggered_by} via Produção Normal"
-            call.updated_at = datetime.now(timezone.utc)
+            call.updated_at = datetime.utcnow()
             session.add(call)
     
     update_sync_version("andon_version")
@@ -331,118 +331,135 @@ async def create_andon_call(
     odoo: Any = Depends(get_odoo_client)
 ):
     from app.api.api_v1.endpoints.sync import update_sync_version
-    
-    call = AndonCall(
-        color=req.color,
-        category=req.category,
-        reason=req.reason,
-        description=req.description,
-        workcenter_id=req.workcenter_id,
-        workcenter_name=req.workcenter_name,
-        mo_id=req.mo_id,
-        status="OPEN",
-        triggered_by=req.triggered_by,
-        is_stop=req.is_stop
-    )
-    session.add(call)
-    await session.commit()
-    await session.refresh(call)
 
-    # ── Integração Retrabalho ID Visual (Commit 7) ──
-    if req.category == "ID Visual" and req.mo_id:
-        from app.models.id_request import IDRequest
-        from app.models.manufacturing import ManufacturingOrder
-        from app.models.analytics import RevisaoIDVisual, MotivoRevisao
-        from sqlmodel import select
-
-        stmt_mo = select(ManufacturingOrder).where(ManufacturingOrder.odoo_id == req.mo_id)
-        res_mo = await session.execute(stmt_mo)
-        local_mo = res_mo.scalars().first()
-
-        if local_mo:
-            stmt_idr = select(IDRequest).where(IDRequest.mo_id == local_mo.id).order_by(IDRequest.created_at.desc())
-            res_idr = await session.execute(stmt_idr)
-            id_request = res_idr.scalars().first()
-            
-            if id_request:
-                # Map reason to MotivoRevisao Enum
-                mapped_motivo = MotivoRevisao.OUTRO
-                reason_lower = req.reason.lower() if req.reason else ""
-                if "informa" in reason_lower or "incorret" in reason_lower:
-                    mapped_motivo = MotivoRevisao.INFORMACAO_INCORRETA
-                elif "falta" in reason_lower or "componente" in reason_lower:
-                    mapped_motivo = MotivoRevisao.FALTA_COMPONENTE
-                elif "diagrama" in reason_lower:
-                    mapped_motivo = MotivoRevisao.ERRO_DIAGRAMACAO
-                elif "especifica" in reason_lower or "mudança" in reason_lower:
-                    mapped_motivo = MotivoRevisao.MUDANCA_ESPECIFICACAO
-                
-                revisao = RevisaoIDVisual(
-                    id_visual_id=id_request.id,
-                    motivo=mapped_motivo,
-                    revisao_solicitada_em=datetime.now(timezone.utc)
-                )
-                session.add(revisao)
-                await session.commit()
-
-
-    # 1. Integração Odoo via Background Tasks para não travar a UI
-    async def process_odoo_integration(call_id: int, req: AndonCallCreate):
-        from app.db.session import async_session_factory
-        from app.services.odoo_client import OdooClient
-        
-        local_odoo = OdooClient(
-            url=settings.ODOO_URL,
-            db=settings.ODOO_DB,
-            auth_type=settings.ODOO_AUTH_TYPE,
-            login=settings.ODOO_LOGIN,
-            secret=settings.ODOO_PASSWORD
+    try:
+        call = AndonCall(
+            color=req.color,
+            category=req.category,
+            reason=req.reason,
+            description=req.description,
+            workcenter_id=req.workcenter_id,
+            workcenter_name=req.workcenter_name,
+            mo_id=req.mo_id,
+            status="OPEN",
+            triggered_by=req.triggered_by,
+            is_stop=req.is_stop
         )
-        try:
-            async with async_session_factory() as local_session:
-                stmt_call = select(AndonCall).where(AndonCall.id == call_id)
-                res = await local_session.execute(stmt_call)
-                local_call = res.scalars().first()
-                if not local_call:
-                    return
+        session.add(call)
+        await session.commit()
+        await session.refresh(call)
 
-                if req.color == "YELLOW" and req.category == "Material":
-                    picking_type_id = settings.ANDON_INTERNAL_PICKING_TYPE_ID
-                    if picking_type_id and req.mo_id:
-                        res_picking = await local_odoo.create_internal_picking(0, req.mo_id, req.workcenter_name, local_call.id, picking_type_id)
-                        if res_picking["path"] == "odoo_picking":
-                            local_call.odoo_picking_id = res_picking["picking_id"]
-                            await local_odoo.post_chatter_message(req.mo_id, f"📦 <b>Andon Amarelo</b>: {req.reason} (Chamado #{local_call.id})")
-                    
-                    if req.is_stop and req.mo_id:
-                        wo = await local_odoo.get_active_workorder(req.workcenter_id, settings.ANDON_WO_STATES)
-                        if wo:
-                            await add_to_sync_queue(local_session, "pause_workorder", {"workorder_id": wo["id"]})
-                            await process_sync_queue(local_session, local_odoo)
+        # ── Integração Retrabalho ID Visual ──
+        if req.category == "ID Visual" and req.mo_id:
+            try:
+                from app.models.analytics import RevisaoIDVisual, MotivoRevisao
+                stmt_mo = select(ManufacturingOrder).where(ManufacturingOrder.odoo_id == req.mo_id)
+                res_mo = await session.execute(stmt_mo)
+                local_mo = res_mo.scalars().first()
+                if local_mo:
+                    stmt_idr = select(IDRequest).where(IDRequest.mo_id == local_mo.id).order_by(IDRequest.created_at.desc())
+                    res_idr = await session.execute(stmt_idr)
+                    id_request = res_idr.scalars().first()
+                    if id_request:
+                        mapped_motivo = MotivoRevisao.OUTRO
+                        reason_lower = (req.reason or "").lower()
+                        if "informa" in reason_lower or "incorret" in reason_lower:
+                            mapped_motivo = MotivoRevisao.INFORMACAO_INCORRETA
+                        elif "falta" in reason_lower or "componente" in reason_lower:
+                            mapped_motivo = MotivoRevisao.FALTA_COMPONENTE
+                        elif "diagrama" in reason_lower:
+                            mapped_motivo = MotivoRevisao.ERRO_DIAGRAMACAO
+                        elif "especifica" in reason_lower or "mudança" in reason_lower:
+                            mapped_motivo = MotivoRevisao.MUDANCA_ESPECIFICACAO
+                        revisao = RevisaoIDVisual(
+                            id_visual_id=id_request.id,
+                            motivo=mapped_motivo,
+                            revisao_solicitada_em=datetime.utcnow()
+                        )
+                        session.add(revisao)
+                        await session.commit()
+            except Exception as idv_err:
+                logger.warning(f"ID Visual integration skipped: {idv_err}")
 
-                elif req.color == "RED":
+        # ── Integração Odoo em background ──
+        async def _odoo_integration(call_id: int):
+            from app.db.session import async_session_factory
+            from app.services.odoo_client import OdooClient
+            local_odoo = OdooClient(
+                url=settings.ODOO_URL, db=settings.ODOO_DB,
+                auth_type=settings.ODOO_AUTH_TYPE,
+                login=settings.ODOO_LOGIN, secret=settings.ODOO_PASSWORD
+            )
+            try:
+                async with async_session_factory() as s:
+                    res_c = await s.execute(select(AndonCall).where(AndonCall.id == call_id))
+                    local_call = res_c.scalars().first()
+                    if not local_call:
+                        return
+
+                    wo = None
                     if req.mo_id:
-                        wo = await local_odoo.get_active_workorder(req.workcenter_id, settings.ANDON_WO_STATES)
+                        try:
+                            wo = await local_odoo.get_active_workorder(
+                                req.workcenter_id,
+                                settings.ANDON_WO_STATES or ["progress", "ready"]
+                            )
+                        except Exception:
+                            pass
+
+                    if req.color == "YELLOW":
+                        if req.is_stop and wo:
+                            await add_to_sync_queue(s, "pause_workorder", {"workorder_id": wo["id"]})
+                            await process_sync_queue(s, local_odoo)
+                        if req.mo_id:
+                            stop_label = " — PRODUÇÃO PARADA" if req.is_stop else ""
+                            try:
+                                await local_odoo.post_chatter_message(
+                                    req.mo_id,
+                                    f"🟡 <b>Andon Amarelo</b>{stop_label}: {req.reason} (Chamado #{call_id}, por {req.triggered_by})"
+                                )
+                            except Exception:
+                                pass
+
+                    elif req.color == "RED":
                         if wo:
-                            await add_to_sync_queue(local_session, "pause_workorder", {"workorder_id": wo["id"]})
-                            await process_sync_queue(local_session, local_odoo)
-                            
-                            local_call.odoo_activity_id = await local_odoo.create_andon_activity(req.mo_id, req.reason, settings.ANDON_ENGINEERING_USER_ID)
-                            await local_odoo.post_chatter_message(req.mo_id, f"🔴 <b>Andon Vermelho</b>: {req.reason} (Chamado #{local_call.id})")
-                
-                await local_session.commit()
-        except Exception as e:
-            request_id = str(uuid.uuid4())[:8]
-            logger.exception(f"Error in background Odoo integration for call {call_id} [ref:{request_id}]: {e}")
-        finally:
-            await local_odoo.close()
+                            await add_to_sync_queue(s, "pause_workorder", {"workorder_id": wo["id"]})
+                            await process_sync_queue(s, local_odoo)
+                        if req.mo_id:
+                            try:
+                                eng_uid = settings.ANDON_ENGINEERING_USER_ID
+                                if eng_uid:
+                                    local_call.odoo_activity_id = await local_odoo.create_andon_activity(
+                                        req.mo_id, req.reason, eng_uid
+                                    )
+                                await local_odoo.post_chatter_message(
+                                    req.mo_id,
+                                    f"🔴 <b>Andon Vermelho — PARADA CRÍTICA</b>: {req.reason} (Chamado #{call_id}, por {req.triggered_by})"
+                                )
+                            except Exception:
+                                pass
 
-    background_tasks.add_task(process_odoo_integration, call.id, req)
+                    await s.commit()
+            except Exception as e:
+                logger.exception(f"Odoo background integration failed for call {call_id}: {e}")
+            finally:
+                await local_odoo.close()
 
-    await update_or_create_status(session, req.workcenter_id, req.workcenter_name, req.color.lower(), req.triggered_by)
-    update_sync_version("andon_version")
-    await session.commit()
-    return call
+        background_tasks.add_task(_odoo_integration, call.id)
+
+        await update_or_create_status(
+            session, req.workcenter_id, req.workcenter_name,
+            req.color.lower(), req.triggered_by
+        )
+        update_sync_version("andon_version")
+        await session.commit()
+        return call
+
+    except Exception as e:
+        req_id = str(uuid.uuid4())[:8]
+        logger.exception(f"Error in create_andon_call [ref:{req_id}]: {e}")
+        await session.rollback()
+        raise HTTPException(status_code=500, detail=f"Erro ao criar chamado: {str(e)} [ref:{req_id}]")
 
 @router.get("/calls", response_model=List[AndonCall])
 async def list_andon_calls(
@@ -470,7 +487,7 @@ async def update_call_status(
     if not call:
         raise HTTPException(status_code=404, detail="Chamado não encontrado")
     call.status = req.status
-    call.updated_at = datetime.now(timezone.utc)
+    call.updated_at = datetime.utcnow()
     if req.status == "RESOLVED":
         call.resolved_note = req.resolved_note
         await update_or_create_status(session, call.workcenter_id, call.workcenter_name, "verde", "System")
@@ -533,7 +550,7 @@ async def get_tv_data(
             })
             
         # 4. Construir recent_events
-        recent_date = datetime.now(timezone.utc) - timedelta(hours=24)
+        recent_date = datetime.utcnow() - timedelta(hours=24)
         stmt_calls = select(AndonCall).where(AndonCall.created_at >= recent_date)
         recent_calls = (await session.execute(stmt_calls)).scalars().all()
         
@@ -682,7 +699,7 @@ async def get_andon_history(
     days: int = 7
 ):
     """Retorna o histórico de chamados Andon para o Dashboard BI."""
-    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    cutoff = datetime.utcnow() - timedelta(days=days)
     stmt = select(AndonCall).where(AndonCall.created_at >= cutoff)
     result = await session.execute(stmt)
     calls = result.scalars().all()
