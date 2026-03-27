@@ -91,7 +91,8 @@ export const AndonGrid: React.FC<AndonGridProps> = ({ username }) => {
     const getStatusColor = (status: string) => {
         switch (status) {
             case 'verde': return 'border-emerald-500 bg-emerald-50/30';
-            case 'amarelo': return 'border-amber-400 bg-amber-50/40';
+            case 'amarelo':
+            case 'amarelo_suave': return 'border-amber-400 bg-amber-50/40';
             case 'vermelho': return 'border-red-500 bg-red-50/50 animate-pulse-subtle';
             default: return 'border-slate-200 bg-slate-50/50';
         }
@@ -99,10 +100,11 @@ export const AndonGrid: React.FC<AndonGridProps> = ({ username }) => {
 
     const getStatusBadge = (status: string) => {
         switch (status) {
-            case 'verde': return 'bg-emerald-500 text-white';
-            case 'amarelo': return 'bg-amber-400 text-slate-900';
-            case 'vermelho': return 'bg-red-500 text-white';
-            default: return 'bg-slate-300 text-slate-600';
+            case 'verde': return 'bg-emerald-500';
+            case 'amarelo':
+            case 'amarelo_suave': return 'bg-amber-400';
+            case 'vermelho': return 'bg-red-500';
+            default: return 'bg-slate-300';
         }
     };
 

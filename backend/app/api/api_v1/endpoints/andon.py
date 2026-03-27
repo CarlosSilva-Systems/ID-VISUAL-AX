@@ -25,6 +25,14 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+def _build_mo_name(p_info: dict) -> str:
+    """Monta o nome da fabricação no formato 'Obra | MO' ou só um deles se o outro faltar."""
+    obra = normalize_label(p_info.get('x_studio_nome_da_obra') or "")
+    mo   = normalize_label(p_info.get('name') or "")
+    if obra and mo:
+        return f"{obra} | {mo}"
+    return obra or mo or "Sem fabricação"
+
 # --- Schemas ---
 
 class TriggerAmareloRequest(BaseModel):
@@ -109,7 +117,6 @@ async def get_workcenters_status(
             'mrp.workorder',
             domain=[
                 ['state', 'in', ['progress', 'ready', 'waiting', 'pending']],
-                ['date_finished', '=', False]
             ],
             fields=['workcenter_id', 'user_id', 'production_id', 'name', 'date_start', 'state']
         )
@@ -147,12 +154,12 @@ async def get_workcenters_status(
             p_info = production_map.get(p_id, {}) if p_id else {}
             
             wo_data = {
-                "obra": normalize_label(p_info.get('x_studio_nome_da_obra') or "Sem Obra"),
-                "fabrication": normalize_label(p_info.get('name') or "---"),
-                "mo_name": normalize_label(f"{p_info.get('x_studio_nome_da_obra') or '---'} | {p_info.get('name') or '---'}"),
+                "obra": normalize_label(p_info.get('x_studio_nome_da_obra') or ""),
+                "fabrication": normalize_label(p_info.get('name') or ""),
+                "mo_name": _build_mo_name(p_info),
                 "date_start": wo.get('date_start'),
                 "state": wo.get('state'),
-                "user_name": normalize_label(wo.get('user_id'))
+                "user_name": normalize_label(wo.get('user_id')) or ""
             }
 
             if wc_id not in wc_data_enriched:
@@ -212,7 +219,9 @@ async def get_workcenters_status(
                 status_reason = "Produção pausada no Odoo"
 
             current_mo = enriched["current"]["mo_name"] if enriched["current"] else "Sem fabricação em andamento"
-            owner_name = enriched["current"]["user_name"] if enriched["current"] else "Sem responsável definido"
+            # owner_name: usa user_id da WO; se vazio, o workcenter já tem o nome do operador
+            raw_owner = enriched["current"]["user_name"] if enriched["current"] else ""
+            owner_name = raw_owner if raw_owner else (normalize_label(wc["name"]) if enriched["current"] else "Sem responsável definido")
             started_at = enriched["current"]["date_start"] if enriched["current"] else None
 
             if started_at and isinstance(started_at, str) and ' ' in started_at:

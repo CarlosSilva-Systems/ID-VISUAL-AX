@@ -20,16 +20,27 @@ class Settings(BaseSettings):
     # Integration
     OPENROUTER_API_KEY: str = "your_key_here"
 
-    # CORS
-    BACKEND_CORS_ORIGINS: List[str] = []
+    # CORS — armazenado como string simples, parseado via get_cors_origins()
+    BACKEND_CORS_ORIGINS: str = ""
 
-    @field_validator("BACKEND_CORS_ORIGINS", mode="before")
-    def assemble_cors_origins(cls, v: Union[str, List[str]]) -> List[str]:
-        if isinstance(v, str) and not v.startswith("["):
-            return [i.strip() for i in v.split(",")]
-        elif isinstance(v, (list, str)):
-            return v
-        raise ValueError(v)
+    def get_cors_origins(self) -> List[str]:
+        v = self.BACKEND_CORS_ORIGINS.strip()
+        if not v:
+            return ["http://localhost:5173", "http://localhost:3000"]
+        # Remove aspas externas se existirem
+        if v.startswith('"') and v.endswith('"'):
+            v = v[1:-1]
+        if v.startswith("'") and v.endswith("'"):
+            v = v[1:-1]
+        # JSON array
+        if v.startswith("["):
+            import json
+            try:
+                return json.loads(v)
+            except Exception:
+                pass
+        # Comma-separated
+        return [i.strip() for i in v.split(",") if i.strip()]
 
     # Database
     POSTGRES_SERVER: str = "localhost"
