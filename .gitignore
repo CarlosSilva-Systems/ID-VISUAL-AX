@@ -1,68 +1,76 @@
+# ============================================================
+# SEGURANÇA — NUNCA COMMITAR ESTES ARQUIVOS
+# ============================================================
+.env
+.env.*
+!.env.example
+backend/.env
+backend/.env.*
+!backend/.env.example
+frontend/.env
+frontend/.env.*
+!frontend/.env.example
+
+# Arquivos de output/log que podem conter credenciais
+backend/odoo_test_output.txt
+backend/startup_error.log
+backend/traceback_debug.log
+backend/test_*.py
+backend/verify_*.py
+*.log
+*.txt
+
+# ============================================================
 # Python
+# ============================================================
 __pycache__/
 *.py[cod]
 *$py.class
+*.pyo
 .venv/
-env/
 venv/
+env/
 .pytest_cache/
 .coverage
 htmlcov/
+*.egg-info/
+dist/
+build/
+.mypy_cache/
 
-# Node
+# ============================================================
+# Node / Frontend
+# ============================================================
 node_modules/
 .next/
 dist/
 build/
-.env*
-!.env.example
+*.local
 
-# OS
-.DS_Store
-Thumbs.db
-*.log
+# ============================================================
+# Banco de Dados local
+# ============================================================
+*.db
+*.sqlite
+*.sqlite3
+backend/id_visual.db
+backend/id_visual_v2.db
+backend/backend.db
 
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-.venv/
-env/
-venv/
-.pytest_cache/
-.coverage
-htmlcov/
-
-# Node
-node_modules/
-.next/
-dist/
-build/
-.env*
-!.env.example
-
-# OS
-.DS_Store
-Thumbs.db
-*.log
-
-# IDE
+# ============================================================
+# IDE / OS
+# ============================================================
 .vscode/
 .idea/
 *.swp
 *.swo
+.DS_Store
+Thumbs.db
 
-# Project specific
+# ============================================================
+# Projeto específico
+# ============================================================
 backend/alembic/versions/*.pyc
 frontend/.next/
 .gemini/
-*.db
-backend/id_visual.db
-backend/id_visual_2.db
-backend/backend.db
-*.json
-*.log
-*.txt
-backend/test_*.py
-backend/verify_*.py
 backend/list_routes.py
