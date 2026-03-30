@@ -351,8 +351,11 @@ async def select_odoo_database(
     
     database_name = payload.get("database", "").strip()
     
+    logger.info(f"📝 Database selection request: {database_name} by user {current_user.username if hasattr(current_user, 'username') else 'unknown'}")
+    
     # 1. Validação de nome
     if not validate_database_name(database_name):
+        logger.warning(f"❌ Invalid database name rejected: {database_name}")
         raise HTTPException(
             status_code=400,
             detail="Nome de banco inválido. Use apenas letras, números, hífen e underscore."
@@ -363,6 +366,7 @@ async def select_odoo_database(
     
     # 3. Proteção do banco de produção
     if normalized_name == "axengenharia1":
+        logger.warning(f"🚫 Production database selection attempt blocked: {normalized_name}")
         raise HTTPException(
             status_code=403,
             detail="Banco de produção não pode ser selecionado durante período de testes"
@@ -382,11 +386,11 @@ async def select_odoo_database(
             # Tenta autenticar para validar conexão
             await test_client._jsonrpc_authenticate()
             connection_ok = True
-            logger.info(f"Connection test successful for database: {normalized_name}")
+            logger.info(f"✓ Connection test successful for database: {normalized_name}")
         except Exception as conn_err:
             connection_ok = False
             safe_msg = str(conn_err).replace(settings.ODOO_SERVICE_PASSWORD or "", "***")
-            logger.error(f"Connection test failed for {normalized_name}: {safe_msg}")
+            logger.error(f"❌ Connection test failed for {normalized_name}: {safe_msg}")
             raise HTTPException(
                 status_code=502,
                 detail=f"Falha ao conectar com banco '{normalized_name}'. Verifique se o banco existe e as credenciais estão corretas."
@@ -424,7 +428,7 @@ async def select_odoo_database(
             session.add(setting)
         
         await session.commit()
-        logger.info(f"Active Odoo database updated to: {normalized_name}")
+        logger.info(f"✅ Active Odoo database updated to: {normalized_name} by user {current_user.username if hasattr(current_user, 'username') else 'unknown'}")
         
         return {
             "status": "success",
