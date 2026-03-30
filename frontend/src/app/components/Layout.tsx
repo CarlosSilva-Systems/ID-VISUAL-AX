@@ -24,6 +24,7 @@ import { useLocation, useNavigate, Link } from "react-router-dom";
 import { cn, Button } from "./ui";
 import { api } from "../../services/api";
 import { AgentSidebar } from "./AgentSidebar";
+import { ConnectionBadge } from "./ConnectionBadge";
 import { User as UserType } from "../types";
 
 
@@ -257,6 +258,8 @@ export const Layout = ({ children, user }: LayoutProps) => {
               <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
               <span className="text-[11px] font-bold uppercase tracking-wider">Odoo Conectado</span>
             </div>
+
+            <ConnectionBadge />
 
             <button className="relative p-2 text-slate-500 hover:bg-slate-50 rounded-xl transition-colors">
               <Bell className="w-5 h-5" />

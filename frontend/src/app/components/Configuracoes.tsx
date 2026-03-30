@@ -16,6 +16,7 @@ import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { toast } from 'sonner';
 import { api } from '../../services/api';
+import { DatabaseSelector } from './DatabaseSelector';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -159,6 +160,24 @@ export function Configuracoes({ user }: ConfiguracoesProps) {
                   </select>
                   {loadingUsers && <p className="text-[10px] text-blue-500 font-bold animate-pulse">Carregando usuários do Odoo...</p>}
                 </div>
+              </section>
+
+              {/* Seção: Seleção de Banco de Dados */}
+              <section className="space-y-6 pt-6 border-t border-slate-50">
+                <div className="flex items-center justify-between border-b border-slate-50 pb-4">
+                  <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                    <Database size={18} /> Seleção de Banco de Dados
+                  </h3>
+                </div>
+
+                <div className="bg-blue-50 border border-blue-100 p-4 rounded-xl flex gap-3">
+                  <Database className="text-blue-500 shrink-0" size={20} />
+                  <p className="text-xs text-blue-800 leading-relaxed">
+                    Selecione qual banco de dados Odoo será utilizado pelo sistema. O banco de produção está protegido contra seleção acidental.
+                  </p>
+                </div>
+
+                <DatabaseSelector />
               </section>
 
               {/* Seção Exclusiva de T.I: Ambiente Dinâmico */}
