@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
-import api from '@/services/api';
+import { api } from '@/services/api';
 
 interface Database {
   name: string;
