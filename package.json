@@ -1,0 +1,17 @@
+{
+  "name": "id-visual-ax-root",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Orquestração do projeto ID Visual AX",
+  "scripts": {
+    "dev": "docker-compose up --build",
+    "stop": "docker-compose down",
+    "backend:shell": "docker-compose exec api /bin/bash",
+    "frontend:install": "npm install --prefix frontend",
+    "backend:install": "pip install -r backend/requirements.txt",
+    "install:all": "npm run frontend:install"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
+}
