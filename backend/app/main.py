@@ -25,6 +25,22 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("Starting up...")
     
+    # Validação de segurança: variáveis de ambiente críticas
+    required_vars = [
+        "ODOO_URL",
+        "ODOO_SERVICE_LOGIN",
+        "ODOO_SERVICE_PASSWORD"
+    ]
+    
+    missing = [var for var in required_vars if not getattr(settings, var, None)]
+    
+    if missing:
+        error_msg = f"Missing required environment variables: {', '.join(missing)}"
+        logger.error(error_msg)
+        raise RuntimeError(error_msg)
+    
+    logger.info("✓ Environment validation passed")
+    
     # Import all models so SQLModel metadata knows about them
     import app.models  # noqa: F401
     from app.db.session import init_db

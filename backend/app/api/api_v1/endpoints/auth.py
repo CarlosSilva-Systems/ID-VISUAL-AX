@@ -31,13 +31,22 @@ async def login_access_token(
 ) -> Any:
     """
     OAuth2 compatible token login.
-    1. Try Odoo authentication for standard users.
-    2. If Access Denied, try Employee fallback (Name + Phone).
-    On success, also creates/updates a local User record (JIT sync).
+    1. Valida User_Credentials no Odoo usando Active_Database
+    2. Cria sessão local com JWT (uid, name, email)
+    3. NUNCA armazena senha do usuário
+    
+    Fallback: Se autenticação Odoo falhar, tenta Employee (Name + Phone).
     """
     import re
     from app.services.odoo_client import OdooClient
+    from app.services.odoo_utils import get_active_odoo_db
     from app.models.user import User as UserModel, UserRole
+    
+    def sanitize_error_message(error: str) -> str:
+        """Remove credenciais de mensagens de erro."""
+        sanitized = error.replace(settings.ODOO_SERVICE_PASSWORD or "", "***")
+        sanitized = sanitized.replace(settings.ODOO_SERVICE_LOGIN or "", "***")
+        return sanitized
     
     async def _ensure_local_user(username: str, auth_source: str) -> None:
         """Creates a local User record if it doesn't exist (JIT sync at login)."""
@@ -58,12 +67,16 @@ async def login_access_token(
         except Exception as e:
             logger.warning(f"Login JIT: Failed to create local user '{username}': {e}")
     
+    # Obter banco ativo dinamicamente
+    active_db = await get_active_odoo_db(session)
+    
     try:
+        # Cria cliente temporário com credenciais do usuário
         temp_odoo = OdooClient(
             url=settings.ODOO_URL,
-            db=settings.ODOO_DB,
+            db=active_db,  # Usa banco ativo
             auth_type="jsonrpc_password",
-            login=form_data.username,
+            login=form_data.username,  # User_Credentials
             secret=form_data.password
         )
         try:
@@ -79,6 +92,8 @@ async def login_access_token(
 
     except Exception as e:
         error_msg = str(e)
+        request_id = str(uuid.uuid4())[:8]
+        
         if error_msg == "AUTHENTICATION_FAILED":
             # 2. Access Denied -> Try Employee Fallback
             try:
@@ -135,29 +150,25 @@ async def login_access_token(
             except HTTPException:
                 raise
             except Exception as inner_e:
-                import uuid
-                request_id = str(uuid.uuid4())[:8]
-                logger.error(f"Fallback Error [{request_id}]: {inner_e}")
+                safe_msg = sanitize_error_message(str(inner_e))
+                logger.error(f"Fallback Error [ref:{request_id}]: {safe_msg}")
                 raise HTTPException(
                     status_code=502, 
-                    detail={"message": "Erro ao validar funcionário", "stage": "fallback", "request_id": request_id}
+                    detail=f"Erro ao validar funcionário [ref: {request_id}]"
                 )
         
         elif error_msg == "ODOO_UNAVAILABLE":
-            import uuid
-            request_id = str(uuid.uuid4())[:8]
             raise HTTPException(
                 status_code=502, 
-                detail={"message": "Odoo indisponível", "stage": "auth", "request_id": request_id}
+                detail=f"Odoo indisponível [ref: {request_id}]"
             )
         else:
             # Other errors (500, etc)
-            import uuid
-            request_id = str(uuid.uuid4())[:8]
-            logger.error(f"Odoo Auth Error [{request_id}]: {e}")
+            safe_msg = sanitize_error_message(error_msg)
+            logger.error(f"Odoo Auth Error [ref:{request_id}]: {safe_msg}")
             raise HTTPException(
                 status_code=502, 
-                detail={"message": "Erro de infraestrutura Odoo", "stage": "auth", "request_id": request_id}
+                detail=f"Erro de infraestrutura Odoo [ref: {request_id}]"
             )
 
 @router.get("/me")
