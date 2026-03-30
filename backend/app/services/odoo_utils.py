@@ -169,3 +169,38 @@ def is_selectable(db_type: str) -> bool:
         True
     """
     return db_type == "test"
+
+
+def normalize_label(val: object) -> str:
+    """
+    Normaliza labels do Odoo (many2one, name_get, strings serializadas).
+
+    Lida com:
+    - [id, "name"] -> "name"
+    - (id, "name") -> "name"
+    - "(365, 'SEREN SAGÓ')" -> "SEREN SAGÓ"
+    - None / False -> ""
+    """
+    if not val:
+        return ""
+
+    if isinstance(val, (list, tuple)) and len(val) >= 2:
+        return str(val[1])
+
+    if isinstance(val, str):
+        val = val.strip()
+        match = re.search(r'[\(\[]\d+,\s*[\'"]?(.+?)[\'"]?[\)\]]', val)
+        if match:
+            clean = match.group(1).strip()
+            if clean.endswith("'") or clean.endswith('"'):
+                clean = clean[:-1]
+            return clean
+        return " ".join(val.split())
+
+    return str(val)
+
+
+def normalize_many2one_display(val: object) -> Optional[str]:
+    """Alias de normalize_label para compatibilidade. Retorna None se vazio."""
+    label = normalize_label(val)
+    return label if label else None
