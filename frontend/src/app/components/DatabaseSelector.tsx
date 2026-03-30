@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
-import { api } from '@/services/api';
+import { api } from '../../services/api';
 
 interface Database {
   name: string;
@@ -22,18 +22,12 @@ export function DatabaseSelector() {
   const loadDatabases = async () => {
     try {
       setLoadingList(true);
-      const response = await api.get('/odoo/databases');
-      const data = response.data;
-      
+      // api.get retorna o JSON diretamente (não response.data)
+      const data: Database[] = await api.get('/odoo/databases');
       setDatabases(data);
-      
-      // Pré-selecionar banco ativo
-      const active = data.find((db: Database) => db.is_active);
-      if (active) {
-        setSelectedDb(active.name);
-      }
+      const active = data.find((db) => db.is_active);
+      if (active) setSelectedDb(active.name);
     } catch (err: any) {
-      console.error('Erro ao carregar bancos de dados:', err);
       toast.error('Erro ao carregar lista de bancos de dados');
     } finally {
       setLoadingList(false);
@@ -50,32 +44,24 @@ export function DatabaseSelector() {
     try {
       await api.post('/odoo/databases/select', { database: selectedDb });
       toast.success('Banco de dados atualizado com sucesso!');
-      
-      // Disparar evento para atualizar Connection_Badge
       window.dispatchEvent(new Event('database-changed'));
-      
-      // Recarregar lista para atualizar estado ativo
       await loadDatabases();
     } catch (err: any) {
-      console.error('Erro ao salvar banco de dados:', err);
-      
-      const errorDetail = err.response?.data?.detail || 'Erro desconhecido';
-      
-      if (err.response?.status === 403) {
+      if (err.status === 403) {
         toast.error('Banco de produção não pode ser selecionado durante testes');
-      } else if (err.response?.status === 400) {
+      } else if (err.status === 400) {
         toast.error('Nome de banco inválido');
-      } else if (err.response?.status === 502) {
+      } else if (err.status === 502) {
         toast.error('Falha ao conectar com o banco selecionado');
       } else {
-        toast.error(`Erro ao salvar: ${errorDetail}`);
+        toast.error(err.message || 'Erro ao salvar configuração');
       }
     } finally {
       setLoading(false);
     }
   };
 
-  const selectedDatabase = databases.find(db => db.name === selectedDb);
+  const selectedDatabase = databases.find((db) => db.name === selectedDb);
 
   if (loadingList) {
     return (
@@ -95,7 +81,7 @@ export function DatabaseSelector() {
       <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">
         Banco de Dados Odoo
       </label>
-      
+
       <select
         value={selectedDb}
         onChange={(e) => setSelectedDb(e.target.value)}
@@ -104,40 +90,27 @@ export function DatabaseSelector() {
       >
         <option value="">Selecione um banco...</option>
         {databases.map((db) => (
-          <option 
-            key={db.name} 
-            value={db.name}
-            disabled={!db.selectable}
-          >
+          <option key={db.name} value={db.name} disabled={!db.selectable}>
             {db.type === 'production' ? '🟢' : '🟡'} {db.name}
             {db.is_active ? ' (Ativo)' : ''}
             {!db.selectable ? ' (Protegido)' : ''}
           </option>
         ))}
       </select>
-      
+
       {selectedDatabase?.type === 'production' && (
         <div className="bg-amber-50 border border-amber-200 p-3 rounded-lg text-xs text-amber-800 flex items-start gap-2">
-          <span className="text-base">⚠️</span>
+          <span>⚠️</span>
           <span>
-            <strong>Banco de produção</strong> — seleção desabilitada durante período de testes para proteger dados reais.
+            <strong>Banco de produção</strong> — seleção desabilitada durante período de testes.
           </span>
         </div>
       )}
-      
-      {selectedDatabase?.type === 'test' && (
-        <div className="bg-blue-50 border border-blue-200 p-3 rounded-lg text-xs text-blue-800 flex items-start gap-2">
-          <span className="text-base">ℹ️</span>
-          <span>
-            Banco de teste selecionado. Todas as operações serão realizadas neste ambiente.
-          </span>
-        </div>
-      )}
-      
+
       <button
         onClick={handleSave}
         disabled={loading || !selectedDb || !selectedDatabase?.selectable}
-        className="px-6 py-2.5 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-blue-600"
+        className="px-6 py-2.5 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
       >
         {loading ? 'Salvando...' : 'Salvar Configuração'}
       </button>
