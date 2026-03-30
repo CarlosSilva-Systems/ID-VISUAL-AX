@@ -17,6 +17,7 @@ import { AndonGrid } from './components/AndonGrid';
 import { AndonTV } from './components/AndonTV';
 import { Fabrication, User } from './types';
 import { api } from '../services/api';
+import { pollingManager } from '../services/pollingManager';
 
 import { DataProvider } from './contexts/DataContext';
 
@@ -48,6 +49,25 @@ function AppContent() {
     };
     checkAuth();
   }, []);
+
+  // Gerenciar lifecycle do polling baseado em autenticação
+  React.useEffect(() => {
+    if (isAuthenticated) {
+      pollingManager.start();
+
+      // Escutar mudanças de banco de dados
+      const handleDbChange = () => {
+        console.log('[App] Database changed, restarting polling');
+        pollingManager.restart();
+      };
+      window.addEventListener('database-changed', handleDbChange);
+
+      return () => {
+        pollingManager.stop();
+        window.removeEventListener('database-changed', handleDbChange);
+      };
+    }
+  }, [isAuthenticated]);
 
   const handleLoginSuccess = (meData: any) => {
     setIsAuthenticated(true);
