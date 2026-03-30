@@ -47,8 +47,8 @@ async def list_mo_documents(
         url=settings.ODOO_URL,
         db=settings.ODOO_DB,
         auth_type=settings.ODOO_AUTH_TYPE,
-        login=settings.ODOO_LOGIN,
-        secret=settings.ODOO_PASSWORD
+        login=settings.ODOO_SERVICE_LOGIN,
+        secret=settings.ODOO_SERVICE_PASSWORD
     )
     
     try:
@@ -124,8 +124,8 @@ async def proxy_document(doc_id: str, disposition: str):
         url=settings.ODOO_URL,
         db=settings.ODOO_DB,
         auth_type=settings.ODOO_AUTH_TYPE,
-        login=settings.ODOO_LOGIN,
-        secret=settings.ODOO_PASSWORD
+        login=settings.ODOO_SERVICE_LOGIN,
+        secret=settings.ODOO_SERVICE_PASSWORD
     )
 
     try:

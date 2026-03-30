@@ -79,8 +79,8 @@ async def get_odoo_client(
         url=odoo_url,
         db=settings.ODOO_DB,
         auth_type=settings.ODOO_AUTH_TYPE,
-        login=settings.ODOO_LOGIN,
-        secret=settings.ODOO_PASSWORD
+        login=settings.ODOO_SERVICE_LOGIN,
+        secret=settings.ODOO_SERVICE_PASSWORD
     )
     try:
         yield client

@@ -400,8 +400,8 @@ async def create_batch(
            url=settings.ODOO_URL,
            db=settings.ODOO_DB,
            auth_type="jsonrpc_password",
-           login=settings.ODOO_LOGIN,
-           secret=settings.ODOO_PASSWORD
+           login=settings.ODOO_SERVICE_LOGIN,
+           secret=settings.ODOO_SERVICE_PASSWORD
         )
         
         # Read details for selected MOs
@@ -702,8 +702,8 @@ async def finalize_batch(
         url=settings.ODOO_URL,
         db=settings.ODOO_DB,
         auth_type="jsonrpc_password",
-        login=settings.ODOO_LOGIN,
-        secret=settings.ODOO_PASSWORD
+        login=settings.ODOO_SERVICE_LOGIN,
+        secret=settings.ODOO_SERVICE_PASSWORD
     )
     
     try:

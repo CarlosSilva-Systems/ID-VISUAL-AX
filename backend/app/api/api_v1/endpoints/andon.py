@@ -388,7 +388,7 @@ async def create_andon_call(
             local_odoo = OdooClient(
                 url=settings.ODOO_URL, db=settings.ODOO_DB,
                 auth_type=settings.ODOO_AUTH_TYPE,
-                login=settings.ODOO_LOGIN, secret=settings.ODOO_PASSWORD
+                login=settings.ODOO_SERVICE_LOGIN, secret=settings.ODOO_SERVICE_PASSWORD
             )
             try:
                 async with async_session_factory() as s:

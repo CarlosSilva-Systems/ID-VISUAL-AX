@@ -30,8 +30,8 @@ async def get_odoo_mos(
         url=settings.ODOO_URL,
         db=settings.ODOO_DB,
         auth_type=settings.ODOO_AUTH_TYPE,
-        login=settings.ODOO_LOGIN,
-        secret=settings.ODOO_PASSWORD
+        login=settings.ODOO_SERVICE_LOGIN,
+        secret=settings.ODOO_SERVICE_PASSWORD
     )
 
     try:
@@ -188,7 +188,7 @@ async def get_odoo_mos(
 
     except Exception as e:
         error_type = type(e).__name__
-        safe_msg = str(e).replace(settings.ODOO_PASSWORD or "", "***")
+        safe_msg = str(e).replace(settings.ODOO_SERVICE_PASSWORD or "", "***")
         request_id = str(uuid.uuid4())[:8]
         logger.exception(f"CRITICAL ODOO ERROR [{error_type}] [ref:{request_id}]: {safe_msg}")
         
@@ -203,7 +203,7 @@ async def get_odoo_mos(
             status_code=502, 
             detail=(
                 f"Erro de Conectividade Odoo [{error_type}] [ref: {request_id}]. "
-                "Verifique se ODOO_URL, ODOO_DB, ODOO_LOGIN e ODOO_PASSWORD "
+                "Verifique se ODOO_URL, ODOO_DB, ODOO_SERVICE_LOGIN e ODOO_SERVICE_PASSWORD "
                 "estão corretamente preenchidos no arquivo .env."
             )
         )
@@ -221,8 +221,8 @@ async def get_odoo_users(
         url=settings.ODOO_URL,
         db=settings.ODOO_DB,
         auth_type=settings.ODOO_AUTH_TYPE,
-        login=settings.ODOO_LOGIN,
-        secret=settings.ODOO_PASSWORD
+        login=settings.ODOO_SERVICE_LOGIN,
+        secret=settings.ODOO_SERVICE_PASSWORD
     )
     try:
         domain = [['active', '=', True]]

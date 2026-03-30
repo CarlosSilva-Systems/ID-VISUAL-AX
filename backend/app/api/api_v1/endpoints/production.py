@@ -107,8 +107,8 @@ async def search_mos(
         url=settings.ODOO_URL,
         db=settings.ODOO_DB,
         auth_type="jsonrpc_password",
-        login=settings.ODOO_LOGIN,
-        secret=settings.ODOO_PASSWORD,
+        login=settings.ODOO_SERVICE_LOGIN,
+        secret=settings.ODOO_SERVICE_PASSWORD,
     )
 
     try:
@@ -294,8 +294,8 @@ async def create_manual_request(
         url=settings.ODOO_URL,
         db=settings.ODOO_DB,
         auth_type="jsonrpc_password",
-        login=settings.ODOO_LOGIN,
-        secret=settings.ODOO_PASSWORD,
+        login=settings.ODOO_SERVICE_LOGIN,
+        secret=settings.ODOO_SERVICE_PASSWORD,
     )
 
     try:

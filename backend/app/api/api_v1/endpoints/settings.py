@@ -43,8 +43,8 @@ async def update_settings(
             url=settings.ODOO_URL,
             db=settings.ODOO_DB,
             auth_type=settings.ODOO_AUTH_TYPE,
-            login=settings.ODOO_LOGIN,
-            secret=settings.ODOO_PASSWORD
+            login=settings.ODOO_SERVICE_LOGIN,
+            secret=settings.ODOO_SERVICE_PASSWORD
         )
         try:
             user = await client.search_read('res.users', domain=[['id', '=', user_id]], fields=['id', 'active'])

@@ -65,8 +65,8 @@ async def execute_tool_call(tool_name: str, arguments: Dict[str, Any]) -> str:
                 try:
                     odoo = OdooClient(
                         url=settings.ODOO_URL, db=settings.ODOO_DB, 
-                        auth_type="jsonrpc_password", login=settings.ODOO_LOGIN, 
-                        secret=settings.ODOO_PASSWORD
+                        auth_type="jsonrpc_password", login=settings.ODOO_SERVICE_LOGIN, 
+                        secret=settings.ODOO_SERVICE_PASSWORD
                     )
                     obra_id = arguments.get("obra_id", "")
                     res = await odoo.search_read(

@@ -54,8 +54,8 @@ async def get_manual_requests(
                 url=settings.ODOO_URL,
                 db=settings.ODOO_DB,
                 auth_type="jsonrpc_password",
-                login=settings.ODOO_LOGIN,
-                secret=settings.ODOO_PASSWORD
+                login=settings.ODOO_SERVICE_LOGIN,
+                secret=settings.ODOO_SERVICE_PASSWORD
             )
             # Read 'state' for these IDs
             fresh_data = await client.search_read(
@@ -185,8 +185,8 @@ async def transfer_manual_request(
         url=settings.ODOO_URL,
         db=settings.ODOO_DB,
         auth_type="jsonrpc_password",
-        login=settings.ODOO_LOGIN,
-        secret=settings.ODOO_PASSWORD
+        login=settings.ODOO_SERVICE_LOGIN,
+        secret=settings.ODOO_SERVICE_PASSWORD
     )
     
     activity_id = None
