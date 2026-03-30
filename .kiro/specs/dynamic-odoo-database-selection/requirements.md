@@ -88,8 +88,8 @@ Este documento especifica os requisitos para implementação de duas features pr
 1. THE Connection_Badge SHALL exibir "ODOO CONECTADO" com ícone verde (🟢) WHEN conectado ao Production_Database
 2. THE Connection_Badge SHALL exibir "ODOO CONECTADO" com ícone amarelo (🟡) WHEN conectado a um Test_Database
 3. THE Connection_Badge SHALL exibir "ODOO DESCONECTADO" com ícone vermelho (🔴) WHEN não houver conexão ativa
-4. THE Connection_Badge SHALL atualizar automaticamente após salvar nova configuração de banco
-5. WHEN o sistema inicializa, THE Connection_Badge SHALL verificar conexão usando `id-visual-3` como Active_Database padrão
+4. THE Connection_Badge SHALL verificar o status da conexão em dois momentos específicos: na inicialização da aplicação e imediatamente após o usuário salvar uma nova configuração de banco
+5. THE Connection_Badge SHALL NÃO realizar verificação periódica automática em background (sem polling de 30 segundos)
 
 ### Requirement 6: Renomear Variáveis de Ambiente
 
@@ -174,7 +174,7 @@ Este documento especifica os requisitos para implementação de duas features pr
 
 1. THE System SHALL validar que o nome do banco contém apenas caracteres alfanuméricos, hífens e underscores
 2. THE System SHALL rejeitar nomes de banco vazios ou com espaços em branco
-3. THE System SHALL normalizar o nome do banco (trim) antes de persistir
+3. THE System SHALL aplicar trim (remover espaços em branco nas extremidades) antes de persistir o nome do banco
 4. FOR ALL valores válidos de banco, THE System SHALL garantir que: `parse(format(db_name)) == db_name` (round-trip property)
 5. IF o valor na System_Setting_Table estiver corrompido, THEN THE System SHALL fazer fallback para `id-visual-3` e registrar warning no log
 
