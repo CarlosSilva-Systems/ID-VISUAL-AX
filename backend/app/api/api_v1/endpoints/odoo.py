@@ -239,3 +239,217 @@ async def get_odoo_users(
         raise HTTPException(status_code=502, detail=f"Erro ao buscar usuários no Odoo [ref: {request_id}]")
     finally:
         await client.close()
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Database Management Endpoints
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@router.get("/databases", response_model=List[dict])
+async def list_odoo_databases(
+    session: AsyncSession = Depends(get_session),
+    current_user: Any = Depends(get_current_user)
+) -> Any:
+    """
+    Lista todos os bancos de dados disponíveis no servidor Odoo.
+    
+    Classifica cada banco como 'production' ou 'test' e marca o banco ativo atual.
+    O banco de produção (axengenharia1) é marcado como não selecionável.
+    
+    Returns:
+        List[DatabaseInfo]: Lista de bancos com metadados
+        
+    Raises:
+        HTTPException 502: Falha ao conectar com servidor Odoo
+        HTTPException 504: Timeout na conexão com Odoo
+    """
+    import httpx
+    from app.services.odoo_utils import (
+        get_active_odoo_db,
+        classify_database,
+        is_selectable
+    )
+    
+    try:
+        # 1. Consultar lista de bancos no servidor Odoo
+        async with httpx.AsyncClient(timeout=10.0) as http_client:
+            response = await http_client.post(
+                f"{settings.ODOO_URL}/web/database/list",
+                json={}
+            )
+            response.raise_for_status()
+            data = response.json()
+            
+            # Odoo retorna {"jsonrpc": "2.0", "result": ["db1", "db2", ...]}
+            database_names = data.get("result", [])
+            
+            if not database_names:
+                logger.warning("Odoo returned empty database list")
+                return []
+        
+        # 2. Obter banco ativo atual
+        active_db = await get_active_odoo_db(session)
+        
+        # 3. Processar cada banco
+        databases = []
+        for db_name in database_names:
+            db_type = classify_database(db_name)
+            
+            databases.append({
+                "name": db_name,
+                "type": db_type,
+                "selectable": is_selectable(db_type),
+                "is_active": db_name == active_db
+            })
+        
+        # 4. Ordenar: production primeiro, depois test alfabético
+        databases.sort(key=lambda x: (x["type"] != "production", x["name"]))
+        
+        logger.info(f"Listed {len(databases)} Odoo databases. Active: {active_db}")
+        return databases
+        
+    except httpx.TimeoutException as e:
+        request_id = str(uuid.uuid4())[:8]
+        logger.error(f"Timeout listing Odoo databases [ref:{request_id}]: {e}")
+        raise HTTPException(
+            status_code=504,
+            detail="O servidor Odoo demorou muito para responder. Tente novamente."
+        )
+    except httpx.HTTPStatusError as e:
+        request_id = str(uuid.uuid4())[:8]
+        logger.error(f"HTTP error listing Odoo databases [ref:{request_id}]: {e}")
+        raise HTTPException(
+            status_code=502,
+            detail=f"Erro ao conectar com servidor Odoo [ref: {request_id}]"
+        )
+    except Exception as e:
+        request_id = str(uuid.uuid4())[:8]
+        safe_msg = str(e).replace(settings.ODOO_SERVICE_PASSWORD or "", "***")
+        logger.exception(f"Failed to list Odoo databases [ref:{request_id}]: {safe_msg}")
+        raise HTTPException(
+            status_code=502,
+            detail=f"Erro ao listar bancos de dados Odoo [ref: {request_id}]"
+        )
+
+
+@router.post("/databases/select", response_model=dict)
+async def select_odoo_database(
+    payload: dict,
+    session: AsyncSession = Depends(get_session),
+    current_user: Any = Depends(get_current_user)
+) -> Any:
+    """
+    Seleciona um banco de dados Odoo para uso pelo sistema.
+    
+    Valida que não é o banco de produção e testa a conexão antes de persistir.
+    
+    Args:
+        payload: {"database": "nome-do-banco"}
+        
+    Returns:
+        DatabaseSelectResponse: Status da operação e resultado do teste de conexão
+        
+    Raises:
+        HTTPException 400: Nome de banco inválido
+        HTTPException 403: Tentativa de selecionar banco de produção
+        HTTPException 502: Falha no teste de conexão
+    """
+    from app.services.odoo_utils import (
+        validate_database_name,
+        normalize_database_name,
+        classify_database
+    )
+    from app.models.system_setting import SystemSetting
+    from datetime import datetime
+    
+    database_name = payload.get("database", "").strip()
+    
+    # 1. Validação de nome
+    if not validate_database_name(database_name):
+        raise HTTPException(
+            status_code=400,
+            detail="Nome de banco inválido. Use apenas letras, números, hífen e underscore."
+        )
+    
+    # 2. Normalizar nome
+    normalized_name = normalize_database_name(database_name)
+    
+    # 3. Proteção do banco de produção
+    if normalized_name == "axengenharia1":
+        raise HTTPException(
+            status_code=403,
+            detail="Banco de produção não pode ser selecionado durante período de testes"
+        )
+    
+    # 4. Testar conexão com Service Account
+    try:
+        test_client = OdooClient(
+            url=settings.ODOO_URL,
+            db=normalized_name,
+            auth_type=settings.ODOO_AUTH_TYPE,
+            login=settings.ODOO_SERVICE_LOGIN,
+            secret=settings.ODOO_SERVICE_PASSWORD
+        )
+        
+        try:
+            # Tenta autenticar para validar conexão
+            await test_client._jsonrpc_authenticate()
+            connection_ok = True
+            logger.info(f"Connection test successful for database: {normalized_name}")
+        except Exception as conn_err:
+            connection_ok = False
+            safe_msg = str(conn_err).replace(settings.ODOO_SERVICE_PASSWORD or "", "***")
+            logger.error(f"Connection test failed for {normalized_name}: {safe_msg}")
+            raise HTTPException(
+                status_code=502,
+                detail=f"Falha ao conectar com banco '{normalized_name}'. Verifique se o banco existe e as credenciais estão corretas."
+            )
+        finally:
+            await test_client.close()
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        request_id = str(uuid.uuid4())[:8]
+        safe_msg = str(e).replace(settings.ODOO_SERVICE_PASSWORD or "", "***")
+        logger.exception(f"Unexpected error testing connection [ref:{request_id}]: {safe_msg}")
+        raise HTTPException(
+            status_code=502,
+            detail=f"Erro inesperado ao testar conexão [ref: {request_id}]"
+        )
+    
+    # 5. Persistir configuração
+    try:
+        # Buscar ou criar setting
+        stmt = select(SystemSetting).where(SystemSetting.key == "active_odoo_db")
+        result = await session.execute(stmt)
+        setting = result.scalars().first()
+        
+        if setting:
+            setting.value = normalized_name
+            setting.updated_at = datetime.utcnow()
+        else:
+            setting = SystemSetting(
+                key="active_odoo_db",
+                value=normalized_name,
+                description="Banco de dados Odoo ativo selecionado dinamicamente"
+            )
+            session.add(setting)
+        
+        await session.commit()
+        logger.info(f"Active Odoo database updated to: {normalized_name}")
+        
+        return {
+            "status": "success",
+            "database": normalized_name,
+            "connection_ok": connection_ok
+        }
+        
+    except Exception as e:
+        await session.rollback()
+        request_id = str(uuid.uuid4())[:8]
+        logger.exception(f"Failed to persist database selection [ref:{request_id}]: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erro ao salvar configuração [ref: {request_id}]"
+        )
