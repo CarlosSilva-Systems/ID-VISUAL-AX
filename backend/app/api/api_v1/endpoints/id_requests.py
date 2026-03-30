@@ -23,10 +23,13 @@ router = APIRouter()
 @router.get("/manual", response_model=List[ManualRequestResponse])
 async def get_manual_requests(
     session: AsyncSession = Depends(deps.get_session),
-    current_user: Any = Depends(deps.get_current_user)
+    current_user: Any = Depends(deps.get_current_user),
+    client: OdooClient = Depends(deps.get_odoo_client)
 ) -> Any:
     """
     List open manual requests that are NOT yet transferred to standard queue.
+    
+    Uses get_odoo_client() dependency to ensure Service_Account and Active_Database are used.
     """
     stmt = (
         select(IDRequest, ManufacturingOrder)
@@ -50,20 +53,12 @@ async def get_manual_requests(
     
     if odoo_ids:
         try:
-            client = OdooClient(
-                url=settings.ODOO_URL,
-                db=settings.ODOO_DB,
-                auth_type="jsonrpc_password",
-                login=settings.ODOO_SERVICE_LOGIN,
-                secret=settings.ODOO_SERVICE_PASSWORD
-            )
-            # Read 'state' for these IDs
+            # Read 'state' for these IDs using injected client
             fresh_data = await client.search_read(
                 'mrp.production',
                 domain=[['id', 'in', odoo_ids]],
                 fields=['id', 'state']
             )
-            await client.close()
             
             # Update local map and DB
             for item in fresh_data:

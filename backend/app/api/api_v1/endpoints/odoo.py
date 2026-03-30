@@ -19,21 +19,16 @@ router = APIRouter()
 
 @router.get("/mos", response_model=List[dict])
 async def get_odoo_mos(
-    session: AsyncSession = Depends(get_session)
+    session: AsyncSession = Depends(get_session),
+    client: OdooClient = Depends(get_odoo_client)
 ) -> Any:
     """
     Fetch Manufacturing Orders (MOs) that have a pending 'Imprimir ID Visual' activity.
     AND pending Manual Requests from local DB.
     Sorted by activity deadline (urgency) and then date_start.
+    
+    Uses get_odoo_client() dependency to ensure Service_Account and Active_Database are used.
     """
-    client = OdooClient(
-        url=settings.ODOO_URL,
-        db=settings.ODOO_DB,
-        auth_type=settings.ODOO_AUTH_TYPE,
-        login=settings.ODOO_SERVICE_LOGIN,
-        secret=settings.ODOO_SERVICE_PASSWORD
-    )
-
     try:
         # ── Step 1: Find 'Imprimir ID Visual' Activity Type ──
         activity_type_id = None
@@ -207,23 +202,17 @@ async def get_odoo_mos(
                 "estão corretamente preenchidos no arquivo .env."
             )
         )
-    finally:
-        await client.close()
 
 @router.get("/users", response_model=List[dict])
 async def get_odoo_users(
-    current_user: Any = Depends(get_current_user)
+    current_user: Any = Depends(get_current_user),
+    client: OdooClient = Depends(get_odoo_client)
 ) -> Any:
     """
     Fetch active users from Odoo to populate settings selection.
+    
+    Uses get_odoo_client() dependency to ensure Service_Account and Active_Database are used.
     """
-    client = OdooClient(
-        url=settings.ODOO_URL,
-        db=settings.ODOO_DB,
-        auth_type=settings.ODOO_AUTH_TYPE,
-        login=settings.ODOO_SERVICE_LOGIN,
-        secret=settings.ODOO_SERVICE_PASSWORD
-    )
     try:
         domain = [['active', '=', True]]
         users = await client.search_read(
@@ -237,8 +226,6 @@ async def get_odoo_users(
         request_id = str(uuid.uuid4())[:8]
         logger.error(f"Failed to fetch Odoo users [ref:{request_id}]: {e}")
         raise HTTPException(status_code=502, detail=f"Erro ao buscar usuários no Odoo [ref: {request_id}]")
-    finally:
-        await client.close()
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
