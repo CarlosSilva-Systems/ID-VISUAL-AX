@@ -28,7 +28,7 @@ services:
     ports:
       - "8000:8000"
     env_file:
-      - .env
+      - .env  # Inclui ODOO_SERVICE_LOGIN, ODOO_SERVICE_PASSWORD e outras variáveis
     depends_on:
       - db
       - redis
