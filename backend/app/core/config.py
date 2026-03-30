@@ -70,12 +70,14 @@ class Settings(BaseSettings):
     # Odoo Connection
     ODOO_URL: str = "https://teste-dres.odoo.com"
     ODOO_DB: str = "teste-dres"
-    ODOO_LOGIN: str = ""
-    ODOO_PASSWORD: str = ""
+    
+    # Service Account (conta técnica usada pelo sistema para operações no Odoo)
+    ODOO_SERVICE_LOGIN: str = ""
+    ODOO_SERVICE_PASSWORD: str = ""
     ODOO_API_KEY: str = ""
     ODOO_AUTH_TYPE: str = "jsonrpc_password"
     
-    @field_validator("ODOO_URL", "ODOO_DB", "ODOO_LOGIN", "ODOO_PASSWORD", "ODOO_API_KEY", mode="before")
+    @field_validator("ODOO_URL", "ODOO_DB", "ODOO_SERVICE_LOGIN", "ODOO_SERVICE_PASSWORD", "ODOO_API_KEY", mode="before")
     def strip_string(cls, v: Any) -> Any:
         if isinstance(v, str):
             return v.strip()
