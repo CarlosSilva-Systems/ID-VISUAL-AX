@@ -63,9 +63,14 @@ async def get_current_user(
 
 
 async def get_odoo_client(
+    session: AsyncSession = Depends(get_session),
     current_user: Optional[User] = Depends(get_current_user)
 ):
     from app.services.odoo_client import OdooClient
+    from app.services.odoo_utils import get_active_odoo_db
+    
+    # Obter banco ativo dinamicamente
+    active_db = await get_active_odoo_db(session)
     
     # URL Dinâmica: Staging vs Produção
     # Se o usuário está em modo teste e tem uma URL configurada, usamos ela.
@@ -77,7 +82,7 @@ async def get_odoo_client(
 
     client = OdooClient(
         url=odoo_url,
-        db=settings.ODOO_DB,
+        db=active_db,  # Usa banco ativo ao invés de settings.ODOO_DB
         auth_type=settings.ODOO_AUTH_TYPE,
         login=settings.ODOO_SERVICE_LOGIN,
         secret=settings.ODOO_SERVICE_PASSWORD
