@@ -30,7 +30,9 @@ export const IoTDeviceModal: React.FC<Props> = ({
 }) => {
   const [availableDevices, setAvailableDevices] = useState<ESPDevice[]>([]);
   const [loading, setLoading] = useState(false);
+  const [ws, setWs] = useState<WebSocket | null>(null);
 
+  // Carregar dispositivos disponíveis
   useEffect(() => {
     if (!boundDevice) {
       setLoading(true);
@@ -42,6 +44,60 @@ export const IoTDeviceModal: React.FC<Props> = ({
         .finally(() => setLoading(false));
     }
   }, [boundDevice]);
+
+  // Conectar ao WebSocket para atualizações em tempo real
+  useEffect(() => {
+    const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
+    const wsUrl = apiUrl.replace(/^http/, 'ws') + '/devices/ws';
+    
+    const websocket = new WebSocket(wsUrl);
+    
+    websocket.onopen = () => {
+      console.log('WebSocket conectado para IoT devices');
+    };
+    
+    websocket.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        
+        // Atualizar status de dispositivo vinculado
+        if (data.event === 'device_status' && boundDevice && data.mac_address === boundDevice.mac_address) {
+          onChanged(); // Recarregar dados
+        }
+        
+        // Atualizar lista de dispositivos disponíveis quando novo dispositivo é descoberto
+        if (data.event === 'device_discovery' && !boundDevice) {
+          api.getDevices().then((devices: ESPDevice[]) => {
+            setAvailableDevices(devices.filter((d) => d.workcenter_id === null));
+          });
+        }
+        
+        // Atualizar quando dispositivo é vinculado/desvinculado
+        if (data.event === 'device_bound' || data.event === 'device_unbound') {
+          onChanged(); // Recarregar dados
+        }
+      } catch (error) {
+        console.error('Erro ao processar mensagem WebSocket:', error);
+      }
+    };
+    
+    websocket.onerror = (error) => {
+      console.error('Erro no WebSocket:', error);
+    };
+    
+    websocket.onclose = () => {
+      console.log('WebSocket desconectado');
+    };
+    
+    setWs(websocket);
+    
+    // Cleanup ao desmontar
+    return () => {
+      if (websocket.readyState === WebSocket.OPEN) {
+        websocket.close();
+      }
+    };
+  }, [boundDevice, onChanged]);
 
   const handleBind = async (mac: string) => {
     try {

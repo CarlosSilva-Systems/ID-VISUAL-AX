@@ -132,6 +132,104 @@ async def _handle_log(mac: str, payload_raw: bytes):
     await ws_manager.broadcast("device_log", {"mac_address": mac, "message": message})
 
 
+async def _handle_button(mac: str, color: str, payload_raw: bytes):
+    """
+    Processa eventos de botões publicados pelo ESP32 em andon/button/{mac}/{color}.
+    Cria um chamado Andon automaticamente baseado na cor do botão pressionado.
+    """
+    try:
+        # Decodificar payload (esperado: "PRESSED")
+        action = payload_raw.decode().strip()
+        if action != "PRESSED":
+            logger.warning(f"MQTT button: ação inválida '{action}' para {mac}/{color}")
+            return
+    except Exception as e:
+        logger.error(f"MQTT button: erro ao decodificar payload — {e}")
+        return
+
+    async with async_session_factory() as session:
+        # Verificar se dispositivo existe e está vinculado
+        stmt = select(ESPDevice).where(ESPDevice.mac_address == mac)
+        result = await session.execute(stmt)
+        device = result.scalars().first()
+        
+        if not device:
+            logger.warning(f"MQTT button: dispositivo {mac} não encontrado, descartado.")
+            return
+        
+        if not device.workcenter_id:
+            logger.warning(f"MQTT button: dispositivo {mac} não vinculado a nenhuma mesa, descartado.")
+            return
+        
+        # Importar modelos necessários
+        from app.models.andon import AndonCall
+        
+        # Mapear cor do botão para cor do chamado e categoria
+        color_map = {
+            "green": {"call_color": "GREEN", "category": "Produção Normal", "reason": "Produção retomada", "is_stop": False},
+            "yellow": {"call_color": "YELLOW", "category": "Alerta", "reason": "Solicitação de suporte", "is_stop": False},
+            "red": {"call_color": "RED", "category": "Parada Crítica", "reason": "Parada de emergência", "is_stop": True}
+        }
+        
+        button_config = color_map.get(color.lower())
+        if not button_config:
+            logger.warning(f"MQTT button: cor inválida '{color}' para {mac}")
+            return
+        
+        # Se for botão verde, resolver chamados ativos ao invés de criar novo
+        if color.lower() == "green":
+            stmt_calls = select(AndonCall).where(
+                AndonCall.workcenter_id == device.workcenter_id,
+                AndonCall.status != "RESOLVED"
+            )
+            result_calls = await session.execute(stmt_calls)
+            active_calls = result_calls.scalars().all()
+            
+            for call in active_calls:
+                call.status = "RESOLVED"
+                call.resolved_note = f"Resolvido via botão físico ESP32 ({device.device_name})"
+                call.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
+                session.add(call)
+            
+            await session.commit()
+            logger.info(f"MQTT button: {len(active_calls)} chamados resolvidos para workcenter {device.workcenter_id} via botão verde")
+            
+            # Broadcast via WebSocket
+            await ws_manager.broadcast("andon_resolved", {
+                "workcenter_id": device.workcenter_id,
+                "device_mac": mac,
+                "resolved_count": len(active_calls)
+            })
+            return
+        
+        # Para botões amarelo e vermelho, criar novo chamado
+        call = AndonCall(
+            color=button_config["call_color"],
+            category=button_config["category"],
+            reason=button_config["reason"],
+            description=f"Acionado via botão físico ESP32 ({device.device_name})",
+            workcenter_id=device.workcenter_id,
+            workcenter_name=f"Mesa {device.workcenter_id}",
+            status="OPEN",
+            triggered_by=f"ESP32 {device.device_name}",
+            is_stop=button_config["is_stop"]
+        )
+        session.add(call)
+        await session.commit()
+        await session.refresh(call)
+        
+        logger.info(f"MQTT button: chamado {button_config['call_color']} criado para workcenter {device.workcenter_id} via {mac}")
+        
+        # Broadcast via WebSocket
+        await ws_manager.broadcast("andon_call_created", {
+            "call_id": call.id,
+            "color": call.color,
+            "workcenter_id": device.workcenter_id,
+            "device_mac": mac,
+            "reason": call.reason
+        })
+
+
 async def _mqtt_loop():
     """Loop principal do serviço MQTT com reconexão automática."""
     try:
@@ -153,7 +251,8 @@ async def _mqtt_loop():
                 await client.subscribe("andon/discovery")
                 await client.subscribe("andon/status/#")
                 await client.subscribe("andon/logs/#")
-                logger.info("MQTT: escutando tópicos andon/discovery, andon/status/#, andon/logs/#")
+                await client.subscribe("andon/button/#")
+                logger.info("MQTT: escutando tópicos andon/discovery, andon/status/#, andon/logs/#, andon/button/#")
 
                 async for message in client.messages:
                     topic = str(message.topic)
@@ -167,6 +266,13 @@ async def _mqtt_loop():
                     elif topic.startswith("andon/logs/"):
                         mac = topic.split("/", 2)[2]
                         await _handle_log(mac, payload)
+                    elif topic.startswith("andon/button/"):
+                        # Formato: andon/button/{mac}/{color}
+                        parts = topic.split("/")
+                        if len(parts) >= 4:
+                            mac = parts[2]
+                            color = parts[3]
+                            await _handle_button(mac, color, payload)
 
         except asyncio.CancelledError:
             logger.info("MQTT: serviço encerrado.")
