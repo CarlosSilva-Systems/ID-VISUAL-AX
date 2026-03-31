@@ -591,6 +591,38 @@ void setup() {
     logSerial("BOOT: Transição para WIFI_CONNECTING");
 }
 
+// ═══════════════════════════════════════════════════════════
+// IMPLEMENTAÇÃO - LOOP
+// ═══════════════════════════════════════════════════════════
+
 void loop() {
-    // Placeholder
+    // Reset do watchdog a cada iteração
+    esp_task_wdt_reset();
+    
+    // Chamar client.loop() para processar mensagens MQTT
+    if (mqttClient.connected()) {
+        mqttClient.loop();
+    }
+    
+    // Atualizar LED onboard
+    updateOnboardLED();
+    
+    // Máquina de estados
+    switch (currentState) {
+        case BOOT:
+            // Já tratado no setup()
+            break;
+            
+        case WIFI_CONNECTING:
+            handleWiFiConnecting();
+            break;
+            
+        case MQTT_CONNECTING:
+            handleMQTTConnecting();
+            break;
+            
+        case OPERATIONAL:
+            handleOperational();
+            break;
+    }
 }
