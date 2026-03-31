@@ -32,14 +32,12 @@ enum SystemState {
 // Estado de um botão com debounce e cooldown
 struct ButtonState {
     uint8_t pin;
-    bool lastState;
+    bool lastReading;
     bool currentState;
     unsigned long lastDebounceTime;
     bool pressed;
     unsigned long lastPressTime;  // Para cooldown
     unsigned long cooldownMs;     // Tempo de cooldown específico
-    uint8_t stableReads;          // Contador de leituras estáveis consecutivas
-    bool targetState;             // Estado alvo sendo verificado
 };
 
 // Estado de um LED
@@ -75,9 +73,9 @@ String currentAndonColor = "GREEN";  // GREEN, YELLOW, RED
 bool andonStateKnown = false;
 
 // Botões (com cooldown específico)
-ButtonState greenButton = {BTN_VERDE, HIGH, HIGH, 0, false, 0, BTN_GREEN_COOLDOWN_MS, 0, HIGH};
-ButtonState yellowButton = {BTN_AMARELO, HIGH, HIGH, 0, false, 0, BTN_YELLOW_COOLDOWN_MS, 0, HIGH};
-ButtonState redButton = {BTN_VERMELHO, HIGH, HIGH, 0, false, 0, BTN_RED_COOLDOWN_MS, 0, HIGH};
+ButtonState greenButton = {BTN_VERDE, HIGH, HIGH, 0, false, 0, BTN_GREEN_COOLDOWN_MS};
+ButtonState yellowButton = {BTN_AMARELO, HIGH, HIGH, 0, false, 0, BTN_YELLOW_COOLDOWN_MS};
+ButtonState redButton = {BTN_VERMELHO, HIGH, HIGH, 0, false, 0, BTN_RED_COOLDOWN_MS};
 
 // LEDs
 LEDState redLED = {LED_VERMELHO_PIN, LOW};
@@ -373,50 +371,40 @@ void handleMQTTConnecting() {
 }
 
 /**
- * Processa um botão com debounce robusto usando múltiplas leituras
- * Requer STABLE_READS_REQUIRED leituras consecutivas iguais para confirmar mudança
+ * Processa um botão com debounce simples e cooldown
+ * Algoritmo clássico de debounce - simples e funcional
  */
 void processButton(ButtonState* btn) {
     unsigned long now = millis();
     bool reading = digitalRead(btn->pin);
     
-    // Se a leitura é diferente do estado alvo atual
-    if (reading != btn->targetState) {
-        // Começar a rastrear novo estado alvo
-        btn->targetState = reading;
-        btn->stableReads = 1;
+    // Se a leitura mudou, resetar o timer de debounce
+    if (reading != btn->lastReading) {
         btn->lastDebounceTime = now;
     }
-    // Se a leitura é igual ao estado alvo
-    else {
-        // Incrementar contador de leituras estáveis
-        btn->stableReads++;
-        
-        // Se atingiu o número necessário de leituras estáveis E passou o tempo de debounce
-        if (btn->stableReads >= STABLE_READS_REQUIRED && (now - btn->lastDebounceTime) >= DEBOUNCE_MS) {
-            // Se o estado confirmado mudou
-            if (btn->targetState != btn->currentState) {
-                btn->currentState = btn->targetState;
-                logSerial("BUTTON: GPIO " + String(btn->pin) + " estado confirmado: " + String(btn->currentState ? "HIGH" : "LOW"));
-                
-                // Detectar pressionamento (mudança para LOW)
-                if (btn->currentState == LOW) {
-                    // Verificar cooldown
-                    if (now - btn->lastPressTime >= btn->cooldownMs) {
-                        btn->pressed = true;
-                        btn->lastPressTime = now;
-                        logSerial("BUTTON: GPIO " + String(btn->pin) + " PRESSIONADO!");
-                    } else {
-                        unsigned long remainingCooldown = (btn->cooldownMs - (now - btn->lastPressTime)) / 1000;
-                        logSerial("BUTTON: GPIO " + String(btn->pin) + " em cooldown, aguarde " + String(remainingCooldown) + "s");
-                    }
+    
+    // Se passou o tempo de debounce, aceitar a nova leitura
+    if ((now - btn->lastDebounceTime) > DEBOUNCE_MS) {
+        // Se o estado mudou
+        if (reading != btn->currentState) {
+            btn->currentState = reading;
+            
+            // Detectar pressionamento (HIGH → LOW, pois usa INPUT_PULLUP)
+            if (btn->currentState == LOW) {
+                // Verificar cooldown
+                if (now - btn->lastPressTime >= btn->cooldownMs) {
+                    btn->pressed = true;
+                    btn->lastPressTime = now;
+                    logSerial("BUTTON: GPIO " + String(btn->pin) + " PRESSIONADO!");
+                } else {
+                    unsigned long remainingCooldown = (btn->cooldownMs - (now - btn->lastPressTime)) / 1000;
+                    logSerial("BUTTON: GPIO " + String(btn->pin) + " em cooldown, aguarde " + String(remainingCooldown) + "s");
                 }
-                
-                // Resetar contador
-                btn->stableReads = 0;
             }
         }
     }
+    
+    btn->lastReading = reading;
 }
 
 /**

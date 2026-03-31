@@ -29,8 +29,7 @@
 #define LED_ONBOARD_PIN 2
 
 // ─── Timers (ms) ───────────────────────────────────────────
-#define DEBOUNCE_MS 200  // Aumentado para 200ms para botões com bouncing extremo
-#define STABLE_READS_REQUIRED 3  // Número de leituras consecutivas iguais necessárias
+#define DEBOUNCE_MS 100  // Debounce simples de 100ms
 #define HEARTBEAT_INTERVAL_MS 300000  // 5 minutos
 #define HEAP_MONITOR_INTERVAL_MS 30000 // 30 segundos
 #define CHECK_INTERVAL_MS 5000
