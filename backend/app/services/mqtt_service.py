@@ -34,7 +34,7 @@ async def _get_or_create_device(
             mac_address=mac_address,
             device_name=device_name or mac_address,
             status=DeviceStatus.online,
-            last_seen_at=datetime.now(timezone.utc),
+            last_seen_at=datetime.now(timezone.utc).replace(tzinfo=None),
         )
         session.add(device)
         await session.flush()
@@ -66,7 +66,7 @@ async def _handle_discovery(payload_raw: bytes):
     async with async_session_factory() as session:
         device = await _get_or_create_device(session, mac, name)
         device.status = DeviceStatus.online
-        device.last_seen_at = datetime.now(timezone.utc)
+        device.last_seen_at = datetime.now(timezone.utc).replace(tzinfo=None)
         if name:
             device.device_name = name
         await _add_log(session, device.id, EventType.discovery, f"Dispositivo descoberto: {name or mac}")
@@ -101,7 +101,7 @@ async def _handle_status(mac: str, payload_raw: bytes):
             return
         if device.status != new_status:
             device.status = new_status
-            device.last_seen_at = datetime.now(timezone.utc)
+            device.last_seen_at = datetime.now(timezone.utc).replace(tzinfo=None)
             await _add_log(
                 session, device.id, EventType.status_change,
                 f"Status alterado para {status_str}"

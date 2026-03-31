@@ -27,7 +27,7 @@ class ESPDevice(SQLModel, table=True):
     status: DeviceStatus = Field(default=DeviceStatus.offline)
     last_seen_at: Optional[datetime] = Field(default=None)
     created_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc)
+        default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=None)
     )
 
 
@@ -39,5 +39,5 @@ class ESPDeviceLog(SQLModel, table=True):
     event_type: EventType = Field(nullable=False)
     message: str = Field(default="")
     created_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc)
+        default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=None)
     )
