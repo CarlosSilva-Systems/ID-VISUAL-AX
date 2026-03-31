@@ -84,6 +84,11 @@ async def _handle_discovery(payload_raw: bytes):
 async def _handle_status(mac: str, payload_raw: bytes):
     try:
         status_str = payload_raw.decode().strip().lower()
+        
+        # Ignorar mensagens de heartbeat (não são mudanças de status)
+        if status_str == "heartbeat":
+            return
+        
         if status_str not in ("online", "offline"):
             logger.warning(f"MQTT status: valor inválido '{status_str}' para {mac}")
             return
