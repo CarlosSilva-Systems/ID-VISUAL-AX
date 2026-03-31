@@ -102,6 +102,8 @@ void handleMQTTConnecting();
 void mqttCallback(char* topic, byte* payload, unsigned int length);
 String createDiscoveryMessage();
 void logMQTT(const String& message);
+void processButton(ButtonState* btn);
+void publishButtonEvent(const String& color);
 
 /**
  * Atualiza o backoff exponencial após falha
@@ -320,6 +322,47 @@ void handleMQTTConnecting() {
         int rc = mqttClient.state();
         logSerial("MQTT: Falha na conexão, rc=" + String(rc) + ", tentando novamente em " + String(mqttReconnect.backoffDelay / 1000) + "s");
         updateBackoff(&mqttReconnect);
+    }
+}
+
+/**
+ * Processa um botão com debounce não-bloqueante
+ */
+void processButton(ButtonState* btn) {
+    unsigned long now = millis();
+    bool reading = digitalRead(btn->pin);
+    
+    // Detectar transição
+    if (reading != btn->lastState) {
+        btn->lastDebounceTime = now;
+    }
+    
+    // Verificar se passou o tempo de debounce
+    if ((now - btn->lastDebounceTime) > DEBOUNCE_MS) {
+        // Se o estado mudou após o debounce
+        if (reading != btn->currentState) {
+            btn->currentState = reading;
+            
+            // Detectar pressionamento (HIGH → LOW)
+            if (btn->currentState == LOW) {
+                btn->pressed = true;
+            }
+        }
+    }
+    
+    btn->lastState = reading;
+}
+
+/**
+ * Publica evento de botão via MQTT
+ */
+void publishButtonEvent(const String& color) {
+    String topic = "andon/button/" + macAddress + "/" + color;
+    
+    if (mqttClient.publish(topic.c_str(), "PRESSED", false)) {
+        logSerial("BUTTON: " + color + " pressionado → publicado " + topic);
+    } else {
+        logSerial("ERRO: Falha ao publicar evento de botão " + color);
     }
 }
 
