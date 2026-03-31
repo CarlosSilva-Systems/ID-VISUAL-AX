@@ -87,6 +87,10 @@ class Settings(BaseSettings):
     ODOO_ID_VISUAL_ACTIVITY_TYPE_ID: Optional[int] = None
     ODOO_ACTIVITY_USER_ID: int = 2
 
+    # MQTT Configuration
+    MQTT_BROKER_HOST: str = "localhost"
+    MQTT_BROKER_PORT: int = 1883
+
     # --- Andon Configuration ---
     # ID do grupo res.groups no Odoo que define administradores do ID Visual
     ID_VISUAL_ADMIN_GROUP_ID: Optional[int] = None

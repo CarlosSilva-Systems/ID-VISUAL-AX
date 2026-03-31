@@ -46,6 +46,11 @@ async def lifespan(app: FastAPI):
     from app.db.session import init_db
     await init_db()
     logger.info("Database tables created/verified.")
+
+    # Iniciar serviço MQTT
+    from app.services.mqtt_service import start_mqtt_service
+    start_mqtt_service()
+    logger.info("✓ MQTT service started")
     
     # Event Loop Watchdog
     async def loop_watchdog():
@@ -66,6 +71,8 @@ async def lifespan(app: FastAPI):
     yield
     # Shutdown
     logger.info("Shutting down...")
+    from app.services.mqtt_service import stop_mqtt_service
+    stop_mqtt_service()
     watchdog_task.cancel()
     try:
         await watchdog_task
