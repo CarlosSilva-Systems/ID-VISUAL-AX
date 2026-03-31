@@ -106,6 +106,8 @@ void processButton(ButtonState* btn);
 void publishButtonEvent(const String& color);
 bool processLEDCommand(const String& payload);
 void updateLEDState(LEDState* led, bool state);
+bool checkTimer(Timer* timer);
+void handleOperational();
 
 /**
  * Atualiza o backoff exponencial após falha
@@ -405,6 +407,71 @@ bool processLEDCommand(const String& payload) {
     
     logSerial("LED: Comando aplicado - red=" + String(red) + " yellow=" + String(yellow) + " green=" + String(green));
     return true;
+}
+
+/**
+ * Verifica se um timer expirou
+ */
+bool checkTimer(Timer* timer) {
+    unsigned long now = millis();
+    if (now - timer->lastTrigger >= timer->interval) {
+        timer->lastTrigger = now;
+        return true;
+    }
+    return false;
+}
+
+/**
+ * Gerencia o estado OPERATIONAL
+ */
+void handleOperational() {
+    // Verificar conexões
+    if (WiFi.status() != WL_CONNECTED) {
+        logSerial("OPERATIONAL: WiFi perdido, retornando para WIFI_CONNECTING");
+        currentState = WIFI_CONNECTING;
+        return;
+    }
+    
+    if (!mqttClient.connected()) {
+        logSerial("OPERATIONAL: MQTT perdido, retornando para MQTT_CONNECTING");
+        currentState = MQTT_CONNECTING;
+        return;
+    }
+    
+    // Processar botões
+    processButton(&greenButton);
+    processButton(&yellowButton);
+    processButton(&redButton);
+    
+    // Verificar e publicar eventos de botões
+    if (greenButton.pressed) {
+        publishButtonEvent("green");
+        greenButton.pressed = false;
+    }
+    if (yellowButton.pressed) {
+        publishButtonEvent("yellow");
+        yellowButton.pressed = false;
+    }
+    if (redButton.pressed) {
+        publishButtonEvent("red");
+        redButton.pressed = false;
+    }
+    
+    // Heartbeat a cada 5 minutos
+    if (checkTimer(&heartbeatTimer)) {
+        uint32_t freeHeap = ESP.getFreeHeap();
+        String statusTopic = "andon/status/" + macAddress;
+        mqttClient.publish(statusTopic.c_str(), "heartbeat", false);
+        logSerial("HEARTBEAT: operacional, heap livre: " + String(freeHeap) + " bytes");
+    }
+    
+    // Monitoramento de heap a cada 30s
+    if (checkTimer(&heapMonitorTimer)) {
+        uint32_t freeHeap = ESP.getFreeHeap();
+        if (freeHeap < HEAP_WARN_THRESHOLD) {
+            logMQTT("AVISO: Heap baixo - " + String(freeHeap) + " bytes");
+        }
+    }
 }
 
 // ═══════════════════════════════════════════════════════════
