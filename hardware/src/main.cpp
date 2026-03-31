@@ -98,6 +98,10 @@ void updateBackoff(ReconnectionState* state);
 void resetBackoff(ReconnectionState* state);
 void handleWiFiConnecting();
 void updateOnboardLED();
+void handleMQTTConnecting();
+void mqttCallback(char* topic, byte* payload, unsigned int length);
+String createDiscoveryMessage();
+void logMQTT(const String& message);
 
 /**
  * Atualiza o backoff exponencial após falha
@@ -181,6 +185,141 @@ void handleWiFiConnecting() {
         logSerial("WIFI: Timeout após 30s, tentando novamente em " + String(wifiReconnect.backoffDelay / 1000) + "s");
         updateBackoff(&wifiReconnect);
         WiFi.disconnect();
+    }
+}
+
+/**
+ * Cria mensagem JSON de discovery
+ */
+String createDiscoveryMessage() {
+    StaticJsonDocument<256> doc;
+    doc["mac_address"] = macAddress;
+    doc["device_name"] = deviceName;
+    doc["firmware_version"] = FIRMWARE_VERSION;
+    
+    String output;
+    size_t size = serializeJson(doc, output);
+    
+    if (size == 0) {
+        logSerial("ERRO: Falha ao serializar Discovery Message");
+        return "";
+    }
+    
+    return output;
+}
+
+/**
+ * Publica mensagem de log via MQTT (se conectado)
+ */
+void logMQTT(const String& message) {
+    logSerial(message); // Sempre logar no Serial
+    
+    if (mqttClient.connected()) {
+        String topic = "andon/logs/" + macAddress;
+        if (!mqttClient.publish(topic.c_str(), message.c_str(), false)) {
+            Serial.println("[ERRO] Falha ao publicar log MQTT");
+        }
+    }
+}
+
+/**
+ * Callback MQTT para mensagens recebidas
+ */
+void mqttCallback(char* topic, byte* payload, unsigned int length) {
+    // Converter payload para String
+    String payloadStr;
+    for (unsigned int i = 0; i < length; i++) {
+        payloadStr += (char)payload[i];
+    }
+    
+    logSerial("MQTT: Mensagem recebida no tópico: " + String(topic));
+    
+    // Verificar se é comando de LED
+    String expectedTopic = "andon/led/" + macAddress + "/command";
+    if (String(topic) == expectedTopic && currentState == OPERATIONAL) {
+        // Será implementado posteriormente
+    }
+}
+
+/**
+ * Gerencia a conexão MQTT com backoff exponencial
+ */
+void handleMQTTConnecting() {
+    unsigned long now = millis();
+    
+    // Verificar se WiFi ainda está conectado
+    if (WiFi.status() != WL_CONNECTED) {
+        logSerial("MQTT: WiFi perdido, retornando para WIFI_CONNECTING");
+        currentState = WIFI_CONNECTING;
+        return;
+    }
+    
+    // Verificar se já está conectado
+    if (mqttClient.connected()) {
+        logSerial("MQTT: Conectado ao broker!");
+        
+        // Publicar status online
+        String statusTopic = "andon/status/" + macAddress;
+        if (mqttClient.publish(statusTopic.c_str(), "online", true)) {
+            logSerial("MQTT: Status 'online' publicado");
+        }
+        
+        // Publicar discovery message
+        String discoveryMsg = createDiscoveryMessage();
+        if (!discoveryMsg.isEmpty()) {
+            if (mqttClient.publish("andon/discovery", discoveryMsg.c_str(), false)) {
+                logSerial("MQTT: Discovery publicado: " + discoveryMsg);
+            }
+        }
+        
+        // Subscrever ao tópico de comandos LED
+        String ledTopic = "andon/led/" + macAddress + "/command";
+        if (mqttClient.subscribe(ledTopic.c_str(), 1)) {
+            logSerial("MQTT: Subscrito em " + ledTopic);
+        }
+        
+        // Transitar para OPERATIONAL
+        currentState = OPERATIONAL;
+        resetBackoff(&mqttReconnect);
+        logSerial("MQTT: Transição para OPERATIONAL");
+        return;
+    }
+    
+    // Verificar se é hora de tentar reconectar
+    if (now - mqttReconnect.lastAttempt < mqttReconnect.backoffDelay) {
+        return; // Ainda no período de backoff
+    }
+    
+    // Verificar limite de tentativas
+    if (mqttReconnect.attemptCount >= MQTT_MAX_RETRIES) {
+        logSerial("MQTT: 10 tentativas falhadas, reiniciando ESP32...");
+        delay(1000);
+        ESP.restart();
+    }
+    
+    // Tentar conectar
+    if (mqttReconnect.attemptCount == 0) {
+        logSerial("MQTT: Conectando ao broker " + String(MQTT_BROKER) + ":" + String(MQTT_PORT) + "...");
+    }
+    
+    // Configurar LWT
+    String lwtTopic = "andon/status/" + macAddress;
+    String clientId = deviceName;
+    
+    bool connected = mqttClient.connect(
+        clientId.c_str(),
+        lwtTopic.c_str(),
+        1,              // QoS
+        true,           // retain
+        "offline"       // LWT message
+    );
+    
+    mqttReconnect.lastAttempt = now;
+    
+    if (!connected) {
+        int rc = mqttClient.state();
+        logSerial("MQTT: Falha na conexão, rc=" + String(rc) + ", tentando novamente em " + String(mqttReconnect.backoffDelay / 1000) + "s");
+        updateBackoff(&mqttReconnect);
     }
 }
 
@@ -293,6 +432,7 @@ void setup() {
     // Configurar cliente MQTT
     mqttClient.setServer(MQTT_BROKER, MQTT_PORT);
     mqttClient.setBufferSize(MQTT_MAX_PACKET_SIZE);
+    mqttClient.setCallback(mqttCallback);
     logSerial("MQTT: Cliente configurado");
     
     // Transitar para WIFI_CONNECTING
