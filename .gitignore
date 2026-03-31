@@ -20,6 +20,10 @@ backend/verify_*.py
 *.log
 *.txt
 
+# Relatórios temporários
+RELATORIO_*.md
+relatorio_*.txt
+
 # Arquivos temporários de migração
 backend/scripts/migration_*.log
 backend/scripts/rollback_*.log
