@@ -103,6 +103,25 @@ export const api = {
         }
     },
 
+    delete: async (endpoint: string) => {
+        try {
+            const response = await fetch(`${API_URL}${endpoint}`, {
+                method: 'DELETE',
+                headers: getHeaders(),
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) {
+                const error = new Error(data.detail?.message || data.detail || `API Error: ${response.statusText}`);
+                (error as any).status = response.status;
+                throw error;
+            }
+            return data;
+        } catch (error) {
+            console.error('API DELETE Failed:', error);
+            throw error;
+        }
+    },
+
     healthCheck: async () => {
         return api.get('/health');
     },
@@ -359,6 +378,25 @@ export const api = {
 
     updateUserOdooConfig: async (payload: { is_odoo_test_mode?: boolean, odoo_test_url?: string }) => {
         return api.patch('/user/odoo-config', payload);
+    },
+
+    // ── IoT Devices ──
+    getDevices: async () => {
+        return api.get('/devices');
+    },
+
+    getDeviceLogs: async (macAddress: string, page = 1, pageSize = 50, eventType?: string) => {
+        const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
+        if (eventType) params.append('event_type', eventType);
+        return api.get(`/devices/${encodeURIComponent(macAddress)}/logs?${params}`);
+    },
+
+    bindDevice: async (macAddress: string, workcenterId: number) => {
+        return api.post(`/devices/${encodeURIComponent(macAddress)}/bind`, { workcenter_id: workcenterId });
+    },
+
+    unbindDevice: async (macAddress: string) => {
+        return api.delete(`/devices/${encodeURIComponent(macAddress)}/bind`);
     },
 };
 
