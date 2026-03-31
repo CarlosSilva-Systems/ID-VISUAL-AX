@@ -9,4 +9,5 @@ from app.models.andon import AndonStatus, AndonEvent, AndonMaterialRequest
 from app.models.system_setting import SystemSetting
 from app.models.analytics import FabricacaoBlock, RevisaoIDVisual, MPRConfig
 from app.models.custom_report import CustomReport
+from app.models.esp_device import ESPDevice, ESPDeviceLog
 
