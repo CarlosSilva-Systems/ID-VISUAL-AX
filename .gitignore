@@ -82,3 +82,6 @@ backend/alembic/versions/*.pyc
 frontend/.next/
 .gemini/
 backend/list_routes.py
+
+# PlatformIO
+hardware/compile_commands.json
