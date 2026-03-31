@@ -372,7 +372,7 @@ void handleMQTTConnecting() {
 
 /**
  * Processa um botão com debounce simples e cooldown
- * Algoritmo clássico de debounce - simples e funcional
+ * Cooldown só bloqueia disparos subsequentes, não o primeiro
  */
 void processButton(ButtonState* btn) {
     unsigned long now = millis();
@@ -391,8 +391,8 @@ void processButton(ButtonState* btn) {
             
             // Detectar pressionamento (HIGH → LOW, pois usa INPUT_PULLUP)
             if (btn->currentState == LOW) {
-                // Verificar cooldown
-                if (now - btn->lastPressTime >= btn->cooldownMs) {
+                // Verificar cooldown (só bloqueia se já foi pressionado antes)
+                if (btn->lastPressTime == 0 || (now - btn->lastPressTime >= btn->cooldownMs)) {
                     btn->pressed = true;
                     btn->lastPressTime = now;
                     logSerial("BUTTON: GPIO " + String(btn->pin) + " PRESSIONADO!");
