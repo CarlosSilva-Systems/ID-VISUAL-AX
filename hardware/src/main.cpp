@@ -91,6 +91,100 @@ WiFiClient wifiClient;
 PubSubClient mqttClient(wifiClient);
 
 // ═══════════════════════════════════════════════════════════
+// DECLARAÇÕES DE FUNÇÕES
+// ═══════════════════════════════════════════════════════════
+
+void updateBackoff(ReconnectionState* state);
+void resetBackoff(ReconnectionState* state);
+void handleWiFiConnecting();
+void updateOnboardLED();
+
+/**
+ * Atualiza o backoff exponencial após falha
+ */
+void updateBackoff(ReconnectionState* state) {
+    state->attemptCount++;
+    state->backoffDelay = min(state->backoffDelay * 2, (unsigned long)MAX_BACKOFF_MS);
+}
+
+/**
+ * Reseta o backoff após sucesso
+ */
+void resetBackoff(ReconnectionState* state) {
+    state->attemptCount = 0;
+    state->backoffDelay = INITIAL_BACKOFF_MS;
+}
+
+/**
+ * Atualiza o LED onboard baseado no estado atual
+ */
+void updateOnboardLED() {
+    unsigned long now = millis();
+    
+    if (currentState == WIFI_CONNECTING) {
+        // Piscar a cada 500ms
+        if (now - ledBlinkTimer.lastTrigger >= WIFI_BLINK_MS) {
+            onboardLED.state = !onboardLED.state;
+            digitalWrite(LED_ONBOARD_PIN, onboardLED.state ? HIGH : LOW);
+            ledBlinkTimer.lastTrigger = now;
+        }
+    } else if (currentState == MQTT_CONNECTING) {
+        // Piscar a cada 1000ms
+        if (now - ledBlinkTimer.lastTrigger >= MQTT_BLINK_MS) {
+            onboardLED.state = !onboardLED.state;
+            digitalWrite(LED_ONBOARD_PIN, onboardLED.state ? HIGH : LOW);
+            ledBlinkTimer.lastTrigger = now;
+        }
+    } else if (currentState == OPERATIONAL) {
+        // Aceso continuamente
+        if (!onboardLED.state) {
+            onboardLED.state = true;
+            digitalWrite(LED_ONBOARD_PIN, HIGH);
+        }
+    }
+}
+
+/**
+ * Gerencia a conexão WiFi com backoff exponencial
+ */
+void handleWiFiConnecting() {
+    unsigned long now = millis();
+    
+    // Verificar se já está conectado
+    if (WiFi.status() == WL_CONNECTED) {
+        String ip = WiFi.localIP().toString();
+        logSerial("WIFI: Conectado! IP: " + ip);
+        
+        // Transitar para MQTT_CONNECTING
+        currentState = MQTT_CONNECTING;
+        resetBackoff(&wifiReconnect);
+        logSerial("WIFI: Transição para MQTT_CONNECTING");
+        return;
+    }
+    
+    // Verificar se é hora de tentar reconectar
+    if (now - wifiReconnect.lastAttempt < wifiReconnect.backoffDelay) {
+        return; // Ainda no período de backoff
+    }
+    
+    // Tentar conectar
+    if (wifiReconnect.attemptCount == 0) {
+        logSerial("WIFI: Conectando a " + String(WIFI_SSID) + "...");
+        WiFi.mode(WIFI_STA);
+        WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+    }
+    
+    wifiReconnect.lastAttempt = now;
+    
+    // Verificar timeout de 30s
+    if (wifiReconnect.attemptCount > 0 && (now - wifiReconnect.lastAttempt) >= WIFI_TIMEOUT_MS) {
+        logSerial("WIFI: Timeout após 30s, tentando novamente em " + String(wifiReconnect.backoffDelay / 1000) + "s");
+        updateBackoff(&wifiReconnect);
+        WiFi.disconnect();
+    }
+}
+
+// ═══════════════════════════════════════════════════════════
 // FUNÇÕES AUXILIARES
 // ═══════════════════════════════════════════════════════════
 
