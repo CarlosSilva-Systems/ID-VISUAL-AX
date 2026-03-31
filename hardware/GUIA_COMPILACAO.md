@@ -19,7 +19,6 @@ Este guia fornece instruções passo-a-passo para compilar e fazer upload do fir
 - **Cabo USB** (USB-A para Micro-USB ou USB-C, dependendo do modelo)
 - **3 Botões** (push-button normalmente aberto)
 - **3 LEDs** (vermelho, amarelo, verde) + resistores 220Ω
-- **Resistores pull-up externos** para GPIO 34 e 35 (10kΩ recomendado)
 - **Protoboard e jumpers** para montagem
 
 ### 3. Configuração de Rede
@@ -49,14 +48,14 @@ Antes de compilar, você DEVE configurar as credenciais WiFi e o endereço do br
 
 | Botão    | GPIO | Observação                          |
 |----------|------|-------------------------------------|
-| Verde    | 34   | Input-only, requer pull-up externo |
-| Amarelo  | 35   | Input-only, requer pull-up externo |
-| Vermelho | 32   | Suporta pull-up interno             |
+| Verde    | 12   | Pull-up interno habilitado          |
+| Amarelo  | 13   | Pull-up interno habilitado          |
+| Vermelho | 32   | Pull-up interno habilitado          |
 
 **Conexão dos botões:**
 - Um terminal do botão → GPIO correspondente
 - Outro terminal do botão → GND
-- Para GPIO 34 e 35: adicionar resistor de 10kΩ entre GPIO e 3.3V (pull-up externo)
+- **Não precisa de resistor pull-up externo** (o firmware habilita pull-up interno)
 
 ### Pinagem — LEDs
 
@@ -293,9 +292,10 @@ Verifique:
 
 **Solução:**
 1. Verifique a montagem dos botões (GPIO correto, GND conectado)
-2. Para GPIO 34 e 35: adicione resistores pull-up externos (10kΩ)
+2. Certifique-se de que o botão está normalmente aberto (NA)
 3. Teste continuidade com multímetro
 4. Monitore o Serial para ver se há leituras de GPIO
+5. Verifique se o botão não está invertido (comum no GND, retorno no GPIO)
 
 ### Problema: LEDs não acendem
 

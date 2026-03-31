@@ -18,8 +18,8 @@
 #define MQTT_MAX_RETRIES 10
 
 // ─── Pinos — Botões ────────────────────────────────────────
-#define BTN_VERDE 34    // input-only, SEM pull-up interno
-#define BTN_AMARELO 35  // input-only, SEM pull-up interno
+#define BTN_VERDE 12    // suporta INPUT_PULLUP
+#define BTN_AMARELO 13  // suporta INPUT_PULLUP
 #define BTN_VERMELHO 32 // suporta INPUT_PULLUP
 
 // ─── Pinos — LEDs de status ────────────────────────────────

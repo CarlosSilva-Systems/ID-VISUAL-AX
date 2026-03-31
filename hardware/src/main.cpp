@@ -493,10 +493,10 @@ void logSerial(const String& message) {
  * Inicializa todos os GPIOs (botões e LEDs)
  */
 void initializeGPIOs() {
-    // Configurar botões
-    pinMode(BTN_VERDE, INPUT);          // GPIO 34 - input-only
-    pinMode(BTN_AMARELO, INPUT);        // GPIO 35 - input-only
-    pinMode(BTN_VERMELHO, INPUT_PULLUP); // GPIO 32 - suporta pull-up
+    // Configurar botões com pull-up interno
+    pinMode(BTN_VERDE, INPUT_PULLUP);    // GPIO 12
+    pinMode(BTN_AMARELO, INPUT_PULLUP);  // GPIO 13
+    pinMode(BTN_VERMELHO, INPUT_PULLUP); // GPIO 32
     
     // Configurar LEDs
     pinMode(LED_VERMELHO_PIN, OUTPUT);

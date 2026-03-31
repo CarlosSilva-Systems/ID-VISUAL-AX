@@ -38,9 +38,9 @@ O ESP32 funciona como um botão de acionamento do sistema Andon (sistema de aler
 
 | Botão    | GPIO | Configuração      | Observação                                    |
 |----------|------|-------------------|-----------------------------------------------|
-| Verde    | 34   | INPUT             | ⚠️ Input-only, SEM pull-up interno           |
-| Amarelo  | 35   | INPUT             | ⚠️ Input-only, SEM pull-up interno           |
-| Vermelho | 32   | INPUT_PULLUP      | Suporta pull-up interno                       |
+| Verde    | 12   | INPUT_PULLUP      | Pull-up interno habilitado                    |
+| Amarelo  | 13   | INPUT_PULLUP      | Pull-up interno habilitado                    |
+| Vermelho | 32   | INPUT_PULLUP      | Pull-up interno habilitado                    |
 
 **IMPORTANTE**: GPIOs 34 e 35 são input-only no ESP32 e não possuem resistor de pull-up interno. O circuito externo DEVE fornecer pull-up ou pull-down.
 
@@ -230,7 +230,7 @@ Antes de cada release, atualizar a versão do firmware:
 ### Botões não respondem
 
 - ✅ Verificar conexões físicas dos botões
-- ✅ Verificar resistores pull-up externos nos GPIOs 34 e 35
+- ✅ Verificar se botões estão conectados corretamente (comum no GND, retorno no GPIO)
 - ✅ Verificar se ESP32 está no estado OPERATIONAL (LED onboard aceso fixo)
 - ✅ Observar Serial Monitor para mensagens de botão pressionado
 
