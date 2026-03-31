@@ -29,13 +29,15 @@ enum SystemState {
     OPERATIONAL
 };
 
-// Estado de um botão com debounce
+// Estado de um botão com debounce e cooldown
 struct ButtonState {
     uint8_t pin;
     bool lastState;
     bool currentState;
     unsigned long lastDebounceTime;
     bool pressed;
+    unsigned long lastPressTime;  // Para cooldown
+    unsigned long cooldownMs;     // Tempo de cooldown específico
 };
 
 // Estado de um LED
@@ -66,10 +68,14 @@ SystemState currentState = BOOT;
 String macAddress;
 String deviceName;
 
-// Botões
-ButtonState greenButton = {BTN_VERDE, HIGH, HIGH, 0, false};
-ButtonState yellowButton = {BTN_AMARELO, HIGH, HIGH, 0, false};
-ButtonState redButton = {BTN_VERMELHO, HIGH, HIGH, 0, false};
+// Estado atual do Andon (sincronizado com backend)
+String currentAndonColor = "GREEN";  // GREEN, YELLOW, RED
+bool andonStateKnown = false;
+
+// Botões (com cooldown específico)
+ButtonState greenButton = {BTN_VERDE, HIGH, HIGH, 0, false, 0, BTN_GREEN_COOLDOWN_MS};
+ButtonState yellowButton = {BTN_AMARELO, HIGH, HIGH, 0, false, 0, BTN_YELLOW_COOLDOWN_MS};
+ButtonState redButton = {BTN_VERMELHO, HIGH, HIGH, 0, false, 0, BTN_RED_COOLDOWN_MS};
 
 // LEDs
 LEDState redLED = {LED_VERMELHO_PIN, LOW};
@@ -247,9 +253,26 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
     logSerial("MQTT: Mensagem recebida no tópico: " + String(topic));
     
     // Verificar se é comando de LED
-    String expectedTopic = "andon/led/" + macAddress + "/command";
-    if (String(topic) == expectedTopic && currentState == OPERATIONAL) {
+    String ledTopic = "andon/led/" + macAddress + "/command";
+    if (String(topic) == ledTopic && currentState == OPERATIONAL) {
         processLEDCommand(payloadStr);
+        return;
+    }
+    
+    // Verificar se é atualização de estado do Andon
+    String stateTopic = "andon/state/" + macAddress;
+    if (String(topic) == stateTopic && currentState == OPERATIONAL) {
+        // Payload esperado: "GREEN", "YELLOW", ou "RED"
+        payloadStr.trim();
+        payloadStr.toUpperCase();
+        
+        if (payloadStr == "GREEN" || payloadStr == "YELLOW" || payloadStr == "RED") {
+            currentAndonColor = payloadStr;
+            andonStateKnown = true;
+            logSerial("ANDON STATE: Atualizado para " + currentAndonColor);
+        } else {
+            logSerial("ERRO: Estado Andon inválido recebido: " + payloadStr);
+        }
     }
 }
 
@@ -288,6 +311,18 @@ void handleMQTTConnecting() {
         String ledTopic = "andon/led/" + macAddress + "/command";
         if (mqttClient.subscribe(ledTopic.c_str(), 1)) {
             logSerial("MQTT: Subscrito em " + ledTopic);
+        }
+        
+        // Subscrever ao tópico de estado do Andon
+        String stateTopic = "andon/state/" + macAddress;
+        if (mqttClient.subscribe(stateTopic.c_str(), 1)) {
+            logSerial("MQTT: Subscrito em " + stateTopic);
+        }
+        
+        // Solicitar estado atual do Andon
+        String requestTopic = "andon/state/request/" + macAddress;
+        if (mqttClient.publish(requestTopic.c_str(), "REQUEST", false)) {
+            logSerial("MQTT: Solicitação de estado enviada");
         }
         
         // Transitar para OPERATIONAL
@@ -336,7 +371,7 @@ void handleMQTTConnecting() {
 }
 
 /**
- * Processa um botão com debounce não-bloqueante
+ * Processa um botão com debounce não-bloqueante e cooldown
  */
 void processButton(ButtonState* btn) {
     unsigned long now = millis();
@@ -357,8 +392,15 @@ void processButton(ButtonState* btn) {
             
             // Detectar pressionamento (HIGH → LOW)
             if (btn->currentState == LOW) {
-                btn->pressed = true;
-                logSerial("BUTTON DEBUG: GPIO " + String(btn->pin) + " PRESSIONADO!");
+                // Verificar cooldown
+                if (now - btn->lastPressTime >= btn->cooldownMs) {
+                    btn->pressed = true;
+                    btn->lastPressTime = now;
+                    logSerial("BUTTON DEBUG: GPIO " + String(btn->pin) + " PRESSIONADO!");
+                } else {
+                    unsigned long remainingCooldown = (btn->cooldownMs - (now - btn->lastPressTime)) / 1000;
+                    logSerial("BUTTON DEBUG: GPIO " + String(btn->pin) + " em cooldown, aguarde " + String(remainingCooldown) + "s");
+                }
             }
         }
     }
@@ -367,13 +409,57 @@ void processButton(ButtonState* btn) {
 }
 
 /**
- * Publica evento de botão via MQTT
+ * Publica evento de botão via MQTT com validação de estado
  */
 void publishButtonEvent(const String& color) {
+    // Validar ação baseada no estado atual do Andon
+    bool actionValid = false;
+    String reason = "";
+    
+    if (color == "green") {
+        // Botão verde só funciona se houver chamado ativo (YELLOW ou RED)
+        if (currentAndonColor == "YELLOW" || currentAndonColor == "RED") {
+            actionValid = true;
+        } else {
+            reason = "Mesa já está verde (sem chamados ativos)";
+        }
+    } else if (color == "yellow") {
+        // Botão amarelo só funciona se não houver chamado vermelho ativo
+        if (currentAndonColor != "RED") {
+            actionValid = true;
+        } else {
+            reason = "Não pode criar chamado amarelo enquanto há chamado vermelho ativo";
+        }
+    } else if (color == "red") {
+        // Botão vermelho sempre pode ser acionado (emergência)
+        actionValid = true;
+    }
+    
+    // Se não conhecemos o estado ainda, permitir ação mas avisar
+    if (!andonStateKnown) {
+        logSerial("AVISO: Estado do Andon desconhecido, permitindo ação de " + color);
+        actionValid = true;
+    }
+    
+    if (!actionValid) {
+        logSerial("BUTTON: " + color + " BLOQUEADO - " + reason);
+        return;
+    }
+    
+    // Publicar evento
     String topic = "andon/button/" + macAddress + "/" + color;
     
     if (mqttClient.publish(topic.c_str(), "PRESSED", false)) {
         logSerial("BUTTON: " + color + " pressionado → publicado " + topic);
+        
+        // Atualizar estado local previsto (será confirmado pelo backend)
+        if (color == "green") {
+            currentAndonColor = "GREEN";
+        } else if (color == "yellow") {
+            currentAndonColor = "YELLOW";
+        } else if (color == "red") {
+            currentAndonColor = "RED";
+        }
     } else {
         logSerial("ERRO: Falha ao publicar evento de botão " + color);
     }

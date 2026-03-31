@@ -34,6 +34,11 @@
 #define HEAP_MONITOR_INTERVAL_MS 30000 // 30 segundos
 #define CHECK_INTERVAL_MS 5000
 
+// ─── Cooldown de Botões (ms) ───────────────────────────────
+#define BTN_GREEN_COOLDOWN_MS 10000   // 10 segundos
+#define BTN_YELLOW_COOLDOWN_MS 5000   // 5 segundos
+#define BTN_RED_COOLDOWN_MS 5000      // 5 segundos
+
 // ─── Reconexão ─────────────────────────────────────────────
 #define INITIAL_BACKOFF_MS 5000
 #define MAX_BACKOFF_MS 60000

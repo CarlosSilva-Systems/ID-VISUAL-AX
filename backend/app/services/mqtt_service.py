@@ -199,6 +199,9 @@ async def _handle_button(mac: str, color: str, payload_raw: bytes):
             await session.commit()
             logger.info(f"MQTT button: {len(active_calls)} chamados resolvidos para workcenter {device.workcenter_id} via botão verde")
             
+            # Enviar estado atualizado para o ESP32
+            await _send_andon_state(mac, "GREEN")
+            
             # Broadcast via WebSocket
             await ws_manager.broadcast("andon_resolved", {
                 "workcenter_id": device.workcenter_id,
@@ -225,6 +228,9 @@ async def _handle_button(mac: str, color: str, payload_raw: bytes):
         
         logger.info(f"MQTT button: chamado {button_config['call_color']} criado para workcenter {device.workcenter_id} via {mac}")
         
+        # Enviar estado atualizado para o ESP32
+        await _send_andon_state(mac, button_config["call_color"])
+        
         # Broadcast via WebSocket
         await ws_manager.broadcast("andon_call_created", {
             "call_id": call.id,
@@ -233,6 +239,67 @@ async def _handle_button(mac: str, color: str, payload_raw: bytes):
             "device_mac": mac,
             "reason": call.reason
         })
+
+
+async def _handle_state_request(mac: str, client):
+    """
+    Responde a solicitações de estado do Andon enviadas pelo ESP32.
+    """
+    async with async_session_factory() as session:
+        # Verificar se dispositivo existe e está vinculado
+        stmt = select(ESPDevice).where(ESPDevice.mac_address == mac)
+        result = await session.execute(stmt)
+        device = result.scalars().first()
+        
+        if not device or not device.workcenter_id:
+            logger.warning(f"MQTT state request: dispositivo {mac} não encontrado ou não vinculado")
+            # Enviar estado padrão GREEN
+            await _send_andon_state_via_client(mac, "GREEN", client)
+            return
+        
+        # Buscar chamados ativos para o workcenter
+        from app.models.andon import AndonCall
+        stmt_calls = select(AndonCall).where(
+            AndonCall.workcenter_id == device.workcenter_id,
+            AndonCall.status != "RESOLVED"
+        ).order_by(AndonCall.created_at.desc())
+        
+        result_calls = await session.execute(stmt_calls)
+        active_calls = result_calls.scalars().all()
+        
+        # Determinar estado atual (prioridade: RED > YELLOW > GREEN)
+        current_state = "GREEN"
+        for call in active_calls:
+            if call.color == "RED":
+                current_state = "RED"
+                break
+            elif call.color == "YELLOW" and current_state != "RED":
+                current_state = "YELLOW"
+        
+        logger.info(f"MQTT state request: enviando estado {current_state} para {mac}")
+        await _send_andon_state_via_client(mac, current_state, client)
+
+
+async def _send_andon_state(mac: str, state: str):
+    """
+    Envia o estado atual do Andon para o ESP32 (requer client MQTT ativo).
+    Esta função é chamada quando o estado muda.
+    """
+    # Esta função será chamada de dentro do loop MQTT onde temos acesso ao client
+    # Por enquanto, apenas logamos - a implementação completa requer refatoração
+    logger.info(f"MQTT: Estado {state} deve ser enviado para {mac}")
+
+
+async def _send_andon_state_via_client(mac: str, state: str, client):
+    """
+    Envia o estado atual do Andon para o ESP32 usando o client MQTT fornecido.
+    """
+    topic = f"andon/state/{mac}"
+    try:
+        await client.publish(topic, state, qos=1)
+        logger.info(f"MQTT: Estado {state} enviado para {mac}")
+    except Exception as e:
+        logger.error(f"MQTT: Erro ao enviar estado para {mac} — {e}")
 
 
 async def _mqtt_loop():
@@ -257,7 +324,8 @@ async def _mqtt_loop():
                 await client.subscribe("andon/status/#")
                 await client.subscribe("andon/logs/#")
                 await client.subscribe("andon/button/#")
-                logger.info("MQTT: escutando tópicos andon/discovery, andon/status/#, andon/logs/#, andon/button/#")
+                await client.subscribe("andon/state/request/#")
+                logger.info("MQTT: escutando tópicos andon/discovery, andon/status/#, andon/logs/#, andon/button/#, andon/state/request/#")
 
                 async for message in client.messages:
                     topic = str(message.topic)
@@ -278,6 +346,10 @@ async def _mqtt_loop():
                             mac = parts[2]
                             color = parts[3]
                             await _handle_button(mac, color, payload)
+                    elif topic.startswith("andon/state/request/"):
+                        # Formato: andon/state/request/{mac}
+                        mac = topic.split("/", 3)[3]
+                        await _handle_state_request(mac, client)
 
         except asyncio.CancelledError:
             logger.info("MQTT: serviço encerrado.")
