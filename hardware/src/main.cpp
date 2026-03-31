@@ -261,7 +261,7 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
         return;
     }
     
-    // Verificar se é atualização de estado do Andon
+    // Verificar se é atualização de estado do Andon (apenas para LEDs)
     String stateTopic = "andon/state/" + macAddress;
     if (String(topic) == stateTopic && currentState == OPERATIONAL) {
         // Payload esperado: "GREEN", "YELLOW", ou "RED"
@@ -271,7 +271,7 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
         if (payloadStr == "GREEN" || payloadStr == "YELLOW" || payloadStr == "RED") {
             currentAndonColor = payloadStr;
             andonStateKnown = true;
-            logSerial("ANDON STATE: Atualizado para " + currentAndonColor);
+            logSerial("ANDON STATE: Atualizado para " + currentAndonColor + " (apenas informativo para LEDs)");
         } else {
             logSerial("ERRO: Estado Andon inválido recebido: " + payloadStr);
         }
@@ -420,57 +420,15 @@ void processButton(ButtonState* btn) {
 }
 
 /**
- * Publica evento de botão via MQTT com validação de estado
+ * Publica evento de botão via MQTT sem validação de estado
+ * O backend é responsável por decidir se a ação é válida
  */
 void publishButtonEvent(const String& color) {
-    // Validar ação baseada no estado atual do Andon
-    bool actionValid = false;
-    String reason = "";
-    
-    if (color == "green") {
-        // Botão verde só funciona se houver chamado ativo (YELLOW ou RED)
-        if (currentAndonColor == "YELLOW" || currentAndonColor == "RED") {
-            actionValid = true;
-        } else {
-            reason = "Mesa já está verde (sem chamados ativos)";
-        }
-    } else if (color == "yellow") {
-        // Botão amarelo só funciona se não houver chamado vermelho ativo
-        if (currentAndonColor != "RED") {
-            actionValid = true;
-        } else {
-            reason = "Não pode criar chamado amarelo enquanto há chamado vermelho ativo";
-        }
-    } else if (color == "red") {
-        // Botão vermelho sempre pode ser acionado (emergência)
-        actionValid = true;
-    }
-    
-    // Se não conhecemos o estado ainda, permitir ação mas avisar
-    if (!andonStateKnown) {
-        logSerial("AVISO: Estado do Andon desconhecido, permitindo ação de " + color);
-        actionValid = true;
-    }
-    
-    if (!actionValid) {
-        logSerial("BUTTON: " + color + " BLOQUEADO - " + reason);
-        return;
-    }
-    
-    // Publicar evento
+    // Publicar evento diretamente - backend decide se é válido
     String topic = "andon/button/" + macAddress + "/" + color;
     
     if (mqttClient.publish(topic.c_str(), "PRESSED", false)) {
         logSerial("BUTTON: " + color + " pressionado → publicado " + topic);
-        
-        // Atualizar estado local previsto (será confirmado pelo backend)
-        if (color == "green") {
-            currentAndonColor = "GREEN";
-        } else if (color == "yellow") {
-            currentAndonColor = "YELLOW";
-        } else if (color == "red") {
-            currentAndonColor = "RED";
-        }
     } else {
         logSerial("ERRO: Falha ao publicar evento de botão " + color);
     }
