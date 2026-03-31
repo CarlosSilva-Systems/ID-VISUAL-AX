@@ -90,8 +90,120 @@ ReconnectionState mqttReconnect = {0, INITIAL_BACKOFF_MS, 0};
 WiFiClient wifiClient;
 PubSubClient mqttClient(wifiClient);
 
+// ═══════════════════════════════════════════════════════════
+// FUNÇÕES AUXILIARES
+// ═══════════════════════════════════════════════════════════
+
+/**
+ * Publica mensagem de log no Serial Monitor com timestamp
+ */
+void logSerial(const String& message) {
+    unsigned long timestamp = millis();
+    Serial.print("[");
+    Serial.print(timestamp);
+    Serial.print("] ");
+    Serial.println(message);
+}
+
+/**
+ * Inicializa todos os GPIOs (botões e LEDs)
+ */
+void initializeGPIOs() {
+    // Configurar botões
+    pinMode(BTN_VERDE, INPUT);          // GPIO 34 - input-only
+    pinMode(BTN_AMARELO, INPUT);        // GPIO 35 - input-only
+    pinMode(BTN_VERMELHO, INPUT_PULLUP); // GPIO 32 - suporta pull-up
+    
+    // Configurar LEDs
+    pinMode(LED_VERMELHO_PIN, OUTPUT);
+    pinMode(LED_AMARELO_PIN, OUTPUT);
+    pinMode(LED_VERDE_PIN, OUTPUT);
+    pinMode(LED_ONBOARD_PIN, OUTPUT);
+    
+    // Definir estado inicial (todos apagados)
+    digitalWrite(LED_VERMELHO_PIN, LOW);
+    digitalWrite(LED_AMARELO_PIN, LOW);
+    digitalWrite(LED_VERDE_PIN, LOW);
+    digitalWrite(LED_ONBOARD_PIN, LOW);
+    
+    logSerial("GPIOs inicializados");
+}
+
+/**
+ * Inicializa o Watchdog Timer
+ */
+void initializeWatchdog() {
+    esp_task_wdt_init(WATCHDOG_TIMEOUT_S, true);
+    esp_task_wdt_add(NULL);
+    
+    // Detectar se houve reset por watchdog
+    esp_reset_reason_t reason = esp_reset_reason();
+    if (reason == ESP_RST_TASK_WDT) {
+        logSerial("AVISO: Watchdog reset detectado");
+    }
+    
+    logSerial("Watchdog Timer inicializado (30s timeout)");
+}
+
+/**
+ * Obtém e formata o MAC address do ESP32
+ */
+void obtainMACAddress() {
+    macAddress = WiFi.macAddress();
+    
+    // Extrair últimos 4 caracteres (sem ':')
+    String macSuffix = macAddress.substring(macAddress.length() - 5);
+    macSuffix.replace(":", "");
+    
+    // Criar device name
+    deviceName = "ESP32-Andon-" + macSuffix;
+    
+    logSerial("MAC Address: " + macAddress);
+    logSerial("Device Name: " + deviceName);
+}
+
+// ═══════════════════════════════════════════════════════════
+// IMPLEMENTAÇÃO - SETUP
+// ═══════════════════════════════════════════════════════════
+
 void setup() {
-    // Placeholder
+    // Inicializar Serial Monitor
+    Serial.begin(115200);
+    while (!Serial && millis() < 3000) {
+        ; // Aguardar Serial estar pronto (timeout 3s)
+    }
+    
+    // Mensagem de boot
+    Serial.println();
+    Serial.println("═══════════════════════════════════════════════════════");
+    Serial.println("  Firmware ESP32 Andon - Sistema ID Visual AX");
+    Serial.println("  Versão: " + String(FIRMWARE_VERSION));
+    Serial.println("═══════════════════════════════════════════════════════");
+    Serial.println();
+    
+    logSerial("BOOT: Iniciando firmware ID Visual AX v" + String(FIRMWARE_VERSION));
+    
+    // Piscar LED onboard 3x para sinalizar boot
+    for (int i = 0; i < 3; i++) {
+        digitalWrite(LED_ONBOARD_PIN, HIGH);
+        delay(200);
+        digitalWrite(LED_ONBOARD_PIN, LOW);
+        delay(200);
+    }
+    
+    // Inicializar componentes
+    initializeGPIOs();
+    initializeWatchdog();
+    obtainMACAddress();
+    
+    // Configurar cliente MQTT
+    mqttClient.setServer(MQTT_BROKER, MQTT_PORT);
+    mqttClient.setBufferSize(MQTT_MAX_PACKET_SIZE);
+    logSerial("MQTT: Cliente configurado");
+    
+    // Transitar para WIFI_CONNECTING
+    currentState = WIFI_CONNECTING;
+    logSerial("BOOT: Transição para WIFI_CONNECTING");
 }
 
 void loop() {
