@@ -345,6 +345,7 @@ void processButton(ButtonState* btn) {
     // Detectar transição
     if (reading != btn->lastState) {
         btn->lastDebounceTime = now;
+        logSerial("BUTTON DEBUG: GPIO " + String(btn->pin) + " transição detectada: " + String(btn->lastState) + " → " + String(reading));
     }
     
     // Verificar se passou o tempo de debounce
@@ -352,10 +353,12 @@ void processButton(ButtonState* btn) {
         // Se o estado mudou após o debounce
         if (reading != btn->currentState) {
             btn->currentState = reading;
+            logSerial("BUTTON DEBUG: GPIO " + String(btn->pin) + " estado confirmado após debounce: " + String(btn->currentState));
             
             // Detectar pressionamento (HIGH → LOW)
             if (btn->currentState == LOW) {
                 btn->pressed = true;
+                logSerial("BUTTON DEBUG: GPIO " + String(btn->pin) + " PRESSIONADO!");
             }
         }
     }
@@ -431,6 +434,16 @@ bool checkTimer(Timer* timer) {
  * Gerencia o estado OPERATIONAL
  */
 void handleOperational() {
+    static unsigned long lastStateLog = 0;
+    unsigned long now = millis();
+    
+    // Log periódico do estado (a cada 10 segundos)
+    if (now - lastStateLog >= 10000) {
+        logSerial("OPERATIONAL: Sistema ativo, aguardando eventos de botões...");
+        logSerial("OPERATIONAL: Botões - Verde(GPIO" + String(BTN_VERDE) + ") Amarelo(GPIO" + String(BTN_AMARELO) + ") Vermelho(GPIO" + String(BTN_VERMELHO) + ")");
+        lastStateLog = now;
+    }
+    
     // Verificar conexões
     if (WiFi.status() != WL_CONNECTED) {
         logSerial("OPERATIONAL: WiFi perdido, retornando para WIFI_CONNECTING");

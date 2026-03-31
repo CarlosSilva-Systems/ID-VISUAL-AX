@@ -18,6 +18,11 @@ import asyncio
 import time
 import logging
 
+# Configurar logging para capturar logs de todos os módulos
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(levelname)s:     %(name)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
 
 @asynccontextmanager
