@@ -94,6 +94,7 @@ PubSubClient mqttClient(wifiClient);
 // DECLARAÇÕES DE FUNÇÕES
 // ═══════════════════════════════════════════════════════════
 
+void logSerial(const String& message);
 void updateBackoff(ReconnectionState* state);
 void resetBackoff(ReconnectionState* state);
 void handleWiFiConnecting();
@@ -108,6 +109,9 @@ bool processLEDCommand(const String& payload);
 void updateLEDState(LEDState* led, bool state);
 bool checkTimer(Timer* timer);
 void handleOperational();
+void initializeGPIOs();
+void initializeWatchdog();
+void obtainMACAddress();
 
 /**
  * Atualiza o backoff exponencial após falha
@@ -582,7 +586,7 @@ void setup() {
     
     // Configurar cliente MQTT
     mqttClient.setServer(MQTT_BROKER, MQTT_PORT);
-    mqttClient.setBufferSize(MQTT_MAX_PACKET_SIZE);
+    mqttClient.setBufferSize(MQTT_BUFFER_SIZE);
     mqttClient.setCallback(mqttCallback);
     logSerial("MQTT: Cliente configurado");
     

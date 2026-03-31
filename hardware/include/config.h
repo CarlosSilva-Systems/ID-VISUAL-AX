@@ -12,7 +12,7 @@
 // ─── MQTT Broker ───────────────────────────────────────────
 #define MQTT_BROKER "192.168.10.55"
 #define MQTT_PORT 1883
-#define MQTT_MAX_PACKET_SIZE 512
+#define MQTT_BUFFER_SIZE 512
 #define MQTT_TIMEOUT_MS 10000
 #define MQTT_BLINK_MS 1000
 #define MQTT_MAX_RETRIES 10
