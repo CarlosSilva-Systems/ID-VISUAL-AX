@@ -185,6 +185,8 @@ void handleWiFiConnecting() {
     if (wifiReconnect.attemptCount == 0) {
         logSerial("WIFI: Conectando a " + String(WIFI_SSID) + "...");
         WiFi.mode(WIFI_STA);
+        WiFi.setTxPower(WIFI_POWER_19_5dBm);  // Máxima potência de transmissão
+        WiFi.setSleep(false);  // Desabilitar power save para estabilidade
         WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
     }
     
@@ -469,11 +471,17 @@ void handleOperational() {
         logSerial("HEARTBEAT: operacional, heap livre: " + String(freeHeap) + " bytes");
     }
     
-    // Monitoramento de heap a cada 30s
+    // Monitoramento de heap e WiFi a cada 30s
     if (checkTimer(&heapMonitorTimer)) {
         uint32_t freeHeap = ESP.getFreeHeap();
         if (freeHeap < HEAP_WARN_THRESHOLD) {
             logMQTT("AVISO: Heap baixo - " + String(freeHeap) + " bytes");
+        }
+        
+        // Monitorar força do sinal WiFi
+        int32_t rssi = WiFi.RSSI();
+        if (rssi < -80) {
+            logMQTT("AVISO: Sinal WiFi fraco - RSSI: " + String(rssi) + " dBm");
         }
     }
 }
