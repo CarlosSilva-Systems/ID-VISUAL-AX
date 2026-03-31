@@ -1,7 +1,7 @@
 from fastapi import APIRouter
 from app.api.api_v1.endpoints import (
     health, batches, odoo, production, id_requests, documents, auth, andon, sync, webhook, settings as system_settings,
-    mpr_analytics, agent, custom_reports, user_config
+    mpr_analytics, agent, custom_reports, user_config, devices
 )
 
 api_router = APIRouter()
@@ -20,4 +20,5 @@ api_router.include_router(webhook.router, prefix="/webhook", tags=["webhook"])
 api_router.include_router(mpr_analytics.router, prefix="/mpr/analytics", tags=["mpr_analytics"])
 api_router.include_router(agent.router, prefix="/agent", tags=["agent"])
 api_router.include_router(custom_reports.router, prefix="/reports", tags=["custom_reports"])
+api_router.include_router(devices.router, prefix="/devices", tags=["iot_devices"])
 
