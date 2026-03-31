@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../../services/api';
-import { Users, AlertTriangle, MonitorPlay, Activity, Clock, Package, Calendar } from 'lucide-react';
+import { Users, AlertTriangle, MonitorPlay, Activity, Clock, Package, Calendar, KeyRound } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { AndonOperador } from './AndonOperador';
 import { PlanningModal } from './PlanningModal';
+import { IoTDeviceModal, ESPDevice } from './IoTDeviceModal';
+import { useDeviceWebSocket } from '../../services/useDeviceWebSocket';
 import {
     Tooltip,
     TooltipContent,
@@ -70,6 +72,8 @@ export const AndonGrid: React.FC<AndonGridProps> = ({ username }) => {
     const [loading, setLoading] = useState(true);
     const [selectedWorkcenter, setSelectedWorkcenter] = useState<Workcenter | null>(null);
     const [planningWc, setPlanningWc] = useState<Workcenter | null>(null);
+    const [iotWc, setIotWc] = useState<Workcenter | null>(null);
+    const [devices, setDevices] = useState<ESPDevice[]>([]);
 
     const fetchWorkcenters = async () => {
         try {
@@ -82,11 +86,29 @@ export const AndonGrid: React.FC<AndonGridProps> = ({ username }) => {
         }
     };
 
+    const fetchDevices = async () => {
+        try {
+            const data = await api.getDevices();
+            setDevices(data);
+        } catch {
+            // silencioso — IoT é feature adicional
+        }
+    };
+
     useEffect(() => {
         fetchWorkcenters();
+        fetchDevices();
         const interval = setInterval(fetchWorkcenters, 10000);
         return () => clearInterval(interval);
     }, []);
+
+    // Atualizar lista de devices em tempo real via WebSocket
+    useDeviceWebSocket(() => {
+        fetchDevices();
+    });
+
+    const getBoundDevice = (wcId: number): ESPDevice | null =>
+        devices.find((d) => d.workcenter_id === wcId) ?? null;
 
     const getStatusColor = (status: string) => {
         switch (status) {
@@ -156,22 +178,49 @@ export const AndonGrid: React.FC<AndonGridProps> = ({ username }) => {
                         {/* Header: WC Name + Status Indicator */}
                         <div className="flex items-center justify-between mb-4">
                             <h3 className="font-black text-lg text-slate-900 truncate pr-2">{wc.name}</h3>
-                            <TooltipProvider>
-                                <Tooltip delayDuration={300}>
-                                    <TooltipTrigger asChild>
-                                        <div className={cn(
-                                            "w-3 h-3 rounded-full flex-shrink-0 cursor-help transition-transform hover:scale-125", 
-                                            getStatusBadge(wc.status)
-                                        )} />
-                                    </TooltipTrigger>
-                                    <TooltipContent 
-                                        side="top" 
-                                        className="bg-slate-900 text-white border-slate-800 text-[10px] font-bold py-1.5 px-3 rounded-lg shadow-xl"
-                                    >
-                                        <p>{wc.status_reason || 'Operação Normal'}</p>
-                                    </TooltipContent>
-                                </Tooltip>
-                            </TooltipProvider>
+                            <div className="flex items-center gap-2">
+                                {/* Ícone IoT */}
+                                <TooltipProvider>
+                                    <Tooltip delayDuration={200}>
+                                        <TooltipTrigger asChild>
+                                            <button
+                                                onClick={(e) => { e.stopPropagation(); setIotWc(wc); }}
+                                                className="p-1 rounded-lg hover:bg-white/60 transition-colors"
+                                            >
+                                                <KeyRound
+                                                    className={cn(
+                                                        "w-4 h-4",
+                                                        getBoundDevice(wc.id)?.status === 'online'
+                                                            ? 'text-emerald-500'
+                                                            : 'text-red-400'
+                                                    )}
+                                                />
+                                            </button>
+                                        </TooltipTrigger>
+                                        <TooltipContent side="top" className="bg-slate-900 text-white border-slate-800 text-[10px] font-bold py-1.5 px-3 rounded-lg shadow-xl">
+                                            {getBoundDevice(wc.id)
+                                                ? `ESP32: ${getBoundDevice(wc.id)!.device_name} (${getBoundDevice(wc.id)!.status})`
+                                                : 'Sem dispositivo vinculado'}
+                                        </TooltipContent>
+                                    </Tooltip>
+                                </TooltipProvider>
+                                <TooltipProvider>
+                                    <Tooltip delayDuration={300}>
+                                        <TooltipTrigger asChild>
+                                            <div className={cn(
+                                                "w-3 h-3 rounded-full flex-shrink-0 cursor-help transition-transform hover:scale-125", 
+                                                getStatusBadge(wc.status)
+                                            )} />
+                                        </TooltipTrigger>
+                                        <TooltipContent 
+                                            side="top" 
+                                            className="bg-slate-900 text-white border-slate-800 text-[10px] font-bold py-1.5 px-3 rounded-lg shadow-xl"
+                                        >
+                                            <p>{wc.status_reason || 'Operação Normal'}</p>
+                                        </TooltipContent>
+                                    </Tooltip>
+                                </TooltipProvider>
+                            </div>
                         </div>
 
                         {/* Content: New Hierarchy */}
@@ -236,6 +285,16 @@ export const AndonGrid: React.FC<AndonGridProps> = ({ username }) => {
                     wcName={planningWc.name}
                     plannedMos={planningWc.planned_mos}
                     onClose={() => setPlanningWc(null)}
+                />
+            )}
+
+            {iotWc && (
+                <IoTDeviceModal
+                    workcenterId={iotWc.id}
+                    workcenterName={iotWc.name}
+                    boundDevice={getBoundDevice(iotWc.id)}
+                    onClose={() => setIotWc(null)}
+                    onChanged={fetchDevices}
                 />
             )}
         </div>
