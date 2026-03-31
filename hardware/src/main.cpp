@@ -104,6 +104,8 @@ String createDiscoveryMessage();
 void logMQTT(const String& message);
 void processButton(ButtonState* btn);
 void publishButtonEvent(const String& color);
+bool processLEDCommand(const String& payload);
+void updateLEDState(LEDState* led, bool state);
 
 /**
  * Atualiza o backoff exponencial após falha
@@ -239,7 +241,7 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
     // Verificar se é comando de LED
     String expectedTopic = "andon/led/" + macAddress + "/command";
     if (String(topic) == expectedTopic && currentState == OPERATIONAL) {
-        // Será implementado posteriormente
+        processLEDCommand(payloadStr);
     }
 }
 
@@ -364,6 +366,45 @@ void publishButtonEvent(const String& color) {
     } else {
         logSerial("ERRO: Falha ao publicar evento de botão " + color);
     }
+}
+
+/**
+ * Atualiza o estado de um LED
+ */
+void updateLEDState(LEDState* led, bool state) {
+    led->state = state;
+    digitalWrite(led->pin, state ? HIGH : LOW);
+}
+
+/**
+ * Processa comando de LED recebido via MQTT
+ */
+bool processLEDCommand(const String& payload) {
+    StaticJsonDocument<128> doc;
+    DeserializationError error = deserializeJson(doc, payload);
+    
+    if (error) {
+        logMQTT("ERRO: JSON inválido no comando LED: " + String(error.c_str()));
+        return false;
+    }
+    
+    // Validar campos
+    if (!doc.containsKey("red") || !doc.containsKey("yellow") || !doc.containsKey("green")) {
+        logMQTT("ERRO: Comando LED sem campos obrigatórios");
+        return false;
+    }
+    
+    // Atualizar LEDs
+    bool red = doc["red"];
+    bool yellow = doc["yellow"];
+    bool green = doc["green"];
+    
+    updateLEDState(&redLED, red);
+    updateLEDState(&yellowLED, yellow);
+    updateLEDState(&greenLED, green);
+    
+    logSerial("LED: Comando aplicado - red=" + String(red) + " yellow=" + String(yellow) + " green=" + String(green));
+    return true;
 }
 
 // ═══════════════════════════════════════════════════════════
