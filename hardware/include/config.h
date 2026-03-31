@@ -29,7 +29,8 @@
 #define LED_ONBOARD_PIN 2
 
 // ─── Timers (ms) ───────────────────────────────────────────
-#define DEBOUNCE_MS 100  // Debounce simples de 100ms
+#define DEBOUNCE_MS 50  // Tempo de estabilização inicial
+#define STABLE_READS 3  // Número de leituras consecutivas necessárias
 #define HEARTBEAT_INTERVAL_MS 300000  // 5 minutos
 #define HEAP_MONITOR_INTERVAL_MS 30000 // 30 segundos
 #define CHECK_INTERVAL_MS 5000
