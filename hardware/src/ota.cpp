@@ -4,6 +4,7 @@
 #include <HTTPUpdate.h>
 #include <WiFi.h>
 #include <PubSubClient.h>
+#include <esp_ota_ops.h>
 
 // Referência ao cliente MQTT global (definido em main.cpp)
 extern PubSubClient g_mqtt;
@@ -16,6 +17,28 @@ extern String g_mac;
 void initOTA() {
     Serial.println("[OTA] Subsistema OTA inicializado");
     Serial.printf("[OTA] Versão atual do firmware: %s\n", FIRMWARE_VERSION);
+    
+    // Verificar se este é o primeiro boot após OTA
+    const esp_partition_t* running = esp_ota_get_running_partition();
+    esp_ota_img_states_t ota_state;
+    
+    if (esp_ota_get_state_partition(running, &ota_state) == ESP_OK) {
+        if (ota_state == ESP_OTA_IMG_PENDING_VERIFY) {
+            Serial.println("[OTA] Primeiro boot após atualização - validando...");
+            
+            // Marcar app como válido para evitar rollback
+            esp_err_t err = esp_ota_mark_app_valid_cancel_rollback();
+            if (err == ESP_OK) {
+                Serial.println("[OTA] Firmware validado com sucesso!");
+            } else {
+                Serial.printf("[OTA] AVISO: Falha ao validar firmware - erro %d\n", err);
+            }
+        } else if (ota_state == ESP_OTA_IMG_VALID) {
+            Serial.println("[OTA] Firmware já validado anteriormente");
+        } else if (ota_state == ESP_OTA_IMG_INVALID) {
+            Serial.println("[OTA] AVISO: Firmware marcado como inválido");
+        }
+    }
 }
 
 const char* getFirmwareVersion() {
