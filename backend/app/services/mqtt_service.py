@@ -262,7 +262,145 @@ async def _handle_button(mac: str, color: str, payload_raw: bytes):
         })
 
 
-async def _handle_state_request(mac: str, client):
+async def _handle_pause(mac: str, payload_raw: bytes):
+    """
+    Processa evento de pause/resume publicado pelo ESP32 em andon/button/{mac}/pause.
+    Comportamento toggle: se a WO está em progresso → pausa; se está pausada → retoma.
+    Ao pausar: resolve chamados ativos + envia comando para apagar todos os LEDs.
+    Ao retomar: restaura estado normal.
+    """
+    import time
+
+    # Deduplicação — janela maior para pause (5s) pois é ação crítica
+    now_ts = time.monotonic()
+    last_ts = _button_dedup.get(mac, {}).get("pause", 0.0)
+    if (now_ts - last_ts) < 5.0:
+        logger.debug(f"MQTT pause: evento {mac}/pause duplicado, ignorado.")
+        return
+    _button_dedup.setdefault(mac, {})["pause"] = now_ts
+
+    async with async_session_factory() as session:
+        # Buscar dispositivo e workcenter vinculado
+        stmt = select(ESPDevice).where(ESPDevice.mac_address == mac)
+        result = await session.execute(stmt)
+        device = result.scalars().first()
+
+        if not device:
+            logger.warning(f"MQTT pause: dispositivo {mac} não encontrado.")
+            return
+        if not device.workcenter_id:
+            logger.warning(f"MQTT pause: dispositivo {mac} não vinculado a nenhuma mesa.")
+            return
+
+        wc_id = device.workcenter_id
+
+    # Buscar WO ativa no Odoo (fora da sessão DB para não bloquear)
+    try:
+        from app.core.config import settings
+        from app.services.odoo_client import OdooClient
+
+        odoo = OdooClient(
+            url=settings.ODOO_URL,
+            db=settings.ODOO_DB,
+            auth_type=settings.ODOO_AUTH_TYPE,
+            login=settings.ODOO_SERVICE_LOGIN,
+            secret=settings.ODOO_SERVICE_PASSWORD,
+        )
+
+        try:
+            wo = await odoo.get_active_workorder(
+                wc_id, ["progress", "ready", "pending", "waiting"]
+            )
+
+            if not wo:
+                logger.warning(f"MQTT pause: nenhuma WO ativa para workcenter {wc_id}.")
+                return
+
+            wo_id = wo["id"]
+            wo_state = await odoo.get_workorder_state(wo_id)
+            logger.info(f"MQTT pause: WO {wo_id} estado atual = {wo_state}")
+
+            # Toggle: pausado → retoma; em progresso → pausa
+            paused_states = {"pending", "pause", "blocked"}
+            is_paused = wo_state in paused_states
+
+            if is_paused:
+                # Retomar produção
+                result = await odoo.resume_workorder(wo_id)
+                action = "resumed"
+                logger.info(f"MQTT pause: WO {wo_id} retomada — {result}")
+            else:
+                # Pausar produção
+                result = await odoo.pause_workorder(wo_id)
+                action = "paused"
+                logger.info(f"MQTT pause: WO {wo_id} pausada — {result}")
+
+        finally:
+            await odoo.close()
+
+    except Exception as e:
+        logger.error(f"MQTT pause: erro ao interagir com Odoo — {e}")
+        action = "error"
+        is_paused = False
+
+    # Atualizar estado local e LEDs
+    async with async_session_factory() as session:
+        from app.models.andon import AndonCall
+
+        if action == "paused":
+            # Resolver todos os chamados ativos do workcenter
+            stmt_calls = select(AndonCall).where(
+                AndonCall.workcenter_id == wc_id,
+                AndonCall.status != "RESOLVED"
+            )
+            result_calls = await session.execute(stmt_calls)
+            active_calls = result_calls.scalars().all()
+            for call in active_calls:
+                call.status = "RESOLVED"
+                call.resolved_note = f"Produção pausada via botão físico ESP32 ({device.device_name})"
+                call.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
+                session.add(call)
+            await session.commit()
+
+            # Apagar todos os LEDs
+            await _send_led_command(mac, red=False, yellow=False, green=False)
+
+            await ws_manager.broadcast("production_paused", {
+                "workcenter_id": wc_id,
+                "device_mac": mac,
+                "wo_id": wo_id if "wo_id" in dir() else None,
+            })
+
+        elif action == "resumed":
+            # Restaurar LED verde (produção normal)
+            await _send_led_command(mac, red=False, yellow=False, green=True)
+
+            await ws_manager.broadcast("production_resumed", {
+                "workcenter_id": wc_id,
+                "device_mac": mac,
+                "wo_id": wo_id if "wo_id" in dir() else None,
+            })
+
+
+async def _send_led_command(mac: str, red: bool, yellow: bool, green: bool):
+    """
+    Publica comando de LED para o ESP32 via MQTT.
+    Usa uma conexão MQTT temporária para publicar o comando.
+    """
+    try:
+        import aiomqtt
+        from app.core.config import settings
+
+        host = getattr(settings, "MQTT_BROKER_HOST", "localhost")
+        port = int(getattr(settings, "MQTT_BROKER_PORT", 1883))
+        topic = f"andon/led/{mac}/command"
+        payload = json.dumps({"red": red, "yellow": yellow, "green": green})
+
+        async with aiomqtt.Client(hostname=host, port=port) as client:
+            await client.publish(topic, payload, qos=1)
+            logger.info(f"MQTT LED: comando enviado para {mac} — red={red} yellow={yellow} green={green}")
+    except Exception as e:
+        logger.error(f"MQTT LED: erro ao enviar comando para {mac} — {e}")
     """
     Responde a solicitações de estado do Andon enviadas pelo ESP32.
     """
@@ -366,7 +504,10 @@ async def _mqtt_loop():
                         if len(parts) >= 4:
                             mac = parts[2]
                             color = parts[3]
-                            await _handle_button(mac, color, payload)
+                            if color == "pause":
+                                await _handle_pause(mac, payload)
+                            else:
+                                await _handle_button(mac, color, payload)
                     elif topic.startswith("andon/state/request/"):
                         # Formato: andon/state/request/{mac}
                         mac = topic.split("/", 3)[3]
