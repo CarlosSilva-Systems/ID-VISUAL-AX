@@ -22,6 +22,12 @@ logger = logging.getLogger(__name__)
 
 _mqtt_task: asyncio.Task | None = None
 
+# Deduplicação de eventos de botão em memória
+# Estrutura: { mac: { color: last_processed_timestamp } }
+# Evita processar múltiplos eventos idênticos causados por bouncing no ESP32
+_button_dedup: dict[str, dict[str, float]] = {}
+_BUTTON_DEDUP_WINDOW_S = 3.0  # janela de deduplicação em segundos
+
 
 async def _get_or_create_device(
     session: AsyncSession, mac_address: str, device_name: str = ""
@@ -140,10 +146,25 @@ async def _handle_log(mac: str, payload_raw: bytes):
 async def _handle_button(mac: str, color: str, payload_raw: bytes):
     """
     Processa eventos de botões publicados pelo ESP32 em andon/button/{mac}/{color}.
-    Cria um chamado Andon automaticamente baseado na cor do botão pressionado.
+    Deduplicação em memória: ignora eventos idênticos (mesmo mac+color) dentro
+    de _BUTTON_DEDUP_WINDOW_S segundos para absorver bouncing do hardware.
     """
+    import time
+
+    # ── Deduplicação ──────────────────────────────────────────────────────────
+    now_ts = time.monotonic()
+    color_lower = color.lower()
+    last_ts = _button_dedup.get(mac, {}).get(color_lower, 0.0)
+
+    if (now_ts - last_ts) < _BUTTON_DEDUP_WINDOW_S:
+        logger.debug(f"MQTT button: evento {mac}/{color_lower} duplicado, ignorado.")
+        return
+
+    # Registrar timestamp antes de processar (evita race condition)
+    _button_dedup.setdefault(mac, {})[color_lower] = now_ts
+    # ─────────────────────────────────────────────────────────────────────────
+
     try:
-        # Decodificar payload (esperado: "PRESSED")
         action = payload_raw.decode().strip()
         if action != "PRESSED":
             logger.warning(f"MQTT button: ação inválida '{action}' para {mac}/{color}")
