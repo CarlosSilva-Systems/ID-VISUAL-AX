@@ -345,7 +345,7 @@ async def _handle_pause(mac: str, payload_raw: bytes):
 
     # Atualizar estado local e LEDs
     async with async_session_factory() as session:
-        from app.models.andon import AndonCall
+        from app.models.andon import AndonCall, AndonStatus
 
         if action == "paused":
             # Resolver todos os chamados ativos do workcenter
@@ -360,6 +360,24 @@ async def _handle_pause(mac: str, payload_raw: bytes):
                 call.resolved_note = f"Produção pausada via botão físico ESP32 ({device.device_name})"
                 call.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
                 session.add(call)
+
+            # Atualizar AndonStatus para "cinza" (pausa — timer para no frontend)
+            stmt_status = select(AndonStatus).where(AndonStatus.workcenter_odoo_id == wc_id)
+            res_status = await session.execute(stmt_status)
+            andon_status = res_status.scalars().first()
+            if andon_status:
+                andon_status.status = "cinza"
+                andon_status.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
+                andon_status.updated_by = f"ESP32 {device.device_name}"
+                session.add(andon_status)
+            else:
+                session.add(AndonStatus(
+                    workcenter_odoo_id=wc_id,
+                    workcenter_name=f"Mesa {wc_id}",
+                    status="cinza",
+                    updated_by=f"ESP32 {device.device_name}",
+                ))
+
             await session.commit()
 
             # Apagar todos os LEDs
@@ -368,18 +386,31 @@ async def _handle_pause(mac: str, payload_raw: bytes):
             await ws_manager.broadcast("production_paused", {
                 "workcenter_id": wc_id,
                 "device_mac": mac,
-                "wo_id": wo_id if "wo_id" in dir() else None,
+                "wo_id": wo_id,
             })
+            logger.info(f"MQTT pause: workcenter {wc_id} pausado — status → cinza")
 
         elif action == "resumed":
+            # Limpar status forçado de cinza para deixar o endpoint recalcular
+            stmt_status = select(AndonStatus).where(AndonStatus.workcenter_odoo_id == wc_id)
+            res_status = await session.execute(stmt_status)
+            andon_status = res_status.scalars().first()
+            if andon_status and andon_status.status == "cinza":
+                andon_status.status = "verde"
+                andon_status.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
+                andon_status.updated_by = f"ESP32 {device.device_name}"
+                session.add(andon_status)
+                await session.commit()
+
             # Restaurar LED verde (produção normal)
             await _send_led_command(mac, red=False, yellow=False, green=True)
 
             await ws_manager.broadcast("production_resumed", {
                 "workcenter_id": wc_id,
                 "device_mac": mac,
-                "wo_id": wo_id if "wo_id" in dir() else None,
+                "wo_id": wo_id,
             })
+            logger.info(f"MQTT pause: workcenter {wc_id} retomado — status → verde")
 
 
 async def _send_led_command(mac: str, red: bool, yellow: bool, green: bool):

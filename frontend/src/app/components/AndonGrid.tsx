@@ -29,13 +29,18 @@ interface AndonGridProps {
     username: string;
 }
 
-const Timer: React.FC<{ startedAt: string | null }> = ({ startedAt }) => {
+const Timer: React.FC<{ startedAt: string | null; paused?: boolean }> = ({ startedAt, paused }) => {
     const [elapsed, setElapsed] = useState('00:00:00');
 
     useEffect(() => {
         if (!startedAt) {
             setElapsed('Aguardando início');
             return;
+        }
+
+        if (paused) {
+            setElapsed(prev => prev === '00:00:00' ? 'Aguardando início' : prev);
+            return; // Não atualiza o timer enquanto pausado
         }
 
         const updateTimer = () => {
@@ -57,12 +62,15 @@ const Timer: React.FC<{ startedAt: string | null }> = ({ startedAt }) => {
         updateTimer();
         const interval = setInterval(updateTimer, 1000);
         return () => clearInterval(interval);
-    }, [startedAt]);
+    }, [startedAt, paused]);
 
     return (
-        <div className="flex items-center gap-1.5 text-xs font-mono font-bold opacity-70">
+        <div className={cn(
+            "flex items-center gap-1.5 text-xs font-mono font-bold opacity-70",
+            paused && "text-slate-400 line-through"
+        )}>
             <Clock className="w-3 h-3" />
-            {elapsed}
+            {paused ? 'Pausado' : elapsed}
         </div>
     );
 };
@@ -253,7 +261,7 @@ export const AndonGrid: React.FC<AndonGridProps> = ({ username }) => {
 
                             {/* 3. Timer */}
                             <div className="pt-2 border-t border-slate-100/50">
-                                <Timer startedAt={wc.started_at} />
+                                <Timer startedAt={wc.started_at} paused={wc.status === 'cinza'} />
                             </div>
                         </div>
 
