@@ -5,7 +5,7 @@
 // ═══════════════════════════════════════════════════════════
 
 // ─── Versão ────────────────────────────────────────────────
-#define FIRMWARE_VERSION    "2.0.0"
+#define FIRMWARE_VERSION    "2.1.0"
 #define FIRMWARE_BUILD_DATE __DATE__
 
 // ─── WiFi (ponto de acesso para o nó raiz da mesh) ─────────
@@ -22,6 +22,10 @@
 #define MESH_PASSWORD       "andon@mesh2024"
 #define MESH_PORT           5555
 #define MESH_CHANNEL        6       // Canal WiFi fixo para a mesh (1-13)
+// Limite de filhos diretos por nó. Quando atingido, o nó anuncia via broadcast
+// que está cheio e outros nós o ignoram ao escolher por onde rotear.
+// Valor recomendado: 4 (equilibrio entre cobertura e estabilidade do ESP32)
+#define MESH_MAX_CHILDREN   4
 
 // ─── MQTT Broker ───────────────────────────────────────────
 #define MQTT_BROKER         "192.168.10.55"
