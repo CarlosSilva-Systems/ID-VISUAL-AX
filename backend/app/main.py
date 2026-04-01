@@ -4,11 +4,13 @@ import uuid
 import app
 
 from fastapi import FastAPI, Request
+from fastapi.staticfiles import StaticFiles
 from starlette.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
+from pathlib import Path
 
 from app.core.config import settings
 from app.api.api_v1.api import api_router
@@ -118,6 +120,29 @@ app.add_middleware(
 )
 
 app.include_router(api_router, prefix=settings.API_V1_STR)
+
+# --- Static Files for OTA Firmware ---
+# Configurar hospedagem estática de arquivos .bin para OTA
+ota_storage_path = Path(settings.OTA_STORAGE_PATH)
+ota_storage_path.mkdir(parents=True, exist_ok=True)
+
+app.mount(
+    "/static/ota",
+    StaticFiles(directory=str(ota_storage_path)),
+    name="ota_firmware"
+)
+logger.info(f"✓ OTA static files mounted at /static/ota/ -> {ota_storage_path}")
+
+# Middleware para logging de downloads de firmware
+@app.middleware("http")
+async def log_firmware_downloads(request: Request, call_next):
+    if request.url.path.startswith("/static/ota/"):
+        client_ip = request.client.host if request.client else "unknown"
+        filename = request.url.path.split("/")[-1]
+        logger.info(f"OTA: Firmware download request - {filename} from {client_ip}")
+    
+    response = await call_next(request)
+    return response
 
 @app.get("/")
 async def root():
