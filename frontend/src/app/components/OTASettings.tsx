@@ -14,6 +14,7 @@ import { toast } from 'sonner';
 import { api } from '../../services/api';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import { OTAUploadModal } from './OTAUploadModal';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -295,20 +296,15 @@ export function OTASettings() {
         )}
       </div>
 
-      {/* Modals will be added in next tasks */}
-      {showUploadModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-2xl p-6 max-w-md w-full">
-            <p className="text-center text-slate-600">Upload Modal - Coming in Task 10</p>
-            <button
-              onClick={() => setShowUploadModal(false)}
-              className="mt-4 w-full px-4 py-2 bg-slate-200 rounded-lg"
-            >
-              Fechar
-            </button>
-          </div>
-        </div>
-      )}
+      {/* Modals */}
+      <OTAUploadModal
+        open={showUploadModal}
+        onClose={() => setShowUploadModal(false)}
+        onSuccess={() => {
+          fetchReleases();
+          fetchFleetStatus();
+        }}
+      />
 
       {showConfirmModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
