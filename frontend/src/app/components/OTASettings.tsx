@@ -15,6 +15,7 @@ import { api } from '../../services/api';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { OTAUploadModal } from './OTAUploadModal';
+import { OTAConfirmModal } from './OTAConfirmModal';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -306,19 +307,14 @@ export function OTASettings() {
         }}
       />
 
-      {showConfirmModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-2xl p-6 max-w-md w-full">
-            <p className="text-center text-slate-600">Confirm Modal - Coming in Task 11</p>
-            <button
-              onClick={() => setShowConfirmModal(false)}
-              className="mt-4 w-full px-4 py-2 bg-slate-200 rounded-lg"
-            >
-              Fechar
-            </button>
-          </div>
-        </div>
-      )}
+      <OTAConfirmModal
+        open={showConfirmModal}
+        release={selectedRelease}
+        onClose={() => {
+          setShowConfirmModal(false);
+          setSelectedRelease(null);
+        }}
+      />
     </div>
   );
 }
