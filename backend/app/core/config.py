@@ -91,6 +91,15 @@ class Settings(BaseSettings):
     MQTT_BROKER_HOST: str = "localhost"
     MQTT_BROKER_PORT: int = 1883
 
+    # --- OTA Management Configuration ---
+    # GitHub Integration (opcional - para downloads automáticos de firmware)
+    GITHUB_REPO_OWNER: str = ""
+    GITHUB_REPO_NAME: str = ""
+    GITHUB_TOKEN: str = ""  # Necessário apenas para repositórios privados
+    
+    # Caminho de armazenamento de firmware OTA
+    OTA_STORAGE_PATH: str = "/app/storage/ota/firmware"
+
     # --- Andon Configuration ---
     # ID do grupo res.groups no Odoo que define administradores do ID Visual
     ID_VISUAL_ADMIN_GROUP_ID: Optional[int] = None
