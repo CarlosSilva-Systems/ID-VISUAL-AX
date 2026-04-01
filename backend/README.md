@@ -305,6 +305,155 @@ Verifique se `.env` contém todas as variáveis obrigatórias:
 3. Garanta que working tree está limpa antes de finalizar
 4. Abra um Pull Request com descrição detalhada
 
+## OTA Management
+
+### Visão Geral
+
+O sistema OTA (Over-The-Air) Management permite atualização remota de firmware para dispositivos ESP32 do sistema Andon. O backend atua como "garçom de firmware", integrando-se com GitHub Releases para downloads automáticos e hospedando arquivos .bin via HTTP estático.
+
+### Arquitetura
+
+```
+Frontend → Backend API → MQTT Broker → ESP32 Devices
+                ↓
+         Static File Server (HTTP)
+                ↓
+         ESP32 Downloads Firmware
+```
+
+### Endpoints da API
+
+#### Gerenciamento de Firmware
+
+**GET /api/v1/ota/firmware/releases**
+- Lista todas as versões de firmware disponíveis
+- Retorna releases ordenados por data (mais recente primeiro)
+- Inclui contagem de dispositivos por versão
+
+**POST /api/v1/ota/firmware/check-github**
+- Verifica se há nova versão no GitHub
+- Compara com versão mais recente no banco local
+- Retorna `update_available: true/false`
+
+**POST /api/v1/ota/firmware/download-github**
+- Baixa firmware do GitHub Release
+- Body: `{ "version": "1.2.0" }` (opcional - se omitido, baixa latest)
+- Salva em `storage/ota/firmware/`
+
+**POST /api/v1/ota/firmware/upload**
+- Upload manual de firmware via multipart/form-data
+- Campos: `file` (.bin, 100KB-2MB), `version` (formato X.Y.Z)
+- Valida extensão, tamanho e formato de versão
+
+**DELETE /api/v1/ota/firmware/{release_id}**
+- Deleta firmware release e arquivo .bin do storage
+
+#### Operações OTA
+
+**POST /api/v1/ota/trigger**
+- Dispara atualização OTA em massa para todos os dispositivos
+- Body: `{ "firmware_release_id": "uuid" }`
+- Cria logs de atualização e publica comando MQTT
+- Rate limited: 1 requisição/segundo
+
+**GET /api/v1/ota/status**
+- Retorna status de atualização de todos os dispositivos
+- Inclui versão atual, versão alvo, progresso e erros
+
+**GET /api/v1/ota/history/{mac_address}**
+- Retorna histórico completo de atualizações de um dispositivo
+- Ordenado por data (mais recente primeiro)
+
+### Tópicos MQTT
+
+#### andon/ota/trigger (Backend → ESP32)
+Comando para iniciar atualização OTA.
+
+**Payload:**
+```json
+{
+  "version": "1.2.0",
+  "url": "http://192.168.10.55:8000/static/ota/firmware-1.2.0.bin",
+  "size": 1234567
+}
+```
+
+#### andon/ota/progress/{mac} (ESP32 → Backend)
+Progresso de atualização reportado pelo dispositivo.
+
+**Payload:**
+```json
+{
+  "status": "downloading",  // downloading, installing, success, failed
+  "progress": 45,           // 0-100
+  "error": null             // string ou null
+}
+```
+
+### Hospedagem Estática de Firmware
+
+Arquivos .bin são servidos via HTTP puro (sem SSL) para otimizar performance nos ESP32:
+
+- **Rota**: `/static/ota/firmware-{version}.bin`
+- **Headers**: `Content-Type: application/octet-stream`, `Cache-Control: no-cache`
+- **Storage**: Volume Docker em `/app/storage/ota/firmware/`
+
+### Integração com GitHub
+
+Configure as variáveis de ambiente para habilitar downloads automáticos:
+
+```bash
+GITHUB_REPO_OWNER=seu_usuario
+GITHUB_REPO_NAME=seu_repositorio
+GITHUB_TOKEN=ghp_xxx  # Necessário apenas para repos privados
+```
+
+O sistema busca o asset `.bin` no release mais recente e baixa automaticamente.
+
+### Fluxo de Atualização OTA
+
+1. **Preparação**: Gestor faz upload manual ou baixa do GitHub
+2. **Trigger**: Gestor clica "Atualizar Todos" na interface
+3. **Comando MQTT**: Backend publica comando no tópico `andon/ota/trigger`
+4. **Download**: ESP32 baixa firmware via HTTP do backend
+5. **Instalação**: ESP32 escreve firmware na OTA partition
+6. **Reboot**: ESP32 reinicia com novo firmware
+7. **Validação**: ESP32 valida boot e marca firmware como válido
+8. **Rollback**: Se validação falhar, ESP32 reverte automaticamente
+
+### Segurança
+
+- **Validação de Input**: Extensão .bin, tamanho 100KB-2MB, formato de versão X.Y.Z
+- **Path Traversal Prevention**: Rejeita nomes de arquivo com `..`, `/`, `\`
+- **Rate Limiting**: Endpoint de trigger limitado a 1 req/segundo
+- **Auditoria**: Todos os logs incluem username e timestamp
+- **Erro Sanitizado**: Stack traces nunca expostos ao cliente
+
+### Troubleshooting OTA
+
+#### Erro: "Firmware release não encontrado"
+- Verifique se o firmware foi baixado/uploaded corretamente
+- Consulte `GET /api/v1/ota/firmware/releases` para listar versões disponíveis
+
+#### Erro: "Arquivo de firmware não encontrado no storage"
+- Verifique se o arquivo existe em `storage/ota/firmware/`
+- Verifique permissões do diretório
+
+#### Dispositivo não inicia download
+- Verifique conectividade MQTT do dispositivo
+- Verifique logs do dispositivo via serial monitor
+- Verifique se URL do firmware está acessível pelo ESP32
+
+#### Download falha com timeout
+- Verifique conectividade de rede do ESP32
+- Verifique se `BACKEND_HOST` está configurado corretamente
+- Aumente timeout se rede for lenta
+
+#### Firmware instala mas dispositivo não reinicia
+- Verifique logs do dispositivo via serial monitor
+- Pode ser falha na validação de boot
+- Rollback automático deve ocorrer após 3 tentativas
+
 ## Licença
 
 Proprietary - AX Engenharia
