@@ -44,8 +44,8 @@ export function Configuracoes({ user }: ConfiguracoesProps) {
   const [isUpdatingConfig, setIsUpdatingConfig] = useState(false);
 
   const tabs = [
-    { id: 'odoo', label: 'Integração Odoo', icon: Server },
-    { id: 'ota', label: 'Atualizações OTA', icon: Cpu },
+    { id: 'odoo' as const, label: 'Integração Odoo', icon: Server },
+    { id: 'ota' as const, label: 'Atualizações OTA', icon: Cpu },
   ];
 
   useEffect(() => {
