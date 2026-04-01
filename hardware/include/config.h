@@ -1,50 +1,64 @@
 #pragma once
 
-// ─── Versão ────────────────────────────────────────────────
-#define FIRMWARE_VERSION "1.0.0"
+// ═══════════════════════════════════════════════════════════
+// FIRMWARE ID VISUAL AX — CONFIGURAÇÕES
+// ═══════════════════════════════════════════════════════════
 
-// ─── WiFi ──────────────────────────────────────────────────
-#define WIFI_SSID "AX-CORPORATIVO"
-#define WIFI_PASSWORD "auto@bacia"
-#define WIFI_TIMEOUT_MS 30000
-#define WIFI_BLINK_MS 500
+// ─── Versão ────────────────────────────────────────────────
+#define FIRMWARE_VERSION    "2.0.0"
+#define FIRMWARE_BUILD_DATE __DATE__
+
+// ─── WiFi (ponto de acesso para o nó raiz da mesh) ─────────
+#define WIFI_SSID           "AX-CORPORATIVO"
+#define WIFI_PASSWORD       "auto@bacia"
+#define WIFI_TIMEOUT_MS     30000UL
+#define WIFI_BLINK_MS       500UL
+
+// ─── ESP-MESH ──────────────────────────────────────────────
+// Todos os dispositivos da mesma instalação usam o mesmo MESH_ID e MESH_PASSWORD.
+// O nó que conseguir alcançar o WiFi vira raiz automaticamente e faz a ponte
+// para o broker MQTT. Os demais roteiam por ele.
+#define MESH_ID             "IDVISUAL_ANDON"
+#define MESH_PASSWORD       "andon@mesh2024"
+#define MESH_PORT           5555
+#define MESH_CHANNEL        6       // Canal WiFi fixo para a mesh (1-13)
 
 // ─── MQTT Broker ───────────────────────────────────────────
-#define MQTT_BROKER "192.168.10.55"
-#define MQTT_PORT 1883
-#define MQTT_BUFFER_SIZE 512
-#define MQTT_TIMEOUT_MS 10000
-#define MQTT_BLINK_MS 1000
-#define MQTT_MAX_RETRIES 10
+#define MQTT_BROKER         "192.168.10.55"
+#define MQTT_PORT           1883
+#define MQTT_BUFFER_SIZE    512
+#define MQTT_BLINK_MS       1000UL
+#define MQTT_MAX_RETRIES    10
+#define MQTT_KEEPALIVE_S    60
 
-// ─── Pinos — Botões ────────────────────────────────────────
-#define BTN_VERDE 12    // suporta INPUT_PULLUP
-#define BTN_AMARELO 13  // suporta INPUT_PULLUP
-#define BTN_VERMELHO 32 // suporta INPUT_PULLUP
-#define BTN_PAUSE 33    // Pause/Resume fabricação — INPUT_PULLUP
+// ─── Pinos — Botões (INPUT_PULLUP, ativo em LOW) ───────────
+#define BTN_VERDE           12
+#define BTN_AMARELO         13
+#define BTN_VERMELHO        32
+#define BTN_PAUSE           33      // Toggle pause/resume fabricação
 
-// ─── Pinos — LEDs de status ────────────────────────────────
-#define LED_VERMELHO_PIN 25
-#define LED_AMARELO_PIN 26
-#define LED_VERDE_PIN 27   // Movido de 33 para 27 (33 agora é BTN_PAUSE)
-#define LED_ONBOARD_PIN 2
+// ─── Pinos — LEDs de status Andon ──────────────────────────
+#define LED_VERMELHO_PIN    25
+#define LED_AMARELO_PIN     26
+#define LED_VERDE_PIN       27      // GPIO 33 liberado para BTN_PAUSE
+#define LED_ONBOARD_PIN     2       // LED azul onboard
 
-// ─── Timers (ms) ───────────────────────────────────────────
-#define DEBOUNCE_MS 30  // Debounce mínimo para estabilidade elétrica
-#define HEARTBEAT_INTERVAL_MS 300000  // 5 minutos
-#define HEAP_MONITOR_INTERVAL_MS 30000 // 30 segundos
-#define CHECK_INTERVAL_MS 5000
+// ─── Debounce ──────────────────────────────────────────────
+// Apenas estabilidade elétrica — deduplicação de eventos no backend
+#define DEBOUNCE_MS         30UL
 
-// ─── Cooldown de Botões (ms) — deduplicação feita no backend ──
-// Mantido apenas como proteção mínima contra bouncing extremo
-#define BTN_GREEN_COOLDOWN_MS 0
-#define BTN_YELLOW_COOLDOWN_MS 0
-#define BTN_RED_COOLDOWN_MS 0
+// ─── Intervalos de timer ───────────────────────────────────
+#define HEARTBEAT_INTERVAL_MS   300000UL    // 5 minutos
+#define HEAP_MONITOR_INTERVAL_MS 30000UL    // 30 segundos
+#define STATUS_LOG_INTERVAL_MS  10000UL     // 10 segundos
 
-// ─── Reconexão ─────────────────────────────────────────────
-#define INITIAL_BACKOFF_MS 5000
-#define MAX_BACKOFF_MS 60000
+// ─── Reconexão com backoff exponencial ─────────────────────
+#define INITIAL_BACKOFF_MS  5000UL
+#define MAX_BACKOFF_MS      60000UL
 
-// ─── Thresholds ────────────────────────────────────────────
-#define HEAP_WARN_THRESHOLD 10240  // 10KB
-#define WATCHDOG_TIMEOUT_S 30
+// ─── Watchdog ──────────────────────────────────────────────
+#define WATCHDOG_TIMEOUT_S  30
+
+// ─── Thresholds de saúde ───────────────────────────────────
+#define HEAP_WARN_THRESHOLD 10240   // 10 KB
+#define RSSI_WARN_THRESHOLD -80     // dBm
