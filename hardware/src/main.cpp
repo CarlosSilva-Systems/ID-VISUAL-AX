@@ -73,6 +73,7 @@ bool andonStateKnown = false;
 ButtonState greenButton  = {BTN_VERDE,    HIGH, 0, false};
 ButtonState yellowButton = {BTN_AMARELO,  HIGH, 0, false};
 ButtonState redButton    = {BTN_VERMELHO, HIGH, 0, false};
+ButtonState pauseButton  = {BTN_PAUSE,    HIGH, 0, false};
 
 // LEDs
 LEDState redLED = {LED_VERMELHO_PIN, LOW};
@@ -473,7 +474,7 @@ void handleOperational() {
     // Log periódico do estado (a cada 10 segundos)
     if (now - lastStateLog >= 10000) {
         logSerial("OPERATIONAL: Sistema ativo, aguardando eventos de botões...");
-        logSerial("OPERATIONAL: Botões - Verde(GPIO" + String(BTN_VERDE) + ") Amarelo(GPIO" + String(BTN_AMARELO) + ") Vermelho(GPIO" + String(BTN_VERMELHO) + ")");
+        logSerial("OPERATIONAL: Botões - Verde(GPIO" + String(BTN_VERDE) + ") Amarelo(GPIO" + String(BTN_AMARELO) + ") Vermelho(GPIO" + String(BTN_VERMELHO) + ") Pause(GPIO" + String(BTN_PAUSE) + ")");
         lastStateLog = now;
     }
     
@@ -494,6 +495,7 @@ void handleOperational() {
     processButton(&greenButton);
     processButton(&yellowButton);
     processButton(&redButton);
+    processButton(&pauseButton);
     
     // Verificar e publicar eventos de botões
     if (greenButton.pressed) {
@@ -507,6 +509,10 @@ void handleOperational() {
     if (redButton.pressed) {
         publishButtonEvent("red");
         redButton.pressed = false;
+    }
+    if (pauseButton.pressed) {
+        publishButtonEvent("pause");
+        pauseButton.pressed = false;
     }
     
     // Heartbeat a cada 5 minutos
@@ -555,6 +561,7 @@ void initializeGPIOs() {
     pinMode(BTN_VERDE, INPUT_PULLUP);    // GPIO 12
     pinMode(BTN_AMARELO, INPUT_PULLUP);  // GPIO 13
     pinMode(BTN_VERMELHO, INPUT_PULLUP); // GPIO 32
+    pinMode(BTN_PAUSE, INPUT_PULLUP);    // GPIO 33
     
     // Configurar LEDs
     pinMode(LED_VERMELHO_PIN, OUTPUT);

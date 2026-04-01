@@ -21,11 +21,12 @@
 #define BTN_VERDE 12    // suporta INPUT_PULLUP
 #define BTN_AMARELO 13  // suporta INPUT_PULLUP
 #define BTN_VERMELHO 32 // suporta INPUT_PULLUP
+#define BTN_PAUSE 33    // Pause/Resume fabricação — INPUT_PULLUP
 
 // ─── Pinos — LEDs de status ────────────────────────────────
 #define LED_VERMELHO_PIN 25
 #define LED_AMARELO_PIN 26
-#define LED_VERDE_PIN 33
+#define LED_VERDE_PIN 27   // Movido de 33 para 27 (33 agora é BTN_PAUSE)
 #define LED_ONBOARD_PIN 2
 
 // ─── Timers (ms) ───────────────────────────────────────────
