@@ -99,6 +99,9 @@ class Settings(BaseSettings):
     
     # Caminho de armazenamento de firmware OTA
     OTA_STORAGE_PATH: str = "/app/storage/ota/firmware"
+    
+    # Host do backend para construção de URLs de firmware (usado pelos ESP32)
+    BACKEND_HOST: str = "localhost:8000"
 
     # --- Andon Configuration ---
     # ID do grupo res.groups no Odoo que define administradores do ID Visual
