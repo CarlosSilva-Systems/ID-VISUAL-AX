@@ -12,6 +12,7 @@ import { ActiveBatch } from '../components/ActiveBatch';
 import { MyReports } from './pages/reports/MyReports';
 import { DynamicDashboard } from './pages/reports/DynamicDashboard';
 import { Login } from './components/Login';
+import { OTAProgressDashboard } from './components/OTAProgressDashboard';
 
 import { AndonGrid } from './components/AndonGrid';
 import { AndonTV } from './components/AndonTV';
@@ -124,6 +125,9 @@ function AppContent() {
               <Route path="/templates" element={<Padroes5S />} />
 
               <Route path="/admin" element={<Configuracoes user={currentUser} />} />
+              <Route path="/admin/ota-progress" element={
+                <OTAProgressDashboard onClose={() => navigate('/admin')} />
+              } />
               <Route path="/id-visual/batch/:batchId" element={
                 <ActiveBatch
                   onBack={() => navigate('/id-visual/dashboard')}

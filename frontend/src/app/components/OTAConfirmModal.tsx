@@ -65,8 +65,7 @@ export function OTAConfirmModal({ open, release, onClose }: OTAConfirmModalProps
       onClose();
       
       // Navigate to progress dashboard
-      // For now, just close the modal - dashboard will be implemented in Task 12
-      // navigate('/admin/ota/progress');
+      navigate('/admin/ota-progress');
     } catch (err: any) {
       toast.error('Erro ao disparar atualização: ' + err.message);
     } finally {
