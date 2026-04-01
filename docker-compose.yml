@@ -35,7 +35,9 @@ services:
     volumes:
       - ./backend:/app
       - ./.env:/app/.env
-      # Volume persistente para armazenamento de firmware OTA
+      # Volume persistente para armazenamento de firmware OTA (.bin files)
+      # Montado em /app/storage/ota/firmware dentro do container
+      # Permite que arquivos de firmware persistam entre restarts do container
       - ota_firmware:/app/storage/ota/firmware
     ports:
       - "8000:8000"
@@ -62,6 +64,9 @@ services:
 
 volumes:
   postgres_data:
-  # Volume para armazenamento persistente de arquivos .bin de firmware OTA
+  # Volume Docker para armazenamento persistente de firmware OTA
+  # Armazena arquivos .bin de firmware para atualizações ESP32
+  # Persiste entre restarts e rebuilds do container
+  # Localização no host: gerenciado pelo Docker (docker volume inspect ota_firmware)
   ota_firmware:
     driver: local
