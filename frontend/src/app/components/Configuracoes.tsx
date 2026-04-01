@@ -94,6 +94,11 @@ export function Configuracoes({ user }: ConfiguracoesProps) {
 
   return (
     <div className="p-8 max-w-5xl mx-auto space-y-8 animate-in fade-in duration-500">
+      {/* Debug info */}
+      <div className="bg-yellow-100 border border-yellow-300 p-2 rounded text-xs">
+        <strong>Debug:</strong> Aba ativa = {activeTab} | Total de abas = {tabs.length}
+      </div>
+      
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-black text-slate-900 tracking-tight">Configurações do Sistema</h2>
@@ -110,23 +115,31 @@ export function Configuracoes({ user }: ConfiguracoesProps) {
       </div>
 
       <div className="flex flex-col md:flex-row gap-8">
-        <div className="w-full md:w-64 shrink-0 space-y-1">
-          {tabs.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id as Tab)}
-              className={cn(
-                "w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold text-sm transition-all",
-                activeTab === tab.id
-                  ? "bg-white text-blue-600 shadow-sm border border-slate-100 ring-1 ring-slate-100"
-                  : "text-slate-500 hover:bg-slate-100"
-              )}
-            >
-              <tab.icon size={20} />
-              {tab.label}
-              {activeTab === tab.id && <div className="ml-auto w-1.5 h-1.5 rounded-full bg-blue-600" />}
-            </button>
-          ))}
+        {/* Sidebar com abas */}
+        <div className="w-full md:w-64 shrink-0 space-y-2 bg-slate-50 p-4 rounded-2xl">
+          {tabs.map((tab) => {
+            const Icon = tab.icon;
+            const isActive = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => {
+                  console.log('Clicou na aba:', tab.id);
+                  setActiveTab(tab.id);
+                }}
+                className={cn(
+                  "w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold text-sm transition-all",
+                  isActive
+                    ? "bg-white text-blue-600 shadow-sm border border-slate-100 ring-1 ring-slate-100"
+                    : "text-slate-500 hover:bg-slate-100"
+                )}
+              >
+                <Icon size={20} />
+                {tab.label}
+                {isActive && <div className="ml-auto w-1.5 h-1.5 rounded-full bg-blue-600" />}
+              </button>
+            );
+          })}
         </div>
 
         <div className="flex-1 bg-white rounded-[2rem] border border-slate-100 shadow-sm overflow-hidden p-8">
