@@ -29,16 +29,16 @@
 #define LED_ONBOARD_PIN 2
 
 // ─── Timers (ms) ───────────────────────────────────────────
-#define DEBOUNCE_MS 50  // Tempo de estabilização inicial
-#define STABLE_READS 3  // Número de leituras consecutivas necessárias
+#define DEBOUNCE_MS 30  // Debounce mínimo para estabilidade elétrica
 #define HEARTBEAT_INTERVAL_MS 300000  // 5 minutos
 #define HEAP_MONITOR_INTERVAL_MS 30000 // 30 segundos
 #define CHECK_INTERVAL_MS 5000
 
-// ─── Cooldown de Botões (ms) ───────────────────────────────
-#define BTN_GREEN_COOLDOWN_MS 10000   // 10 segundos
-#define BTN_YELLOW_COOLDOWN_MS 5000   // 5 segundos
-#define BTN_RED_COOLDOWN_MS 5000      // 5 segundos
+// ─── Cooldown de Botões (ms) — deduplicação feita no backend ──
+// Mantido apenas como proteção mínima contra bouncing extremo
+#define BTN_GREEN_COOLDOWN_MS 0
+#define BTN_YELLOW_COOLDOWN_MS 0
+#define BTN_RED_COOLDOWN_MS 0
 
 // ─── Reconexão ─────────────────────────────────────────────
 #define INITIAL_BACKOFF_MS 5000

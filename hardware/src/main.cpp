@@ -29,16 +29,12 @@ enum SystemState {
     OPERATIONAL
 };
 
-// Estado de um botão com debounce robusto e cooldown
+// Estado de um botão — debounce mínimo apenas para estabilidade elétrica
 struct ButtonState {
     uint8_t pin;
-    bool lastStableState;         // Último estado estável confirmado
-    bool currentReading;          // Leitura atual do GPIO
-    uint8_t stableCount;          // Contador de leituras estáveis consecutivas
+    bool lastReading;             // Última leitura do GPIO
     unsigned long lastChangeTime; // Última vez que a leitura mudou
     bool pressed;                 // Flag de evento de pressionamento
-    unsigned long lastPressTime;  // Timestamp do último pressionamento (para cooldown)
-    unsigned long cooldownMs;     // Tempo de cooldown específico
 };
 
 // Estado de um LED
@@ -73,10 +69,10 @@ String deviceName;
 String currentAndonColor = "GREEN";  // GREEN, YELLOW, RED
 bool andonStateKnown = false;
 
-// Botões (com cooldown específico)
-ButtonState greenButton = {BTN_VERDE, HIGH, HIGH, 0, 0, false, 0, BTN_GREEN_COOLDOWN_MS};
-ButtonState yellowButton = {BTN_AMARELO, HIGH, HIGH, 0, 0, false, 0, BTN_YELLOW_COOLDOWN_MS};
-ButtonState redButton = {BTN_VERMELHO, HIGH, HIGH, 0, 0, false, 0, BTN_RED_COOLDOWN_MS};
+// Botões
+ButtonState greenButton  = {BTN_VERDE,    HIGH, 0, false};
+ButtonState yellowButton = {BTN_AMARELO,  HIGH, 0, false};
+ButtonState redButton    = {BTN_VERMELHO, HIGH, 0, false};
 
 // LEDs
 LEDState redLED = {LED_VERMELHO_PIN, LOW};
@@ -372,58 +368,23 @@ void handleMQTTConnecting() {
 }
 
 /**
- * Processa um botão com debounce robusto (múltiplas leituras) e cooldown
- * 
- * Algoritmo:
- * 1. Lê o estado atual do GPIO
- * 2. Se mudou em relação à última leitura, reseta o contador e timer
- * 3. Se está estável (mesma leitura) por DEBOUNCE_MS, incrementa contador
- * 4. Só aceita mudança de estado após STABLE_READS leituras consecutivas iguais
- * 5. Ao detectar pressionamento (HIGH→LOW), verifica cooldown antes de disparar evento
+ * Processa um botão com debounce mínimo (apenas estabilidade elétrica).
+ * Deduplicação de eventos é responsabilidade do backend.
+ * Detecta transição HIGH→LOW (pressionamento com INPUT_PULLUP).
  */
 void processButton(ButtonState* btn) {
     unsigned long now = millis();
     bool reading = digitalRead(btn->pin);
-    
-    // Se a leitura mudou, resetar contador e timer
-    if (reading != btn->currentReading) {
-        btn->currentReading = reading;
-        btn->stableCount = 0;
+
+    // Detectar mudança de estado
+    if (reading != btn->lastReading) {
         btn->lastChangeTime = now;
-        return;
+        btn->lastReading = reading;
     }
-    
-    // Se ainda não passou o tempo de debounce, aguardar
-    if ((now - btn->lastChangeTime) < DEBOUNCE_MS) {
-        return;
-    }
-    
-    // Incrementar contador de leituras estáveis
-    if (btn->stableCount < STABLE_READS) {
-        btn->stableCount++;
-        return;
-    }
-    
-    // Temos STABLE_READS leituras consecutivas iguais após DEBOUNCE_MS
-    // Verificar se o estado mudou em relação ao último estado estável
-    if (reading != btn->lastStableState) {
-        btn->lastStableState = reading;
-        
-        // Detectar pressionamento (HIGH → LOW, pois usa INPUT_PULLUP)
-        if (reading == LOW) {
-            // Verificar cooldown
-            if (btn->lastPressTime == 0 || (now - btn->lastPressTime >= btn->cooldownMs)) {
-                btn->pressed = true;
-                btn->lastPressTime = now;
-                logSerial("BUTTON: GPIO " + String(btn->pin) + " PRESSIONADO!");
-            } else {
-                unsigned long remainingCooldown = (btn->cooldownMs - (now - btn->lastPressTime)) / 1000;
-                logSerial("BUTTON: GPIO " + String(btn->pin) + " em cooldown, aguarde " + String(remainingCooldown) + "s");
-            }
-        }
-        
-        // Resetar contador para próxima mudança
-        btn->stableCount = 0;
+
+    // Aguardar estabilidade elétrica mínima (DEBOUNCE_MS)
+    if ((now - btn->lastChangeTime) >= DEBOUNCE_MS && reading == LOW) {
+        btn->pressed = true;
     }
 }
 
@@ -529,14 +490,17 @@ void handleOperational() {
     if (greenButton.pressed) {
         publishButtonEvent("green");
         greenButton.pressed = false;
+        greenButton.lastReading = HIGH; // Resetar para evitar re-disparo enquanto pressionado
     }
     if (yellowButton.pressed) {
         publishButtonEvent("yellow");
         yellowButton.pressed = false;
+        yellowButton.lastReading = HIGH;
     }
     if (redButton.pressed) {
         publishButtonEvent("red");
         redButton.pressed = false;
+        redButton.lastReading = HIGH;
     }
     
     // Heartbeat a cada 5 minutos
