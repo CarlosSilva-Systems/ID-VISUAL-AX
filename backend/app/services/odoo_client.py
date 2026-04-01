@@ -441,6 +441,40 @@ class OdooClient:
         logger.error(f"pause_workorder: ALL methods failed for WO {workorder_id}")
         return {"ok": False, "method_used": None, "error": msg}
 
+    async def resume_workorder(self, workorder_id: int) -> dict:
+        """Tenta retomar a WO via fallback encadeado (inverso do pause).
+        Retorna dict explícito — NUNCA silencia falha."""
+        for method in ["button_start", "action_start", "button_resume"]:
+            try:
+                await self.call_kw("mrp.workorder", method, args=[[workorder_id]])
+                logger.info(f"resume_workorder: WO {workorder_id} resumed via {method}")
+                return {"ok": True, "method_used": method, "error": None}
+            except Exception as e:
+                logger.warning(f"resume_workorder: {method} failed: {e}")
+
+        msg = (
+            "Nenhum método de retomada funcionou (button_start / action_start / button_resume). "
+            "Retomada manual necessária no Odoo."
+        )
+        logger.error(f"resume_workorder: ALL methods failed for WO {workorder_id}")
+        return {"ok": False, "method_used": None, "error": msg}
+
+    async def get_workorder_state(self, workorder_id: int) -> Optional[str]:
+        """Retorna o estado atual de uma Work Order (progress, pending, pause, etc.)."""
+        try:
+            res = await self.search_read(
+                "mrp.workorder",
+                domain=[["id", "=", workorder_id]],
+                fields=["state"],
+                limit=1
+            )
+            if res:
+                return res[0].get("state")
+            return None
+        except Exception as e:
+            logger.error(f"get_workorder_state: WO {workorder_id}: {e}")
+            return None
+
     async def create_andon_activity(
         self, production_id: int, note: str, user_id: int
     ) -> int | None:
