@@ -16,6 +16,9 @@ O ESP32 funciona como um botão de acionamento do sistema Andon (sistema de aler
 - ✅ Monitoramento de memória heap
 - ✅ Last Will and Testament (LWT) para detecção de desconexão
 - ✅ Discovery automático no backend
+- ✅ **OTA (Over-The-Air) Updates** - Atualização remota de firmware via MQTT
+- ✅ **Rollback Automático** - Reverte para firmware anterior se atualização falhar
+- ✅ **Validação de Boot** - Confirma firmware válido após atualização
 
 ## Pré-requisitos
 
@@ -145,6 +148,7 @@ pio run --target upload && pio device monitor
 | Tópico                          | QoS | Payload Esperado                             | Descrição                    |
 |---------------------------------|-----|----------------------------------------------|------------------------------|
 | `andon/led/{mac}/command`       | 1   | JSON (ver abaixo)                            | Comando para controlar LEDs  |
+| `andon/ota/trigger`             | 1   | JSON (ver abaixo)                            | Comando de atualização OTA   |
 
 #### LED Command Message (JSON)
 
@@ -160,6 +164,49 @@ pio run --target upload && pio device monitor
 - `red`: Boolean - Estado do LED vermelho (true = aceso, false = apagado)
 - `yellow`: Boolean - Estado do LED amarelo
 - `green`: Boolean - Estado do LED verde
+
+#### OTA Trigger Message (JSON)
+
+```json
+{
+  "version": "2.3.0",
+  "url": "http://192.168.10.55:8000/static/ota/firmware-2.3.0.bin",
+  "size": 1234567
+}
+```
+
+**Campos**:
+- `version`: String - Versão do firmware no formato semântico (ex: "2.3.0")
+- `url`: String - URL HTTP do arquivo .bin do firmware
+- `size`: Integer - Tamanho do arquivo em bytes
+
+**Comportamento**:
+- ESP32 valida que versão é diferente da atual
+- Aguarda delay aleatório de 0-60s (evita sobrecarga em rede Mesh)
+- Baixa firmware via HTTP com progresso reportado a cada 10%
+- Instala firmware e reinicia automaticamente
+- Valida boot bem-sucedido ou executa rollback automático
+
+### Tópicos Publicados pelo ESP32 (OTA)
+
+| Tópico                          | QoS | Retain | Payload                                      | Descrição                    |
+|---------------------------------|-----|--------|----------------------------------------------|------------------------------|
+| `andon/ota/progress/{mac}`      | 0   | false  | JSON (ver abaixo)                            | Progresso de atualização OTA |
+
+#### OTA Progress Message (JSON)
+
+```json
+{
+  "status": "downloading",
+  "progress": 45,
+  "error": null
+}
+```
+
+**Campos**:
+- `status`: String - Estado atual: `"downloading"`, `"installing"`, `"success"`, `"failed"`
+- `progress`: Integer - Porcentagem de progresso (0-100)
+- `error`: String ou null - Mensagem de erro (null se não houver erro)
 
 ## Saída Serial Esperada
 
@@ -190,6 +237,69 @@ pio run --target upload && pio device monitor
 [15010] LED: Comando aplicado - red=false yellow=true green=false
 [300000] HEARTBEAT: operacional, heap livre: 245632 bytes
 ```
+
+## Atualização OTA (Over-The-Air)
+
+O firmware suporta atualização remota via MQTT sem necessidade de acesso físico ao dispositivo.
+
+### Como Funciona
+
+1. **Backend** publica comando OTA no tópico `andon/ota/trigger`
+2. **ESP32** recebe comando, valida versão e URL
+3. **ESP32** aguarda delay aleatório (0-60s) para evitar sobrecarga
+4. **ESP32** baixa firmware via HTTP com progresso reportado a cada 10%
+5. **ESP32** instala firmware na partição OTA
+6. **ESP32** reinicia automaticamente
+7. **Bootloader** valida novo firmware
+8. **ESP32** confirma boot bem-sucedido ou executa rollback
+
+### Segurança e Resiliência
+
+- ✅ **Validação de Versão**: Ignora comando se já está na versão solicitada
+- ✅ **Validação de Payload**: Rejeita JSON malformado ou campos ausentes
+- ✅ **Timeout de Download**: 5 minutos máximo para download completo
+- ✅ **Checksum Automático**: HTTPUpdate valida integridade do firmware
+- ✅ **Rollback Automático**: Bootloader reverte se novo firmware crashar
+- ✅ **Validação de Boot**: Firmware confirma boot bem-sucedido
+- ✅ **Delay Aleatório**: Evita sobrecarga quando múltiplos dispositivos atualizam
+
+### Exemplo de Uso
+
+```bash
+# Publicar comando OTA via mosquitto
+mosquitto_pub -h localhost -t "andon/ota/trigger" -m '{
+  "version": "2.3.0",
+  "url": "http://192.168.10.55:8000/static/ota/firmware-2.3.0.bin",
+  "size": 1234567
+}'
+
+# Monitorar progresso
+mosquitto_sub -h localhost -t "andon/ota/progress/#" -v
+```
+
+### Logs Esperados
+
+```
+[OTA] Comando de atualização OTA recebido
+[OTA] Versão alvo: 2.3.0
+[OTA] Aguardando 42 segundos antes de iniciar download...
+[OTA] Iniciando download do firmware...
+[OTA] Download: 10% (123456 / 1234567 bytes)
+[OTA] Download: 20% (246912 / 1234567 bytes)
+...
+[OTA] Download: 100% (1234567 / 1234567 bytes)
+[OTA] Atualização concluída com sucesso!
+[OTA] Reiniciando em 3 segundos...
+
+# Após reboot
+[OTA] Versão atual do firmware: 2.3.0
+[OTA] Primeiro boot após atualização - validando...
+[OTA] Firmware validado com sucesso!
+```
+
+### Guia de Teste
+
+Para instruções detalhadas de teste OTA, consulte: **[TESTE_OTA.md](TESTE_OTA.md)**
 
 ## Atualização de Versão
 
