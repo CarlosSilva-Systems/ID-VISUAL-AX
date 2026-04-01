@@ -5,7 +5,7 @@
 // ═══════════════════════════════════════════════════════════
 
 // ─── Versão ────────────────────────────────────────────────
-#define FIRMWARE_VERSION    "2.1.0"
+#define FIRMWARE_VERSION    "2.2.0"
 #define FIRMWARE_BUILD_DATE __DATE__
 
 // ─── WiFi (ponto de acesso para o nó raiz da mesh) ─────────
