@@ -35,6 +35,8 @@ services:
     volumes:
       - ./backend:/app
       - ./.env:/app/.env
+      # Volume persistente para armazenamento de firmware OTA
+      - ota_firmware:/app/storage/ota/firmware
     ports:
       - "8000:8000"
     env_file:
@@ -60,3 +62,6 @@ services:
 
 volumes:
   postgres_data:
+  # Volume para armazenamento persistente de arquivos .bin de firmware OTA
+  ota_firmware:
+    driver: local
