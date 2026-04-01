@@ -9,7 +9,8 @@ import {
   AlertTriangle,
   Globe,
   Settings as SettingsIcon,
-  ShieldCheck
+  ShieldCheck,
+  Cpu
 } from 'lucide-react';
 import { User } from '../types';
 import { clsx, type ClassValue } from 'clsx';
@@ -17,12 +18,13 @@ import { twMerge } from 'tailwind-merge';
 import { toast } from 'sonner';
 import { api } from '../../services/api';
 import { DatabaseSelector } from './DatabaseSelector';
+import { OTASettings } from './OTASettings';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-type Tab = 'odoo' | 'lean' | 'permissoes';
+type Tab = 'odoo' | 'lean' | 'permissoes' | 'ota';
 
 interface ConfiguracoesProps {
   user: User | null;
@@ -43,6 +45,7 @@ export function Configuracoes({ user }: ConfiguracoesProps) {
 
   const tabs = [
     { id: 'odoo', label: 'Integração Odoo', icon: Server },
+    { id: 'ota', label: 'Atualizações OTA', icon: Cpu },
   ];
 
   useEffect(() => {
@@ -313,6 +316,12 @@ export function Configuracoes({ user }: ConfiguracoesProps) {
                   </button>
                 </div>
               </section>
+            </div>
+          )}
+
+          {activeTab === 'ota' && (
+            <div className="space-y-8 animate-in fade-in slide-in-from-right-4 duration-300">
+              <OTASettings />
             </div>
           )}
         </div>

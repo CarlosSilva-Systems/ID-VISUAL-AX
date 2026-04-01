@@ -398,5 +398,59 @@ export const api = {
     unbindDevice: async (macAddress: string) => {
         return api.delete(`/devices/${encodeURIComponent(macAddress)}/bind`);
     },
+
+    // ── OTA Management ──
+    getFirmwareReleases: async () => {
+        return api.get('/ota/firmware/releases');
+    },
+
+    checkGitHub: async () => {
+        return api.post('/ota/firmware/check-github', {});
+    },
+
+    downloadFromGitHub: async (version?: string) => {
+        return api.post('/ota/firmware/download-github', { version });
+    },
+
+    uploadFirmware: async (formData: FormData, onProgress?: (progress: number) => void): Promise<any> => {
+        return new Promise((resolve, reject) => {
+            const xhr = new XMLHttpRequest();
+            
+            xhr.upload.addEventListener('progress', (e) => {
+                if (e.lengthComputable && onProgress) {
+                    onProgress(Math.round((e.loaded / e.total) * 100));
+                }
+            });
+
+            xhr.addEventListener('load', () => {
+                if (xhr.status >= 200 && xhr.status < 300) {
+                    resolve(JSON.parse(xhr.responseText));
+                } else {
+                    reject(new Error('Upload failed'));
+                }
+            });
+
+            xhr.addEventListener('error', () => reject(new Error('Upload failed')));
+
+            const token = localStorage.getItem('id_visual_token');
+            xhr.open('POST', `${API_URL}/ota/firmware/upload`);
+            if (token) {
+                xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+            }
+            xhr.send(formData);
+        });
+    },
+
+    triggerOTAUpdate: async (firmwareReleaseId: string) => {
+        return api.post('/ota/trigger', { firmware_release_id: firmwareReleaseId });
+    },
+
+    getOTAStatus: async () => {
+        return api.get('/ota/status');
+    },
+
+    getOTAHistory: async (macAddress: string) => {
+        return api.get(`/ota/history/${encodeURIComponent(macAddress)}`);
+    },
 };
 
