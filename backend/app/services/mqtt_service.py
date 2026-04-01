@@ -366,6 +366,83 @@ async def _handle_pause(mac: str, payload_raw: bytes):
             logger.info(f"MQTT pause: workcenter {wc_id} RETOMADO — status restaurado: '{prev_status}'")
 
 
+async def _handle_ota_progress(mac: str, payload_raw: bytes):
+    """
+    Processa mensagens de progresso OTA publicadas pelo ESP32 em andon/ota/progress/{mac}.
+    
+    Atualiza o registro OTAUpdateLog correspondente e emite evento WebSocket para o frontend.
+    """
+    try:
+        payload = json.loads(payload_raw.decode())
+        status = payload.get("status")  # downloading, installing, success, failed
+        progress = payload.get("progress", 0)  # 0-100
+        error = payload.get("error")
+        
+        if not status:
+            logger.warning(f"MQTT OTA progress: payload sem status para {mac}")
+            return
+        
+    except Exception as e:
+        logger.error(f"MQTT OTA progress: erro ao decodificar payload — {e}")
+        return
+    
+    from app.models.ota import OTAUpdateLog, OTAStatus
+    
+    async with async_session_factory() as session:
+        # Buscar dispositivo
+        stmt = select(ESPDevice).where(ESPDevice.mac_address == mac)
+        result = await session.execute(stmt)
+        device = result.scalars().first()
+        
+        if not device:
+            logger.warning(f"MQTT OTA progress: dispositivo {mac} não encontrado")
+            return
+        
+        # Buscar log OTA ativo (downloading ou installing)
+        stmt_log = select(OTAUpdateLog).where(
+            OTAUpdateLog.device_id == device.id,
+            OTAUpdateLog.status.in_([OTAStatus.downloading, OTAStatus.installing])
+        ).order_by(OTAUpdateLog.started_at.desc())
+        result_log = await session.execute(stmt_log)
+        ota_log = result_log.scalars().first()
+        
+        if not ota_log:
+            # Criar novo log se não existir
+            logger.info(f"MQTT OTA progress: criando novo log para {mac}")
+            ota_log = OTAUpdateLog(
+                device_id=device.id,
+                firmware_release_id=None,  # Será preenchido posteriormente
+                status=OTAStatus[status] if status in OTAStatus.__members__ else OTAStatus.downloading,
+                progress_percent=progress,
+                error_message=error,
+                target_version="unknown"
+            )
+            session.add(ota_log)
+        else:
+            # Atualizar log existente
+            ota_log.status = OTAStatus[status] if status in OTAStatus.__members__ else ota_log.status
+            ota_log.progress_percent = progress
+            ota_log.error_message = error
+            
+            # Definir completed_at quando status for success ou failed
+            if status in ["success", "failed"]:
+                ota_log.completed_at = datetime.now(timezone.utc).replace(tzinfo=None)
+        
+        await session.commit()
+        await session.refresh(ota_log)
+    
+    # Emitir evento WebSocket
+    await ws_manager.broadcast("ota_progress", {
+        "mac": mac,
+        "device_id": str(device.id),
+        "status": status,
+        "progress": progress,
+        "error": error
+    })
+    
+    logger.info(f"MQTT OTA progress: {mac} - {status} - {progress}%")
+
+
 async def _send_led_command(mac: str, red: bool, yellow: bool, green: bool):
     """Publica comando de LED para o ESP32 via conexão MQTT temporária."""
     try:
@@ -452,7 +529,8 @@ async def _mqtt_loop():
                 await client.subscribe("andon/logs/#")
                 await client.subscribe("andon/button/#")
                 await client.subscribe("andon/state/request/#")
-                logger.info("MQTT: escutando tópicos andon/discovery, andon/status/#, andon/logs/#, andon/button/#, andon/state/request/#")
+                await client.subscribe("andon/ota/progress/#")
+                logger.info("MQTT: escutando tópicos andon/discovery, andon/status/#, andon/logs/#, andon/button/#, andon/state/request/#, andon/ota/progress/#")
 
                 async for message in client.messages:
                     topic = str(message.topic)
@@ -478,6 +556,9 @@ async def _mqtt_loop():
                     elif topic.startswith("andon/state/request/"):
                         mac = topic.split("/", 3)[3]
                         await _handle_state_request(mac, client)
+                    elif topic.startswith("andon/ota/progress/"):
+                        mac = topic.split("/", 3)[3]
+                        await _handle_ota_progress(mac, payload)
 
         except asyncio.CancelledError:
             logger.info("MQTT: serviço encerrado.")
