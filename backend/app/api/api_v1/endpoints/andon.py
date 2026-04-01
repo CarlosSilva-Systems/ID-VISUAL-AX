@@ -194,7 +194,11 @@ async def get_workcenters_status(
             red_calls = [c for c in active_calls if c.color == "RED"]
             yellow_stop_calls = [c for c in active_calls if c.color == "YELLOW" and c.is_stop]
             yellow_soft_calls = [c for c in active_calls if c.color == "YELLOW" and not c.is_stop]
-            
+
+            # Status local gravado manualmente (ex: pausa via ESP32)
+            local_status = local_statuses.get(wc_id, "cinza")
+            is_manually_paused = local_status == "cinza"
+
             status_color = "cinza"
             status_reason = "Mesa disponível"
             
@@ -207,6 +211,10 @@ async def get_workcenters_status(
             elif yellow_soft_calls:
                 status_color = "amarelo_suave" if enriched["current"] else "amarelo"
                 status_reason = f"ALERTA: {yellow_soft_calls[0].reason}"
+            elif is_manually_paused and enriched["current"]:
+                # Pausa manual (ESP32 ou operador) tem precedência sobre verde
+                status_color = "cinza"
+                status_reason = "Produção pausada"
             elif enriched["current"]:
                 status_color = "verde"
                 status_reason = "Produção em andamento"
@@ -214,15 +222,19 @@ async def get_workcenters_status(
                 status_color = "cinza"
                 status_reason = "Aguardando início de OP"
             
+            # Fallback: WO pausada diretamente no Odoo
             if status_color == "verde" and enriched["current"] and enriched["current"]["state"] in ["pause", "pending"]:
                 status_color = "cinza"
                 status_reason = "Produção pausada no Odoo"
 
             current_mo = enriched["current"]["mo_name"] if enriched["current"] else "Sem fabricação em andamento"
-            # owner_name: usa user_id da WO; se vazio, o workcenter já tem o nome do operador
             raw_owner = enriched["current"]["user_name"] if enriched["current"] else ""
             owner_name = raw_owner if raw_owner else (normalize_label(wc["name"]) if enriched["current"] else "Sem responsável definido")
             started_at = enriched["current"]["date_start"] if enriched["current"] else None
+
+            # Quando pausado, não enviar started_at para o frontend parar o timer
+            if status_color == "cinza":
+                started_at = None
 
             if started_at and isinstance(started_at, str) and ' ' in started_at:
                 started_at = started_at.replace(' ', 'T') + 'Z'
