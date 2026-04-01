@@ -368,23 +368,32 @@ void handleMQTTConnecting() {
 }
 
 /**
- * Processa um botão com debounce mínimo (apenas estabilidade elétrica).
- * Deduplicação de eventos é responsabilidade do backend.
- * Detecta transição HIGH→LOW (pressionamento com INPUT_PULLUP).
+ * Processa um botão detectando apenas a borda de descida (HIGH→LOW).
+ * Debounce mínimo de 30ms para estabilidade elétrica.
+ * Deduplicação de eventos duplicados é responsabilidade do backend.
  */
 void processButton(ButtonState* btn) {
     unsigned long now = millis();
     bool reading = digitalRead(btn->pin);
 
-    // Detectar mudança de estado
-    if (reading != btn->lastReading) {
-        btn->lastChangeTime = now;
-        btn->lastReading = reading;
+    // Só age quando a leitura muda
+    if (reading == btn->lastReading) {
+        return;
     }
 
-    // Aguardar estabilidade elétrica mínima (DEBOUNCE_MS)
-    if ((now - btn->lastChangeTime) >= DEBOUNCE_MS && reading == LOW) {
+    // Mudança detectada — aguardar estabilidade elétrica
+    if ((now - btn->lastChangeTime) < DEBOUNCE_MS) {
+        return;
+    }
+
+    // Leitura estável após debounce — atualizar estado
+    btn->lastReading = reading;
+    btn->lastChangeTime = now;
+
+    // Disparar evento apenas na borda de descida (HIGH→LOW = pressionamento)
+    if (reading == LOW) {
         btn->pressed = true;
+        logSerial("BUTTON: GPIO " + String(btn->pin) + " pressionado");
     }
 }
 
@@ -490,17 +499,14 @@ void handleOperational() {
     if (greenButton.pressed) {
         publishButtonEvent("green");
         greenButton.pressed = false;
-        greenButton.lastReading = HIGH; // Resetar para evitar re-disparo enquanto pressionado
     }
     if (yellowButton.pressed) {
         publishButtonEvent("yellow");
         yellowButton.pressed = false;
-        yellowButton.lastReading = HIGH;
     }
     if (redButton.pressed) {
         publishButtonEvent("red");
         redButton.pressed = false;
-        redButton.lastReading = HIGH;
     }
     
     // Heartbeat a cada 5 minutos
