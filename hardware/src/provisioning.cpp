@@ -25,7 +25,8 @@ void provisioningInit() {
         Serial.println("[PROVISIONING] Credenciais encontradas na NVS");
         g_provState = ProvisioningState::OPERATIONAL;
     } else {
-        Serial.println("[PROVISIONING] Nenhuma credencial encontrada - estado UNCONFIGURED");
+        Serial.printf("[PROVISIONING] wifi_ssid=%d wifi_password=%d -> UNCONFIGURED\n",
+                      nvsKeyExists("wifi_ssid"), nvsKeyExists("wifi_password"));
         g_provState = ProvisioningState::UNCONFIGURED;
     }
     

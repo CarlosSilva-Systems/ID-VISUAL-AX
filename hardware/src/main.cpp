@@ -1,5 +1,5 @@
 ﻿// Firmware ESP32 Andon v2.2.0 - ID Visual AX
-// ESP-MESH auto-organizavel com limite de conexoes
+// ESP-MESH + OTA + Setup Portal
 
 #include <Arduino.h>
 #include <WiFi.h>
@@ -10,8 +10,11 @@
 #include <esp_system.h>
 #include <set>
 #include "config.h"
+#include "ota.h"
+#include "nvs_storage.h"
+#include "setup_server.h"
 
-enum class SystemState : uint8_t { BOOT, MESH_INIT, MQTT_CONNECTING, OPERATIONAL };
+enum class SystemState : uint8_t { BOOT, UNCONFIGURED, MESH_INIT, MQTT_CONNECTING, OPERATIONAL };
 
 struct ButtonState { uint8_t pin; bool lastReading; unsigned long lastChangeMs; bool pressed; };
 struct LEDState    { uint8_t pin; bool on; };
@@ -28,7 +31,7 @@ static bool timerExpired(unsigned long& last, unsigned long interval) {
 
 static SystemState g_state=SystemState::BOOT;
 static unsigned long g_meshInitAt=0;
-static String g_mac, g_name;
+String g_mac, g_name;
 static bool g_isRoot=false;
 static std::set<uint32_t> g_fullNodes;
 static uint8_t g_directChildren=0;
@@ -48,12 +51,22 @@ static unsigned long g_lastHeartbeat=0,g_lastHealth=0,g_lastStatusLog=0,g_lastBl
 static ReconnectState g_mqttRecon={0,INITIAL_BACKOFF_MS,0};
 static painlessMesh g_mesh;
 static WiFiClient g_wifiClient;
-static PubSubClient g_mqtt(g_wifiClient);
+PubSubClient g_mqtt(g_wifiClient);
 
 static void logSerial(const String& msg){ Serial.printf("[%8lu] %s\n",millis(),msg.c_str()); }
-static void logMQTT(const String& msg){
-    logSerial(msg);
-    if(g_isRoot&&g_mqtt.connected()) g_mqtt.publish(("andon/logs/"+g_mac).c_str(),msg.c_str(),false);
+
+static void setLED(LEDState& led,bool on){
+    if(led.on==on)return; led.on=on; digitalWrite(led.pin,on?HIGH:LOW);
+}
+
+static bool hasWiFiCredentials(){
+    nvsInit();
+    return nvsKeyExists("wifi_ssid") && nvsKeyExists("wifi_password");
+}
+
+static void loadWiFiCredentials(char* ssid,size_t sl,char* pass,size_t pl){
+    if(!nvsLoadString("wifi_ssid",ssid,sl)){strncpy(ssid,WIFI_SSID,sl-1);ssid[sl-1]=0;}
+    if(!nvsLoadString("wifi_password",pass,pl)){strncpy(pass,WIFI_PASSWORD,pl-1);pass[pl-1]=0;}
 }
 
 static void initGPIOs(){
@@ -62,10 +75,6 @@ static void initGPIOs(){
     const uint8_t leds[]={LED_VERMELHO_PIN,LED_AMARELO_PIN,LED_VERDE_PIN,LED_ONBOARD_PIN};
     for(uint8_t p:leds){pinMode(p,OUTPUT);digitalWrite(p,LOW);}
     logSerial("GPIO: inicializados");
-}
-
-static void setLED(LEDState& led,bool on){
-    if(led.on==on)return; led.on=on; digitalWrite(led.pin,on?HIGH:LOW);
 }
 
 static void initWatchdog(){
@@ -85,7 +94,6 @@ static void announceFull(bool full){
     StaticJsonDocument<64> doc;
     doc["type"]="capacity"; doc["full"]=full; doc["id"]=String(g_mesh.getNodeId());
     String msg; serializeJson(doc,msg); g_mesh.sendBroadcast(msg);
-    logSerial(full?"MESH: cheio - anunciando":"MESH: disponivel - anunciando");
 }
 
 static void updateCapacity(){
@@ -97,8 +105,7 @@ static void updateCapacity(){
 }
 
 static void onNewConnection(uint32_t nodeId){
-    logSerial("MESH: novo no "+String(nodeId)+" total="+String(g_mesh.getNodeList().size()+1));
-    updateCapacity();
+    logSerial("MESH: novo no "+String(nodeId)); updateCapacity();
 }
 
 static void onDroppedConnection(uint32_t nodeId){
@@ -130,8 +137,7 @@ static void onMeshMessage(uint32_t from,String& msg){
     if(strcmp(type,"capacity")==0){
         uint32_t nodeId=(uint32_t)doc["id"].as<String>().toInt();
         bool full=doc["full"]|false;
-        if(full){g_fullNodes.insert(nodeId);logSerial("MESH: no "+String(nodeId)+" cheio");}
-        else    {g_fullNodes.erase(nodeId); logSerial("MESH: no "+String(nodeId)+" disponivel");}
+        if(full)g_fullNodes.insert(nodeId); else g_fullNodes.erase(nodeId);
         return;
     }
     if(strcmp(type,"button")==0&&g_isRoot&&g_mqtt.connected()){
@@ -139,22 +145,24 @@ static void onMeshMessage(uint32_t from,String& msg){
         if(strlen(mac)>0&&strlen(color)>0){
             String topic="andon/button/"+String(mac)+"/"+color;
             g_mqtt.publish(topic.c_str(),"PRESSED",false);
-            logSerial("MESH->MQTT: "+topic+" (no "+String(from)+")");
         }
     }
 }
 
 static void initMesh(){
+    char ssid[33],pass[65];
+    loadWiFiCredentials(ssid,sizeof(ssid),pass,sizeof(pass));
+    logSerial("MESH: SSID="+String(ssid));
     g_mesh.setDebugMsgTypes(ERROR|STARTUP);
     g_mesh.init(MESH_ID,MESH_PASSWORD,MESH_PORT,WIFI_AP_STA,MESH_CHANNEL);
-    g_mesh.stationManual(WIFI_SSID,WIFI_PASSWORD);
+    g_mesh.stationManual(ssid,pass);
     g_mesh.setRoot(false); g_mesh.setContainsRoot(true);
     g_mesh.onNewConnection(&onNewConnection);
     g_mesh.onDroppedConnection(&onDroppedConnection);
     g_mesh.onChangedConnections(&onChangedConnections);
     g_mesh.onNodeTimeAdjusted(&onNodeTimeAdjusted);
     g_mesh.onReceive(&onMeshMessage);
-    logSerial("MESH: ID="+String(MESH_ID)+" canal="+String(MESH_CHANNEL)+" max_filhos="+String(MESH_MAX_CHILDREN));
+    logSerial("MESH: ID="+String(MESH_ID)+" canal="+String(MESH_CHANNEL));
 }
 
 static void processButton(ButtonState& btn){
@@ -168,34 +176,26 @@ static void processButton(ButtonState& btn){
 static void publishButton(const char* color){
     if(g_isRoot&&g_mqtt.connected()){
         String topic="andon/button/"+g_mac+"/"+color;
-        g_mqtt.publish(topic.c_str(),"PRESSED",false)
-            ?logSerial("BTN: -> "+topic):logSerial("ERRO: falha "+String(color));
-        return;
+        g_mqtt.publish(topic.c_str(),"PRESSED",false); return;
     }
-    auto nb=g_mesh.getNodeList(true);
-    bool hasAvail=false;
-    for(uint32_t n:nb){if(g_fullNodes.find(n)==g_fullNodes.end()){hasAvail=true;break;}}
-    if(!hasAvail&&!nb.empty())logSerial("AVISO: todos vizinhos cheios - broadcast forcado");
     StaticJsonDocument<128> doc;
     doc["type"]="button"; doc["mac"]=g_mac; doc["color"]=color;
     String msg; serializeJson(doc,msg); g_mesh.sendBroadcast(msg);
-    logSerial("BTN: '"+String(color)+"' via mesh");
 }
 
 static bool processLEDCommand(const String& payload){
     StaticJsonDocument<128> doc;
-    if(deserializeJson(doc,payload)!=DeserializationError::Ok){logMQTT("LED: JSON invalido");return false;}
-    if(!doc.containsKey("red")||!doc.containsKey("yellow")||!doc.containsKey("green")){logMQTT("LED: campos ausentes");return false;}
+    if(deserializeJson(doc,payload)!=DeserializationError::Ok)return false;
     setLED(g_ledRed,doc["red"].as<bool>());
     setLED(g_ledYellow,doc["yellow"].as<bool>());
     setLED(g_ledGreen,doc["green"].as<bool>());
-    logSerial("LED: r="+String(g_ledRed.on)+" y="+String(g_ledYellow.on)+" g="+String(g_ledGreen.on));
     return true;
 }
 
 static void mqttCallback(char* topic,byte* payload,unsigned int length){
     String t(topic),p; p.reserve(length);
     for(unsigned int i=0;i<length;i++)p+=(char)payload[i];
+    if(t=="andon/ota/trigger"){logSerial("OTA: trigger recebido");handleOTATrigger(p.c_str());return;}
     if(t=="andon/led/"+g_mac+"/command"){processLEDCommand(p);return;}
     if(t=="andon/state/"+g_mac){p.trim();p.toUpperCase();logSerial("ANDON STATE: "+p);}
 }
@@ -203,9 +203,13 @@ static void mqttCallback(char* topic,byte* payload,unsigned int length){
 static void onMQTTConnected(){
     logSerial("MQTT: conectado");
     g_mqtt.publish(("andon/status/"+g_mac).c_str(),"online",true);
-    StaticJsonDocument<256> doc;
-    doc["mac_address"]=g_mac; doc["device_name"]=g_name;
-    doc["firmware_version"]=FIRMWARE_VERSION;
+    char saved_name[33]=""; char saved_loc[65]="";
+    nvsLoadString("device_name",saved_name,sizeof(saved_name));
+    nvsLoadString("location",saved_loc,sizeof(saved_loc));
+    String display_name=(strlen(saved_name)>0)?String(saved_name):g_name;
+    StaticJsonDocument<320> doc;
+    doc["mac_address"]=g_mac; doc["device_name"]=display_name;
+    doc["location"]=String(saved_loc); doc["firmware_version"]=FIRMWARE_VERSION;
     doc["mesh_node_id"]=String(g_mesh.getNodeId());
     doc["mesh_node_count"]=(int)(g_mesh.getNodeList().size()+1);
     doc["mesh_children"]=g_directChildren; doc["is_root"]=g_isRoot;
@@ -214,6 +218,7 @@ static void onMQTTConnected(){
     logSerial("MQTT: discovery -> "+disc);
     g_mqtt.subscribe(("andon/led/"+g_mac+"/command").c_str(),1);
     g_mqtt.subscribe(("andon/state/"+g_mac).c_str(),1);
+    g_mqtt.subscribe("andon/ota/trigger",1);
     g_mqtt.publish(("andon/state/request/"+g_mac).c_str(),"REQUEST",false);
     g_state=SystemState::OPERATIONAL; g_mqttRecon.reset();
     logSerial("MQTT: -> OPERATIONAL");
@@ -242,7 +247,6 @@ static void handleOperational(){
     if(g_btnYellow.pressed){publishButton("yellow");g_btnYellow.pressed=false;}
     if(g_btnRed.pressed)   {publishButton("red");   g_btnRed.pressed=false;}
     if(g_btnPause.pressed) {publishButton("pause"); g_btnPause.pressed=false;}
-
     if(g_isRoot&&g_mqtt.connected()&&timerExpired(g_lastHeartbeat,HEARTBEAT_INTERVAL_MS)){
         StaticJsonDocument<128> hb;
         hb["heap"]=ESP.getFreeHeap(); hb["rssi"]=WiFi.RSSI();
@@ -250,25 +254,13 @@ static void handleOperational(){
         hb["mesh_children"]=g_directChildren; hb["is_root"]=g_isRoot;
         String s; serializeJson(hb,s);
         g_mqtt.publish(("andon/status/"+g_mac).c_str(),s.c_str(),false);
-        logSerial("HEARTBEAT: "+s);
-    }
-    if(timerExpired(g_lastHealth,HEAP_MONITOR_INTERVAL_MS)){
-        uint32_t heap=ESP.getFreeHeap();
-        if(heap<HEAP_WARN_THRESHOLD)logMQTT("AVISO: heap baixo "+String(heap)+" bytes");
-        if(g_isRoot&&WiFi.RSSI()<RSSI_WARN_THRESHOLD)logMQTT("AVISO: sinal fraco RSSI="+String(WiFi.RSSI())+" dBm");
-    }
-    if(timerExpired(g_lastStatusLog,STATUS_LOG_INTERVAL_MS)){
-        logSerial("STATUS: nos="+String(g_mesh.getNodeList().size()+1)
-                  +" filhos="+String(g_directChildren)+"/"+String(MESH_MAX_CHILDREN)
-                  +" cheios="+String(g_fullNodes.size())
-                  +" raiz="+String(g_isRoot)
-                  +" heap="+String(ESP.getFreeHeap())
-                  +" RSSI="+String(WiFi.RSSI()));
     }
 }
 
 static void updateOnboardLED(){
     switch(g_state){
+        case SystemState::UNCONFIGURED:
+            if(timerExpired(g_lastBlink,1000))setLED(g_ledOnboard,!g_ledOnboard.on); break;
         case SystemState::MESH_INIT:
             if(timerExpired(g_lastBlink,WIFI_BLINK_MS/2))setLED(g_ledOnboard,!g_ledOnboard.on); break;
         case SystemState::MQTT_CONNECTING:
@@ -284,33 +276,61 @@ void setup(){
     for(uint32_t t=millis();!Serial&&(millis()-t)<3000;){}
     Serial.println("\n=================================================");
     Serial.println("  Firmware ESP32 Andon v2.2.0 - ID Visual AX");
+    Serial.println("  + OTA Management + Setup Portal");
     Serial.println("=================================================\n");
     pinMode(LED_ONBOARD_PIN,OUTPUT);
     for(int i=0;i<3;i++){digitalWrite(LED_ONBOARD_PIN,HIGH);delay(150);digitalWrite(LED_ONBOARD_PIN,LOW);delay(150);}
-    initGPIOs(); initWatchdog(); initMesh(); obtainMAC();
-    g_mqtt.setServer(MQTT_BROKER,MQTT_PORT);
-    g_mqtt.setBufferSize(MQTT_BUFFER_SIZE);
-    g_mqtt.setKeepAlive(MQTT_KEEPALIVE_S);
-    g_mqtt.setCallback(mqttCallback);
-    logSerial("MQTT: cliente configurado");
-    g_state=SystemState::MESH_INIT;
-    logSerial("BOOT: -> MESH_INIT");
+    initGPIOs();
+    initOTA();
+    initWatchdog();
+    obtainMAC();
+
+    if(!hasWiFiCredentials()){
+        g_state=SystemState::UNCONFIGURED;
+        logSerial("BOOT: sem credenciais WiFi -> UNCONFIGURED");
+        String mac_suffix=g_mac.substring(g_mac.length()-5);
+        mac_suffix.replace(":","");
+        setupServerInit(mac_suffix.c_str());
+        logSerial("BOOT: conecte ao WiFi 'ESP32-Setup-"+mac_suffix+"' e acesse http://192.168.4.1");
+    } else {
+        logSerial("BOOT: credenciais WiFi encontradas -> iniciando mesh");
+        initMesh();
+        g_mqtt.setServer(MQTT_BROKER,MQTT_PORT);
+        g_mqtt.setBufferSize(MQTT_BUFFER_SIZE);
+        g_mqtt.setKeepAlive(MQTT_KEEPALIVE_S);
+        g_mqtt.setCallback(mqttCallback);
+        logSerial("MQTT: cliente configurado para "+String(MQTT_BROKER));
+        g_state=SystemState::MESH_INIT;
+        logSerial("BOOT: -> MESH_INIT");
+    }
 }
 
 void loop(){
     esp_task_wdt_reset();
-    g_mesh.update();
-    if(g_isRoot&&g_mqtt.connected())g_mqtt.loop();
     updateOnboardLED();
     switch(g_state){
         case SystemState::BOOT: break;
+        case SystemState::UNCONFIGURED:
+            setupServerLoop(); break;
         case SystemState::MESH_INIT:
-            if(g_meshInitAt==0) g_meshInitAt=millis();
+            g_mesh.update();
             if(g_isRoot){g_state=SystemState::MQTT_CONNECTING;logSerial("MESH: raiz -> MQTT_CONNECTING");}
             else if(g_mesh.getNodeList().size()>0){g_state=SystemState::OPERATIONAL;logSerial("MESH: nao-raiz -> OPERATIONAL");}
-            else if((millis()-g_meshInitAt)>15000UL){g_isRoot=true;g_state=SystemState::MQTT_CONNECTING;g_mqttRecon.reset();logSerial("MESH: timeout 15s -> MQTT_CONNECTING");}
+            else{
+                if(g_meshInitAt==0)g_meshInitAt=millis();
+                if((millis()-g_meshInitAt)>15000UL){
+                    g_isRoot=true; g_state=SystemState::MQTT_CONNECTING; g_mqttRecon.reset();
+                    logSerial("MESH: timeout 15s -> MQTT_CONNECTING");
+                }
+            }
             break;
-        case SystemState::MQTT_CONNECTING: handleMQTTConnecting(); break;
-        case SystemState::OPERATIONAL:     handleOperational();     break;
+        case SystemState::MQTT_CONNECTING:
+            g_mesh.update();
+            if(g_isRoot&&g_mqtt.connected())g_mqtt.loop();
+            handleMQTTConnecting(); break;
+        case SystemState::OPERATIONAL:
+            g_mesh.update();
+            if(g_isRoot&&g_mqtt.connected())g_mqtt.loop();
+            handleOperational(); break;
     }
 }

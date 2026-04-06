@@ -27,12 +27,19 @@ class DeviceOut(BaseModel):
     id: uuid.UUID
     mac_address: str
     device_name: str
+    location: str
     workcenter_id: Optional[int]
     status: str
     last_seen_at: Optional[datetime]
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class DeviceUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    device_name: Optional[str] = None
+    location: Optional[str] = None
 
 
 class DeviceLogOut(BaseModel):
@@ -143,8 +150,7 @@ async def bind_device(
     return device
 
 
-@router.delete("/{mac_address}/bind", response_model=DeviceOut)
-async def unbind_device(
+@router.delete("/{mac_address}/bind", response_model=DeviceOut)async def unbind_device(
     mac_address: str,
     session: AsyncSession = Depends(get_session),
 ):

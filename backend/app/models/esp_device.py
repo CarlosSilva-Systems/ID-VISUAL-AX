@@ -23,6 +23,7 @@ class ESPDevice(SQLModel, table=True):
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     mac_address: str = Field(unique=True, index=True, nullable=False)
     device_name: str = Field(default="")
+    location: str = Field(default="")
     workcenter_id: Optional[int] = Field(default=None, nullable=True)
     status: DeviceStatus = Field(default=DeviceStatus.offline)
     last_seen_at: Optional[datetime] = Field(default=None)
