@@ -46,7 +46,7 @@ const char* getFirmwareVersion() {
 }
 
 void publishOTAProgress(const char* status, int progress, const char* error) {
-    JsonDocument doc;
+    DynamicJsonDocument doc(256);
     doc["status"] = status;
     doc["progress"] = progress;
     doc["error"] = error;
@@ -74,7 +74,7 @@ void handleOTATrigger(const char* payload) {
     Serial.println("[OTA] ========================================");
     
     // Desserializar payload JSON
-    JsonDocument doc;
+    DynamicJsonDocument doc(512);
     DeserializationError error = deserializeJson(doc, payload);
     
     if (error) {
@@ -138,8 +138,9 @@ void handleOTATrigger(const char* payload) {
     
     Serial.println("[OTA] Iniciando download do firmware...");
     
-    // Iniciar atualização
-    t_httpUpdate_return ret = httpUpdate.update(url);
+    // Iniciar atualização (API nova: requer WiFiClient explícito)
+    WiFiClient wifiClient;
+    t_httpUpdate_return ret = httpUpdate.update(wifiClient, String(url));
     
     switch (ret) {
         case HTTP_UPDATE_FAILED:
