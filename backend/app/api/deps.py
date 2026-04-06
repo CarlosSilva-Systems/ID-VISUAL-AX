@@ -61,6 +61,19 @@ async def get_current_user(
         return None
 
 
+async def require_current_user(
+    current_user: Optional[User] = Depends(get_current_user),
+) -> User:
+    """Dependência que exige autenticação obrigatória. Lança 401 se não autenticado."""
+    if current_user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Não autenticado",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return current_user
+
+
 
 async def get_odoo_client(
     session: AsyncSession = Depends(get_session),

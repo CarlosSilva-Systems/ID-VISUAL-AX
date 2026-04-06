@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.api.deps import get_session, get_current_user
+from app.api.deps import get_session, get_current_user, require_current_user
 from app.models.user import User
 from app.models.ota import FirmwareRelease, OTAUpdateLog
 from app.schemas.ota import (
@@ -37,7 +37,7 @@ router = APIRouter(prefix="/ota", tags=["OTA Management"])
 @router.get("/firmware/releases", response_model=List[FirmwareReleaseOut])
 async def list_firmware_releases(
     session: AsyncSession = Depends(get_session),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_current_user)
 ):
     """
     Lista todas as versões de firmware disponíveis.
@@ -89,7 +89,7 @@ async def list_firmware_releases(
 async def check_github_for_updates(
     request: CheckGitHubRequest,
     session: AsyncSession = Depends(get_session),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_current_user)
 ):
     """
     Verifica se há nova versão de firmware disponível no GitHub.
@@ -140,7 +140,7 @@ async def check_github_for_updates(
 async def download_firmware_from_github(
     request: DownloadGitHubRequest,
     session: AsyncSession = Depends(get_session),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_current_user)
 ):
     """
     Baixa firmware do GitHub Release.
@@ -203,7 +203,7 @@ async def upload_firmware_manually(
     file: UploadFile = File(...),
     version: str = Form(...),
     session: AsyncSession = Depends(get_session),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_current_user)
 ):
     """
     Upload manual de firmware via interface web.
@@ -247,7 +247,7 @@ async def upload_firmware_manually(
 async def trigger_ota_update(
     request: TriggerOTARequest,
     session: AsyncSession = Depends(get_session),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_current_user)
 ):
     """
     Dispara atualização OTA em massa para todos os dispositivos.
@@ -272,7 +272,7 @@ async def trigger_ota_update(
 @router.get("/status", response_model=OTAStatusResponse)
 async def get_ota_status(
     session: AsyncSession = Depends(get_session),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_current_user)
 ):
     """
     Retorna status de atualização de todos os dispositivos.
@@ -306,7 +306,7 @@ async def get_ota_status(
 async def get_device_ota_history(
     mac_address: str,
     session: AsyncSession = Depends(get_session),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_current_user)
 ):
     """
     Retorna histórico completo de atualizações de um dispositivo.
@@ -339,7 +339,7 @@ async def get_device_ota_history(
 async def delete_firmware_release(
     release_id: uuid.UUID,
     session: AsyncSession = Depends(get_session),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_current_user)
 ):
     """
     Deleta um firmware release.
@@ -368,4 +368,5 @@ async def delete_firmware_release(
     logger.info(f"OTA: Firmware release {release.version} deleted by user {current_user.username}")
     
     return None
+
 
