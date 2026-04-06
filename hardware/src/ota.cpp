@@ -108,12 +108,6 @@ void handleOTATrigger(const char* payload) {
     Serial.printf("[OTA] Versão atual: %s -> Nova versão: %s\n", FIRMWARE_VERSION, version);
     Serial.println("[OTA] Iniciando processo de atualização...");
     
-    // Delay aleatório de 0-60s para evitar sobrecarga simultânea do servidor
-    // (Requirement 21.4 - Mesh propagation)
-    uint32_t randomDelay = random(0, 60000);  // 0 a 60 segundos
-    Serial.printf("[OTA] Aguardando %lu segundos antes de iniciar download (anti-sobrecarga)...\n", randomDelay / 1000);
-    delay(randomDelay);
-    
     // Publicar progresso inicial
     publishOTAProgress("downloading", 0, nullptr);
     

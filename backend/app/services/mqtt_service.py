@@ -530,7 +530,8 @@ async def _mqtt_loop():
                 await client.subscribe("andon/button/#")
                 await client.subscribe("andon/state/request/#")
                 await client.subscribe("andon/ota/progress/#")
-                logger.info("MQTT: escutando tópicos andon/discovery, andon/status/#, andon/logs/#, andon/button/#, andon/state/request/#, andon/ota/progress/#")
+                await client.subscribe("andon/ota/trigger")
+                logger.info("MQTT: escutando tópicos andon/discovery, andon/status/#, andon/logs/#, andon/button/#, andon/state/request/#, andon/ota/progress/#, andon/ota/trigger")
 
                 async for message in client.messages:
                     topic = str(message.topic)
