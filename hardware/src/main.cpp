@@ -1,4 +1,4 @@
-// Firmware ESP32 Andon v2.2.0 - ID Visual AX
+﻿// Firmware ESP32 Andon v2.2.0 - ID Visual AX
 // ESP-MESH auto-organizavel com limite de conexoes
 
 #include <Arduino.h>
@@ -27,6 +27,7 @@ static bool timerExpired(unsigned long& last, unsigned long interval) {
 }
 
 static SystemState g_state=SystemState::BOOT;
+static unsigned long g_meshInitAt=0;
 static String g_mac, g_name;
 static bool g_isRoot=false;
 static std::set<uint32_t> g_fullNodes;
@@ -304,8 +305,10 @@ void loop(){
     switch(g_state){
         case SystemState::BOOT: break;
         case SystemState::MESH_INIT:
+            if(g_meshInitAt==0) g_meshInitAt=millis();
             if(g_isRoot){g_state=SystemState::MQTT_CONNECTING;logSerial("MESH: raiz -> MQTT_CONNECTING");}
             else if(g_mesh.getNodeList().size()>0){g_state=SystemState::OPERATIONAL;logSerial("MESH: nao-raiz -> OPERATIONAL");}
+            else if((millis()-g_meshInitAt)>15000UL){g_isRoot=true;g_state=SystemState::MQTT_CONNECTING;g_mqttRecon.reset();logSerial("MESH: timeout 15s -> MQTT_CONNECTING");}
             break;
         case SystemState::MQTT_CONNECTING: handleMQTTConnecting(); break;
         case SystemState::OPERATIONAL:     handleOperational();     break;
