@@ -164,7 +164,7 @@ async def download_firmware_from_github(
         # Baixar firmware
         release = await ota_service.download_firmware_from_github(
             release_data,
-            current_user.login
+            current_user.username
         )
         
         # Calcular device_count
@@ -217,7 +217,7 @@ async def upload_firmware_manually(
     release = await ota_service.save_uploaded_firmware(
         file,
         version,
-        current_user.login
+        current_user.username
     )
     
     # Calcular device_count
@@ -259,7 +259,7 @@ async def trigger_ota_update(
     
     result = await ota_service.trigger_ota_update(
         request.firmware_release_id,
-        current_user.login
+        current_user.username
     )
     
     return TriggerOTAResponse(
@@ -365,7 +365,7 @@ async def delete_firmware_release(
     await session.delete(release)
     await session.commit()
     
-    logger.info(f"OTA: Firmware release {release.version} deleted by user {current_user.login}")
+    logger.info(f"OTA: Firmware release {release.version} deleted by user {current_user.username}")
     
     return None
 
