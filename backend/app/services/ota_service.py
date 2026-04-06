@@ -285,23 +285,22 @@ class OTAService:
             "size": release.file_size
         }
         
-        # Publicar comando MQTT
+        # Publicar comando MQTT (best-effort — falha não bloqueia o trigger)
+        import json
+        mqtt_payload = json.dumps(payload)
+        mqtt_published = False
         try:
             import aiomqtt
-            import json
-            
-            mqtt_host = getattr(settings, 'MQTT_BROKER_HOST', 'localhost')
-            mqtt_port = int(getattr(settings, 'MQTT_BROKER_PORT', 1883))
-            
+            mqtt_host = settings.MQTT_BROKER_HOST
+            mqtt_port = int(settings.MQTT_BROKER_PORT)
             async with aiomqtt.Client(hostname=mqtt_host, port=mqtt_port) as client:
-                await client.publish(
-                    "andon/ota/trigger",
-                    json.dumps(payload),
-                    qos=1
-                )
+                await client.publish("andon/ota/trigger", mqtt_payload, qos=1)
+            mqtt_published = True
+            logger.info(f"OTA: MQTT trigger published for version {release.version}")
+        except ImportError:
+            logger.warning("OTA: aiomqtt não instalado — trigger salvo no banco, MQTT ignorado")
         except Exception as e:
-            logger.error(f"OTA: Failed to publish MQTT trigger - {e}")
-            raise HTTPException(500, f"Erro ao publicar comando MQTT: {str(e)}")
+            logger.error(f"OTA: MQTT publish failed — {e}. Trigger registrado no banco.")
         
         # Emitir evento WebSocket
         await ws_manager.broadcast("ota_triggered", {
@@ -315,8 +314,7 @@ class OTAService:
             "message": f"Atualização OTA disparada para {len(devices)} dispositivos",
             "device_count": len(devices),
             "target_version": release.version
-        }
-    
+        }    
     async def get_fleet_status(self) -> list[dict]:
         """
         Retorna status de atualização de todos os dispositivos.
