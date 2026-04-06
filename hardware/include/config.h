@@ -61,7 +61,7 @@
 #define MAX_BACKOFF_MS      60000UL
 
 // ─── Watchdog ──────────────────────────────────────────────
-#define WATCHDOG_TIMEOUT_S  30
+#define WATCHDOG_TIMEOUT_S  60
 
 // ─── Thresholds de saúde ───────────────────────────────────
 #define HEAP_WARN_THRESHOLD 10240   // 10 KB

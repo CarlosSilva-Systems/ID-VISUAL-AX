@@ -1,4 +1,4 @@
-﻿// Firmware ESP32 Andon v2.1.0 - ID Visual AX
+// Firmware ESP32 Andon v2.2.0 - ID Visual AX
 // ESP-MESH auto-organizavel com limite de conexoes
 
 #include <Arduino.h>
@@ -282,7 +282,7 @@ void setup(){
     Serial.begin(115200);
     for(uint32_t t=millis();!Serial&&(millis()-t)<3000;){}
     Serial.println("\n=================================================");
-    Serial.println("  Firmware ESP32 Andon v2.1.0 - ID Visual AX");
+    Serial.println("  Firmware ESP32 Andon v2.2.0 - ID Visual AX");
     Serial.println("=================================================\n");
     pinMode(LED_ONBOARD_PIN,OUTPUT);
     for(int i=0;i<3;i++){digitalWrite(LED_ONBOARD_PIN,HIGH);delay(150);digitalWrite(LED_ONBOARD_PIN,LOW);delay(150);}
