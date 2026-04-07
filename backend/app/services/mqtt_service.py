@@ -336,7 +336,7 @@ async def _handle_pause(mac: str, payload_raw: bytes):
                 ))
 
             await session.commit()
-            await _send_led_command(mac, red=False, yellow=False, green=False)
+            await _send_andon_state(mac, "GRAY")
             await ws_manager.broadcast("production_paused", {
                 "workcenter_id": wc_id, "device_mac": mac, "wo_id": wo_id,
             })
@@ -350,20 +350,28 @@ async def _handle_pause(mac: str, payload_raw: bytes):
                 session.add(andon_status)
                 await session.commit()
 
-            # Acender LED correspondente ao status restaurado
-            led_map = {
-                "verde":         {"red": False, "yellow": False, "green": True},
-                "amarelo":       {"red": False, "yellow": True,  "green": False},
-                "amarelo_suave": {"red": False, "yellow": True,  "green": False},
-                "vermelho":      {"red": True,  "yellow": False, "green": False},
+            # Mapear status restaurado para MQTT (aceita português e inglês)
+            status_map = {
+                "verde": "GREEN",
+                "green": "GREEN",
+                "amarelo": "YELLOW",
+                "amarelo_suave": "YELLOW",
+                "yellow": "YELLOW",
+                "vermelho": "RED",
+                "red": "RED",
+                "cinza": "GRAY",
+                "gray": "GRAY"
             }
-            leds = led_map.get(prev_status, {"red": False, "yellow": False, "green": True})
-            await _send_led_command(mac, **leds)
+            mqtt_state = status_map.get(prev_status, "GREEN")
+            
+            # Enviar estado via MQTT para atualizar g_andonStatus no ESP32
+            await _send_andon_state(mac, mqtt_state)
+            
             await ws_manager.broadcast("production_resumed", {
                 "workcenter_id": wc_id, "device_mac": mac,
                 "wo_id": wo_id, "restored_status": prev_status,
             })
-            logger.info(f"MQTT pause: workcenter {wc_id} RETOMADO — status restaurado: '{prev_status}'")
+            logger.info(f"MQTT pause: workcenter {wc_id} RETOMADO — status restaurado: '{prev_status}' → MQTT: {mqtt_state}")
 
 
 async def _handle_ota_progress(mac: str, payload_raw: bytes):
