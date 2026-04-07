@@ -186,7 +186,8 @@ void updateLEDState(LEDState* led, bool state) {
 // ═══════════════════════════════════════════════════════════
 
 void updateAndonLEDs() {
-    // Atualiza LEDs baseado no status Andon recebido do backend
+    // Atualiza LEDs baseado no status Andon recebido do backend.
+    // GRAY é tratado no loop() com blink não-bloqueante — não apaga aqui.
     if (g_andonStatus == "GREEN") {
         updateLEDState(&greenLED, true);
         updateLEDState(&yellowLED, false);
@@ -200,12 +201,28 @@ void updateAndonLEDs() {
         updateLEDState(&yellowLED, false);
         updateLEDState(&redLED, true);
     } else if (g_andonStatus == "GRAY") {
-        // Pausado - todos apagados
+        // Garante que os LEDs começam apagados; o blink é feito no loop()
         updateLEDState(&greenLED, false);
         updateLEDState(&yellowLED, false);
         updateLEDState(&redLED, false);
     }
     // UNKNOWN mantém o estado atual
+}
+
+// Blink não-bloqueante para estado GRAY (pausado).
+// 70 BPM ≈ 857ms por ciclo: 428ms ligado, 428ms desligado.
+#define PAUSE_BLINK_HALF_MS 428UL
+void updatePauseBlink() {
+    static unsigned long lastToggle = 0;
+    static bool blinkOn = false;
+    unsigned long now = millis();
+    if (now - lastToggle >= PAUSE_BLINK_HALF_MS) {
+        lastToggle = now;
+        blinkOn = !blinkOn;
+        digitalWrite(LED_VERDE_PIN,    blinkOn ? HIGH : LOW);
+        digitalWrite(LED_AMARELO_PIN,  blinkOn ? HIGH : LOW);
+        digitalWrite(LED_VERMELHO_PIN, blinkOn ? HIGH : LOW);
+    }
 }
 
 void playBootAnimation() {
@@ -814,6 +831,11 @@ void setup() {
 void loop() {
     esp_task_wdt_reset();
     updateOnboardLED();
+
+    // Blink de pausa: todos os LEDs piscam juntos a ~70 BPM quando GRAY
+    if (g_andonStatus == "GRAY") {
+        updatePauseBlink();
+    }
 
     switch (currentState) {
         case BOOT:            break;
