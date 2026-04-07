@@ -86,3 +86,7 @@ backend/list_routes.py
 
 # PlatformIO
 hardware/compile_commands.json
+
+# Backups locais de firmware
+hardware/src/*.backup_*
+hardware/include/*.backup_*

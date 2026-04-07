@@ -1,336 +1,479 @@
-﻿// Firmware ESP32 Andon v2.2.0 - ID Visual AX
-// ESP-MESH + OTA + Setup Portal
+/**
+ * Firmware ESP32 Andon - Sistema ID Visual AX
+ * Versão: 1.0.0
+ * Data: 2026-03-31
+ *
+ * Descrição: Firmware para dispositivo ESP32 que atua como interface física
+ * do sistema Andon, capturando eventos de botões e controlando LEDs de status
+ * através de comunicação MQTT bidirecional com o backend FastAPI.
+ *
+ * Arquitetura: WiFi direto (sem mesh) + MQTT + botões + LEDs
+ * Máquina de estados: BOOT → WIFI_CONNECTING → MQTT_CONNECTING → OPERATIONAL
+ */
 
 #include <Arduino.h>
 #include <WiFi.h>
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
-#include <painlessMesh.h>
 #include <esp_task_wdt.h>
 #include <esp_system.h>
-#include <set>
 #include "config.h"
-#include "ota.h"
-#include "nvs_storage.h"
-#include "setup_server.h"
 
-enum class SystemState : uint8_t { BOOT, UNCONFIGURED, MESH_INIT, MQTT_CONNECTING, OPERATIONAL };
+// ═══════════════════════════════════════════════════════════
+// ESTRUTURAS DE DADOS
+// ═══════════════════════════════════════════════════════════
 
-struct ButtonState { uint8_t pin; bool lastReading; unsigned long lastChangeMs; bool pressed; };
-struct LEDState    { uint8_t pin; bool on; };
-struct ReconnectState {
-    uint8_t attempts; unsigned long backoffMs; unsigned long lastAttemptMs;
-    void reset()   { attempts=0; backoffMs=INITIAL_BACKOFF_MS; lastAttemptMs=0; }
-    void backoff() { unsigned long n=backoffMs*2UL; backoffMs=n>MAX_BACKOFF_MS?MAX_BACKOFF_MS:n; attempts++; }
-    bool ready() const { return (millis()-lastAttemptMs)>=backoffMs; }
+enum SystemState {
+    BOOT,
+    WIFI_CONNECTING,
+    MQTT_CONNECTING,
+    OPERATIONAL
 };
 
-static bool timerExpired(unsigned long& last, unsigned long interval) {
-    unsigned long now=millis(); if(now-last>=interval){last=now;return true;} return false;
+struct ButtonState {
+    uint8_t pin;
+    bool lastState;
+    bool currentState;
+    unsigned long lastDebounceTime;
+    bool pressed;
+};
+
+struct LEDState {
+    uint8_t pin;
+    bool state;
+};
+
+struct Timer {
+    unsigned long interval;
+    unsigned long lastTrigger;
+};
+
+struct ReconnectionState {
+    uint8_t attemptCount;
+    unsigned long backoffDelay;
+    unsigned long lastAttempt;
+};
+
+// ═══════════════════════════════════════════════════════════
+// VARIÁVEIS GLOBAIS
+// ═══════════════════════════════════════════════════════════
+
+SystemState currentState = BOOT;
+String macAddress;
+String deviceName;
+
+ButtonState greenButton  = {BTN_VERDE,    HIGH, HIGH, 0, false};
+ButtonState yellowButton = {BTN_AMARELO,  HIGH, HIGH, 0, false};
+ButtonState redButton    = {BTN_VERMELHO, HIGH, HIGH, 0, false};
+ButtonState pauseButton  = {BTN_PAUSE,    HIGH, HIGH, 0, false};
+
+LEDState redLED     = {LED_VERMELHO_PIN, false};
+LEDState yellowLED  = {LED_AMARELO_PIN,  false};
+LEDState greenLED   = {LED_VERDE_PIN,    false};
+LEDState onboardLED = {LED_ONBOARD_PIN,  false};
+
+Timer heartbeatTimer    = {HEARTBEAT_INTERVAL_MS,    0};
+Timer heapMonitorTimer  = {HEAP_MONITOR_INTERVAL_MS, 0};
+Timer ledBlinkTimer     = {WIFI_BLINK_MS,            0};
+
+ReconnectionState wifiReconnect = {0, INITIAL_BACKOFF_MS, 0};
+ReconnectionState mqttReconnect = {0, INITIAL_BACKOFF_MS, 0};
+
+WiFiClient wifiClient;
+PubSubClient mqttClient(wifiClient);
+
+// ═══════════════════════════════════════════════════════════
+// DECLARAÇÕES ANTECIPADAS
+// ═══════════════════════════════════════════════════════════
+
+void logSerial(const String& message);
+void updateBackoff(ReconnectionState* state);
+void resetBackoff(ReconnectionState* state);
+void handleWiFiConnecting();
+void updateOnboardLED();
+void handleMQTTConnecting();
+void mqttCallback(char* topic, byte* payload, unsigned int length);
+String createDiscoveryMessage();
+void logMQTT(const String& message);
+void processButton(ButtonState* btn);
+void publishButtonEvent(const String& color);
+bool processLEDCommand(const String& payload);
+void updateLEDState(LEDState* led, bool state);
+bool checkTimer(Timer* timer);
+void handleOperational();
+void initializeGPIOs();
+void initializeWatchdog();
+void obtainMACAddress();
+
+// ═══════════════════════════════════════════════════════════
+// UTILITÁRIOS
+// ═══════════════════════════════════════════════════════════
+
+void logSerial(const String& message) {
+    Serial.print("[");
+    Serial.print(millis());
+    Serial.print("] ");
+    Serial.println(message);
 }
 
-static SystemState g_state=SystemState::BOOT;
-static unsigned long g_meshInitAt=0;
-String g_mac, g_name;
-static bool g_isRoot=false;
-static std::set<uint32_t> g_fullNodes;
-static uint8_t g_directChildren=0;
-static bool g_announcedFull=false;
-
-static ButtonState g_btnGreen ={BTN_VERDE,   HIGH,0,false};
-static ButtonState g_btnYellow={BTN_AMARELO, HIGH,0,false};
-static ButtonState g_btnRed   ={BTN_VERMELHO,HIGH,0,false};
-static ButtonState g_btnPause ={BTN_PAUSE,   HIGH,0,false};
-
-static LEDState g_ledRed    ={LED_VERMELHO_PIN,false};
-static LEDState g_ledYellow ={LED_AMARELO_PIN, false};
-static LEDState g_ledGreen  ={LED_VERDE_PIN,   false};
-static LEDState g_ledOnboard={LED_ONBOARD_PIN, false};
-
-static unsigned long g_lastHeartbeat=0,g_lastHealth=0,g_lastStatusLog=0,g_lastBlink=0;
-static ReconnectState g_mqttRecon={0,INITIAL_BACKOFF_MS,0};
-static painlessMesh g_mesh;
-static WiFiClient g_wifiClient;
-PubSubClient g_mqtt(g_wifiClient);
-
-static void logSerial(const String& msg){ Serial.printf("[%8lu] %s\n",millis(),msg.c_str()); }
-
-static void setLED(LEDState& led,bool on){
-    if(led.on==on)return; led.on=on; digitalWrite(led.pin,on?HIGH:LOW);
+void updateBackoff(ReconnectionState* state) {
+    state->attemptCount++;
+    state->backoffDelay = min(state->backoffDelay * 2, (unsigned long)MAX_BACKOFF_MS);
 }
 
-static bool hasWiFiCredentials(){
-    nvsInit();
-    return nvsKeyExists("wifi_ssid") && nvsKeyExists("wifi_password");
+void resetBackoff(ReconnectionState* state) {
+    state->attemptCount = 0;
+    state->backoffDelay = INITIAL_BACKOFF_MS;
 }
 
-static void loadWiFiCredentials(char* ssid,size_t sl,char* pass,size_t pl){
-    if(!nvsLoadString("wifi_ssid",ssid,sl)){strncpy(ssid,WIFI_SSID,sl-1);ssid[sl-1]=0;}
-    if(!nvsLoadString("wifi_password",pass,pl)){strncpy(pass,WIFI_PASSWORD,pl-1);pass[pl-1]=0;}
+bool checkTimer(Timer* timer) {
+    unsigned long now = millis();
+    if (now - timer->lastTrigger >= timer->interval) {
+        timer->lastTrigger = now;
+        return true;
+    }
+    return false;
 }
 
-static void initGPIOs(){
-    pinMode(BTN_VERDE,INPUT_PULLUP); pinMode(BTN_AMARELO,INPUT_PULLUP);
-    pinMode(BTN_VERMELHO,INPUT_PULLUP); pinMode(BTN_PAUSE,INPUT_PULLUP);
-    const uint8_t leds[]={LED_VERMELHO_PIN,LED_AMARELO_PIN,LED_VERDE_PIN,LED_ONBOARD_PIN};
-    for(uint8_t p:leds){pinMode(p,OUTPUT);digitalWrite(p,LOW);}
-    logSerial("GPIO: inicializados");
+void updateLEDState(LEDState* led, bool state) {
+    led->state = state;
+    digitalWrite(led->pin, state ? HIGH : LOW);
 }
 
-static void initWatchdog(){
-    esp_task_wdt_init(WATCHDOG_TIMEOUT_S,true); esp_task_wdt_add(NULL);
-    if(esp_reset_reason()==ESP_RST_TASK_WDT) logSerial("WDT: reset por watchdog");
-    logSerial("WDT: inicializado ("+String(WATCHDOG_TIMEOUT_S)+"s)");
-}
+// ═══════════════════════════════════════════════════════════
+// LED ONBOARD
+// ═══════════════════════════════════════════════════════════
 
-static void obtainMAC(){
-    g_mac=WiFi.macAddress();
-    String s=g_mac.substring(g_mac.length()-5); s.replace(":","");
-    g_name="ESP32-Andon-"+s;
-    logSerial("MAC: "+g_mac+"  Nome: "+g_name);
-}
+void updateOnboardLED() {
+    unsigned long now = millis();
 
-static void announceFull(bool full){
-    StaticJsonDocument<64> doc;
-    doc["type"]="capacity"; doc["full"]=full; doc["id"]=String(g_mesh.getNodeId());
-    String msg; serializeJson(doc,msg); g_mesh.sendBroadcast(msg);
-}
-
-static void updateCapacity(){
-    auto nb=g_mesh.getNodeList(true);
-    g_directChildren=(uint8_t)nb.size();
-    bool isFull=(g_directChildren>=MESH_MAX_CHILDREN);
-    if(isFull&&!g_announcedFull){g_announcedFull=true;announceFull(true);}
-    else if(!isFull&&g_announcedFull){g_announcedFull=false;announceFull(false);}
-}
-
-static void onNewConnection(uint32_t nodeId){
-    logSerial("MESH: novo no "+String(nodeId)); updateCapacity();
-}
-
-static void onDroppedConnection(uint32_t nodeId){
-    logSerial("MESH: no desconectado "+String(nodeId));
-    g_fullNodes.erase(nodeId); updateCapacity();
-}
-
-static void onChangedConnections(){
-    bool wasRoot=g_isRoot; g_isRoot=g_mesh.isRoot(); updateCapacity();
-    if(g_isRoot==wasRoot)return;
-    if(g_isRoot){
-        logSerial("MESH: este no tornou-se RAIZ");
-        if(g_state==SystemState::OPERATIONAL||g_state==SystemState::MESH_INIT){
-            g_state=SystemState::MQTT_CONNECTING; g_mqttRecon.reset();
+    if (currentState == WIFI_CONNECTING) {
+        if (now - ledBlinkTimer.lastTrigger >= WIFI_BLINK_MS) {
+            onboardLED.state = !onboardLED.state;
+            digitalWrite(LED_ONBOARD_PIN, onboardLED.state ? HIGH : LOW);
+            ledBlinkTimer.lastTrigger = now;
         }
-    } else {
-        logSerial("MESH: este no deixou de ser raiz");
-        if(g_mqtt.connected())g_mqtt.disconnect();
-        if(g_state==SystemState::MQTT_CONNECTING)g_state=SystemState::OPERATIONAL;
+    } else if (currentState == MQTT_CONNECTING) {
+        if (now - ledBlinkTimer.lastTrigger >= MQTT_BLINK_MS) {
+            onboardLED.state = !onboardLED.state;
+            digitalWrite(LED_ONBOARD_PIN, onboardLED.state ? HIGH : LOW);
+            ledBlinkTimer.lastTrigger = now;
+        }
+    } else if (currentState == OPERATIONAL) {
+        if (!onboardLED.state) {
+            onboardLED.state = true;
+            digitalWrite(LED_ONBOARD_PIN, HIGH);
+        }
     }
 }
 
-static void onNodeTimeAdjusted(int32_t){}
+// ═══════════════════════════════════════════════════════════
+// WIFI
+// ═══════════════════════════════════════════════════════════
 
-static void onMeshMessage(uint32_t from,String& msg){
-    StaticJsonDocument<128> doc;
-    if(deserializeJson(doc,msg)!=DeserializationError::Ok)return;
-    const char* type=doc["type"]|"";
-    if(strcmp(type,"capacity")==0){
-        uint32_t nodeId=(uint32_t)doc["id"].as<String>().toInt();
-        bool full=doc["full"]|false;
-        if(full)g_fullNodes.insert(nodeId); else g_fullNodes.erase(nodeId);
+void handleWiFiConnecting() {
+    unsigned long now = millis();
+
+    if (WiFi.status() == WL_CONNECTED) {
+        logSerial("WIFI: Conectado! IP: " + WiFi.localIP().toString());
+        currentState = MQTT_CONNECTING;
+        resetBackoff(&wifiReconnect);
+        logSerial("WIFI: -> MQTT_CONNECTING");
         return;
     }
-    if(strcmp(type,"button")==0&&g_isRoot&&g_mqtt.connected()){
-        const char* mac=doc["mac"]|""; const char* color=doc["color"]|"";
-        if(strlen(mac)>0&&strlen(color)>0){
-            String topic="andon/button/"+String(mac)+"/"+color;
-            g_mqtt.publish(topic.c_str(),"PRESSED",false);
+
+    if (now - wifiReconnect.lastAttempt < wifiReconnect.backoffDelay) return;
+
+    if (wifiReconnect.attemptCount == 0) {
+        logSerial("WIFI: Conectando a " + String(WIFI_SSID) + "...");
+        WiFi.mode(WIFI_STA);
+        WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+    }
+
+    wifiReconnect.lastAttempt = now;
+
+    if (wifiReconnect.attemptCount > 0 &&
+        (now - wifiReconnect.lastAttempt) >= WIFI_TIMEOUT_MS) {
+        logSerial("WIFI: Timeout, tentando novamente em " +
+                  String(wifiReconnect.backoffDelay / 1000) + "s");
+        updateBackoff(&wifiReconnect);
+        WiFi.disconnect();
+    }
+}
+
+// ═══════════════════════════════════════════════════════════
+// MQTT
+// ═══════════════════════════════════════════════════════════
+
+String createDiscoveryMessage() {
+    StaticJsonDocument<256> doc;
+    doc["mac_address"]      = macAddress;
+    doc["device_name"]      = deviceName;
+    doc["firmware_version"] = FIRMWARE_VERSION;
+    String output;
+    serializeJson(doc, output);
+    return output;
+}
+
+void logMQTT(const String& message) {
+    logSerial(message);
+    if (mqttClient.connected()) {
+        String topic = "andon/logs/" + macAddress;
+        mqttClient.publish(topic.c_str(), message.c_str(), false);
+    }
+}
+
+void mqttCallback(char* topic, byte* payload, unsigned int length) {
+    String payloadStr;
+    for (unsigned int i = 0; i < length; i++) payloadStr += (char)payload[i];
+
+    logSerial("MQTT: msg em " + String(topic));
+
+    String ledTopic = "andon/led/" + macAddress + "/command";
+    if (String(topic) == ledTopic && currentState == OPERATIONAL) {
+        processLEDCommand(payloadStr);
+    }
+
+    // Estado Andon recebido do backend
+    String stateTopic = "andon/state/" + macAddress;
+    if (String(topic) == stateTopic) {
+        payloadStr.trim();
+        payloadStr.toUpperCase();
+        logSerial("ANDON STATE: " + payloadStr);
+    }
+}
+
+void handleMQTTConnecting() {
+    unsigned long now = millis();
+
+    if (WiFi.status() != WL_CONNECTED) {
+        logSerial("MQTT: WiFi perdido -> WIFI_CONNECTING");
+        currentState = WIFI_CONNECTING;
+        return;
+    }
+
+    if (mqttClient.connected()) {
+        // Publicar status online com retain
+        String statusTopic = "andon/status/" + macAddress;
+        mqttClient.publish(statusTopic.c_str(), "online", true);
+        logSerial("MQTT: Status 'online' publicado");
+
+        // Discovery
+        String disc = createDiscoveryMessage();
+        if (!disc.isEmpty()) {
+            mqttClient.publish("andon/discovery", disc.c_str(), false);
+            logSerial("MQTT: Discovery publicado: " + disc);
+        }
+
+        // Subscrever comandos LED e estado Andon
+        String ledTopic   = "andon/led/"   + macAddress + "/command";
+        String stateTopic = "andon/state/" + macAddress;
+        mqttClient.subscribe(ledTopic.c_str(),   1);
+        mqttClient.subscribe(stateTopic.c_str(), 1);
+        logSerial("MQTT: Subscrito em " + ledTopic);
+
+        // Solicitar estado atual ao backend
+        String reqTopic = "andon/state/request/" + macAddress;
+        mqttClient.publish(reqTopic.c_str(), "REQUEST", false);
+
+        currentState = OPERATIONAL;
+        resetBackoff(&mqttReconnect);
+        logSerial("MQTT: -> OPERATIONAL");
+        return;
+    }
+
+    if (now - mqttReconnect.lastAttempt < mqttReconnect.backoffDelay) return;
+
+    if (mqttReconnect.attemptCount >= MQTT_MAX_RETRIES) {
+        logSerial("MQTT: 10 tentativas falhadas, reiniciando...");
+        delay(1000);
+        ESP.restart();
+    }
+
+    if (mqttReconnect.attemptCount == 0)
+        logSerial("MQTT: Conectando ao broker " + String(MQTT_BROKER) +
+                  ":" + String(MQTT_PORT) + "...");
+
+    String lwtTopic = "andon/status/" + macAddress;
+    bool connected = mqttClient.connect(
+        deviceName.c_str(),
+        lwtTopic.c_str(), 1, true, "offline"
+    );
+
+    mqttReconnect.lastAttempt = now;
+
+    if (!connected) {
+        logSerial("MQTT: Falha rc=" + String(mqttClient.state()) +
+                  ", retry em " + String(mqttReconnect.backoffDelay / 1000) + "s");
+        updateBackoff(&mqttReconnect);
+    }
+}
+
+// ═══════════════════════════════════════════════════════════
+// BOTÕES E LEDS
+// ═══════════════════════════════════════════════════════════
+
+void processButton(ButtonState* btn) {
+    unsigned long now = millis();
+    bool reading = digitalRead(btn->pin);
+
+    if (reading != btn->lastState) btn->lastDebounceTime = now;
+
+    if ((now - btn->lastDebounceTime) > DEBOUNCE_MS) {
+        if (reading != btn->currentState) {
+            btn->currentState = reading;
+            if (btn->currentState == LOW) btn->pressed = true;
         }
     }
+    btn->lastState = reading;
 }
 
-static void initMesh(){
-    char ssid[33],pass[65];
-    loadWiFiCredentials(ssid,sizeof(ssid),pass,sizeof(pass));
-    logSerial("MESH: SSID="+String(ssid));
-    g_mesh.setDebugMsgTypes(ERROR|STARTUP);
-    g_mesh.init(MESH_ID,MESH_PASSWORD,MESH_PORT,WIFI_AP_STA,MESH_CHANNEL);
-    g_mesh.stationManual(ssid,pass);
-    g_mesh.setRoot(false); g_mesh.setContainsRoot(true);
-    g_mesh.onNewConnection(&onNewConnection);
-    g_mesh.onDroppedConnection(&onDroppedConnection);
-    g_mesh.onChangedConnections(&onChangedConnections);
-    g_mesh.onNodeTimeAdjusted(&onNodeTimeAdjusted);
-    g_mesh.onReceive(&onMeshMessage);
-    logSerial("MESH: ID="+String(MESH_ID)+" canal="+String(MESH_CHANNEL));
-}
-
-static void processButton(ButtonState& btn){
-    bool reading=digitalRead(btn.pin); unsigned long now=millis();
-    if(reading==btn.lastReading)return;
-    if((now-btn.lastChangeMs)<DEBOUNCE_MS)return;
-    btn.lastReading=reading; btn.lastChangeMs=now;
-    if(reading==LOW){btn.pressed=true;logSerial("BTN: GPIO "+String(btn.pin));}
-}
-
-static void publishButton(const char* color){
-    if(g_isRoot&&g_mqtt.connected()){
-        String topic="andon/button/"+g_mac+"/"+color;
-        g_mqtt.publish(topic.c_str(),"PRESSED",false); return;
+void publishButtonEvent(const String& color) {
+    String topic = "andon/button/" + macAddress + "/" + color;
+    if (mqttClient.publish(topic.c_str(), "PRESSED", false)) {
+        logSerial("BUTTON: " + color + " -> " + topic);
+    } else {
+        logSerial("ERRO: Falha ao publicar botão " + color);
     }
-    StaticJsonDocument<128> doc;
-    doc["type"]="button"; doc["mac"]=g_mac; doc["color"]=color;
-    String msg; serializeJson(doc,msg); g_mesh.sendBroadcast(msg);
 }
 
-static bool processLEDCommand(const String& payload){
+bool processLEDCommand(const String& payload) {
     StaticJsonDocument<128> doc;
-    if(deserializeJson(doc,payload)!=DeserializationError::Ok)return false;
-    setLED(g_ledRed,doc["red"].as<bool>());
-    setLED(g_ledYellow,doc["yellow"].as<bool>());
-    setLED(g_ledGreen,doc["green"].as<bool>());
+    if (deserializeJson(doc, payload) != DeserializationError::Ok) {
+        logMQTT("ERRO: JSON inválido no comando LED");
+        return false;
+    }
+    if (!doc.containsKey("red") || !doc.containsKey("yellow") || !doc.containsKey("green")) {
+        logMQTT("ERRO: Comando LED sem campos obrigatórios");
+        return false;
+    }
+    updateLEDState(&redLED,    doc["red"].as<bool>());
+    updateLEDState(&yellowLED, doc["yellow"].as<bool>());
+    updateLEDState(&greenLED,  doc["green"].as<bool>());
+    logSerial("LED: red=" + String((bool)doc["red"]) +
+              " yellow=" + String((bool)doc["yellow"]) +
+              " green="  + String((bool)doc["green"]));
     return true;
 }
 
-static void mqttCallback(char* topic,byte* payload,unsigned int length){
-    String t(topic),p; p.reserve(length);
-    for(unsigned int i=0;i<length;i++)p+=(char)payload[i];
-    if(t=="andon/ota/trigger"){logSerial("OTA: trigger recebido");handleOTATrigger(p.c_str());return;}
-    if(t=="andon/led/"+g_mac+"/command"){processLEDCommand(p);return;}
-    if(t=="andon/state/"+g_mac){p.trim();p.toUpperCase();logSerial("ANDON STATE: "+p);}
-}
+// ═══════════════════════════════════════════════════════════
+// ESTADO OPERATIONAL
+// ═══════════════════════════════════════════════════════════
 
-static void onMQTTConnected(){
-    logSerial("MQTT: conectado");
-    g_mqtt.publish(("andon/status/"+g_mac).c_str(),"online",true);
-    char saved_name[33]=""; char saved_loc[65]="";
-    nvsLoadString("device_name",saved_name,sizeof(saved_name));
-    nvsLoadString("location",saved_loc,sizeof(saved_loc));
-    String display_name=(strlen(saved_name)>0)?String(saved_name):g_name;
-    StaticJsonDocument<320> doc;
-    doc["mac_address"]=g_mac; doc["device_name"]=display_name;
-    doc["location"]=String(saved_loc); doc["firmware_version"]=FIRMWARE_VERSION;
-    doc["mesh_node_id"]=String(g_mesh.getNodeId());
-    doc["mesh_node_count"]=(int)(g_mesh.getNodeList().size()+1);
-    doc["mesh_children"]=g_directChildren; doc["is_root"]=g_isRoot;
-    String disc; serializeJson(doc,disc);
-    g_mqtt.publish("andon/discovery",disc.c_str(),false);
-    logSerial("MQTT: discovery -> "+disc);
-    g_mqtt.subscribe(("andon/led/"+g_mac+"/command").c_str(),1);
-    g_mqtt.subscribe(("andon/state/"+g_mac).c_str(),1);
-    g_mqtt.subscribe("andon/ota/trigger",1);
-    g_mqtt.publish(("andon/state/request/"+g_mac).c_str(),"REQUEST",false);
-    g_state=SystemState::OPERATIONAL; g_mqttRecon.reset();
-    logSerial("MQTT: -> OPERATIONAL");
-}
-
-static void handleMQTTConnecting(){
-    if(!g_isRoot)return;
-    if(g_mqtt.connected()){onMQTTConnected();return;}
-    if(!g_mqttRecon.ready())return;
-    if(g_mqttRecon.attempts>=MQTT_MAX_RETRIES){logSerial("MQTT: max tentativas - reiniciando");delay(500);ESP.restart();}
-    if(g_mqttRecon.attempts==0)logSerial("MQTT: conectando a "+String(MQTT_BROKER)+":"+String(MQTT_PORT));
-    String lwt="andon/status/"+g_mac;
-    bool ok=g_mqtt.connect(g_name.c_str(),lwt.c_str(),1,true,"offline");
-    g_mqttRecon.lastAttemptMs=millis();
-    if(!ok){logSerial("MQTT: falha rc="+String(g_mqtt.state())+" retry "+String(g_mqttRecon.backoffMs/1000)+"s");g_mqttRecon.backoff();}
-}
-
-static void handleOperational(){
-    if(g_isRoot&&!g_mqtt.connected()){
-        logSerial("MQTT: conexao perdida - reconectando");
-        g_state=SystemState::MQTT_CONNECTING; g_mqttRecon.reset(); return;
+void handleOperational() {
+    if (WiFi.status() != WL_CONNECTED) {
+        logSerial("OPERATIONAL: WiFi perdido -> WIFI_CONNECTING");
+        currentState = WIFI_CONNECTING;
+        return;
     }
-    processButton(g_btnGreen); processButton(g_btnYellow);
-    processButton(g_btnRed);   processButton(g_btnPause);
-    if(g_btnGreen.pressed) {publishButton("green"); g_btnGreen.pressed=false;}
-    if(g_btnYellow.pressed){publishButton("yellow");g_btnYellow.pressed=false;}
-    if(g_btnRed.pressed)   {publishButton("red");   g_btnRed.pressed=false;}
-    if(g_btnPause.pressed) {publishButton("pause"); g_btnPause.pressed=false;}
-    if(g_isRoot&&g_mqtt.connected()&&timerExpired(g_lastHeartbeat,HEARTBEAT_INTERVAL_MS)){
-        StaticJsonDocument<128> hb;
-        hb["heap"]=ESP.getFreeHeap(); hb["rssi"]=WiFi.RSSI();
-        hb["mesh_nodes"]=(int)(g_mesh.getNodeList().size()+1);
-        hb["mesh_children"]=g_directChildren; hb["is_root"]=g_isRoot;
-        String s; serializeJson(hb,s);
-        g_mqtt.publish(("andon/status/"+g_mac).c_str(),s.c_str(),false);
+    if (!mqttClient.connected()) {
+        logSerial("OPERATIONAL: MQTT perdido -> MQTT_CONNECTING");
+        currentState = MQTT_CONNECTING;
+        return;
+    }
+
+    processButton(&greenButton);
+    processButton(&yellowButton);
+    processButton(&redButton);
+    processButton(&pauseButton);
+
+    if (greenButton.pressed)  { publishButtonEvent("green");  greenButton.pressed  = false; }
+    if (yellowButton.pressed) { publishButtonEvent("yellow"); yellowButton.pressed = false; }
+    if (redButton.pressed)    { publishButtonEvent("red");    redButton.pressed    = false; }
+    if (pauseButton.pressed)  { publishButtonEvent("pause");  pauseButton.pressed  = false; }
+
+    // Heartbeat a cada 5 minutos
+    if (checkTimer(&heartbeatTimer)) {
+        String statusTopic = "andon/status/" + macAddress;
+        mqttClient.publish(statusTopic.c_str(), "heartbeat", false);
+        logSerial("HEARTBEAT: heap=" + String(ESP.getFreeHeap()) + " bytes");
+    }
+
+    // Monitor de heap a cada 30s
+    if (checkTimer(&heapMonitorTimer)) {
+        uint32_t heap = ESP.getFreeHeap();
+        if (heap < HEAP_WARN_THRESHOLD)
+            logMQTT("AVISO: Heap baixo - " + String(heap) + " bytes");
     }
 }
 
-static void updateOnboardLED(){
-    switch(g_state){
-        case SystemState::UNCONFIGURED:
-            if(timerExpired(g_lastBlink,1000))setLED(g_ledOnboard,!g_ledOnboard.on); break;
-        case SystemState::MESH_INIT:
-            if(timerExpired(g_lastBlink,WIFI_BLINK_MS/2))setLED(g_ledOnboard,!g_ledOnboard.on); break;
-        case SystemState::MQTT_CONNECTING:
-            if(g_isRoot&&timerExpired(g_lastBlink,MQTT_BLINK_MS))setLED(g_ledOnboard,!g_ledOnboard.on);
-            else if(!g_isRoot)setLED(g_ledOnboard,true); break;
-        case SystemState::OPERATIONAL: setLED(g_ledOnboard,true); break;
-        default: break;
-    }
+// ═══════════════════════════════════════════════════════════
+// INICIALIZAÇÃO
+// ═══════════════════════════════════════════════════════════
+
+void initializeGPIOs() {
+    pinMode(BTN_VERDE,    INPUT_PULLUP);
+    pinMode(BTN_AMARELO,  INPUT_PULLUP);
+    pinMode(BTN_VERMELHO, INPUT_PULLUP);
+    pinMode(BTN_PAUSE,    INPUT_PULLUP);
+
+    const uint8_t leds[] = {LED_VERMELHO_PIN, LED_AMARELO_PIN, LED_VERDE_PIN, LED_ONBOARD_PIN};
+    for (uint8_t p : leds) { pinMode(p, OUTPUT); digitalWrite(p, LOW); }
+
+    logSerial("GPIO: inicializados");
 }
 
-void setup(){
+void initializeWatchdog() {
+    esp_task_wdt_init(WATCHDOG_TIMEOUT_S, true);
+    esp_task_wdt_add(NULL);
+    if (esp_reset_reason() == ESP_RST_TASK_WDT)
+        logSerial("AVISO: Reset por watchdog detectado");
+    logSerial("WDT: inicializado (" + String(WATCHDOG_TIMEOUT_S) + "s)");
+}
+
+void obtainMACAddress() {
+    macAddress = WiFi.macAddress();
+    String suffix = macAddress.substring(macAddress.length() - 5);
+    suffix.replace(":", "");
+    deviceName = "ESP32-Andon-" + suffix;
+    logSerial("MAC: " + macAddress + "  Nome: " + deviceName);
+}
+
+// ═══════════════════════════════════════════════════════════
+// SETUP / LOOP
+// ═══════════════════════════════════════════════════════════
+
+void setup() {
     Serial.begin(115200);
-    for(uint32_t t=millis();!Serial&&(millis()-t)<3000;){}
-    Serial.println("\n=================================================");
-    Serial.println("  Firmware ESP32 Andon v2.2.0 - ID Visual AX");
-    Serial.println("  + OTA Management + Setup Portal");
-    Serial.println("=================================================\n");
-    pinMode(LED_ONBOARD_PIN,OUTPUT);
-    for(int i=0;i<3;i++){digitalWrite(LED_ONBOARD_PIN,HIGH);delay(150);digitalWrite(LED_ONBOARD_PIN,LOW);delay(150);}
-    initGPIOs();
-    initOTA();
-    initWatchdog();
-    obtainMAC();
+    while (!Serial && millis() < 3000) {}
 
-    if(!hasWiFiCredentials()){
-        g_state=SystemState::UNCONFIGURED;
-        logSerial("BOOT: sem credenciais WiFi -> UNCONFIGURED");
-        String mac_suffix=g_mac.substring(g_mac.length()-5);
-        mac_suffix.replace(":","");
-        setupServerInit(mac_suffix.c_str());
-        logSerial("BOOT: conecte ao WiFi 'ESP32-Setup-"+mac_suffix+"' e acesse http://192.168.4.1");
-    } else {
-        logSerial("BOOT: credenciais WiFi encontradas -> iniciando mesh");
-        initMesh();
-        g_mqtt.setServer(MQTT_BROKER,MQTT_PORT);
-        g_mqtt.setBufferSize(MQTT_BUFFER_SIZE);
-        g_mqtt.setKeepAlive(MQTT_KEEPALIVE_S);
-        g_mqtt.setCallback(mqttCallback);
-        logSerial("MQTT: cliente configurado para "+String(MQTT_BROKER));
-        g_state=SystemState::MESH_INIT;
-        logSerial("BOOT: -> MESH_INIT");
+    Serial.println();
+    Serial.println("═══════════════════════════════════════════════════════");
+    Serial.println("  Firmware ESP32 Andon v1.0.0 - ID Visual AX");
+    Serial.println("  WiFi Direto + MQTT");
+    Serial.println("═══════════════════════════════════════════════════════");
+    Serial.println();
+
+    // Piscar 3x no boot
+    for (int i = 0; i < 3; i++) {
+        digitalWrite(LED_ONBOARD_PIN, HIGH); delay(200);
+        digitalWrite(LED_ONBOARD_PIN, LOW);  delay(200);
     }
+
+    initializeGPIOs();
+    initializeWatchdog();
+    obtainMACAddress();
+
+    mqttClient.setServer(MQTT_BROKER, MQTT_PORT);
+    mqttClient.setBufferSize(MQTT_BUFFER_SIZE);
+    mqttClient.setCallback(mqttCallback);
+    logSerial("MQTT: cliente configurado para " + String(MQTT_BROKER));
+
+    currentState = WIFI_CONNECTING;
+    logSerial("BOOT: -> WIFI_CONNECTING");
 }
 
-void loop(){
+void loop() {
     esp_task_wdt_reset();
+
+    if (mqttClient.connected()) mqttClient.loop();
+
     updateOnboardLED();
-    switch(g_state){
-        case SystemState::BOOT: break;
-        case SystemState::UNCONFIGURED:
-            setupServerLoop(); break;
-        case SystemState::MESH_INIT:
-            g_mesh.update();
-            if(g_isRoot){g_state=SystemState::MQTT_CONNECTING;logSerial("MESH: raiz -> MQTT_CONNECTING");}
-            else if(g_mesh.getNodeList().size()>0){g_state=SystemState::OPERATIONAL;logSerial("MESH: nao-raiz -> OPERATIONAL");}
-            else{
-                if(g_meshInitAt==0)g_meshInitAt=millis();
-                if((millis()-g_meshInitAt)>15000UL){
-                    g_isRoot=true; g_state=SystemState::MQTT_CONNECTING; g_mqttRecon.reset();
-                    logSerial("MESH: timeout 15s -> MQTT_CONNECTING");
-                }
-            }
-            break;
-        case SystemState::MQTT_CONNECTING:
-            g_mesh.update();
-            if(g_isRoot&&g_mqtt.connected())g_mqtt.loop();
-            handleMQTTConnecting(); break;
-        case SystemState::OPERATIONAL:
-            g_mesh.update();
-            if(g_isRoot&&g_mqtt.connected())g_mqtt.loop();
-            handleOperational(); break;
+
+    switch (currentState) {
+        case BOOT:            break;
+        case WIFI_CONNECTING: handleWiFiConnecting(); break;
+        case MQTT_CONNECTING: handleMQTTConnecting(); break;
+        case OPERATIONAL:     handleOperational();    break;
     }
 }
