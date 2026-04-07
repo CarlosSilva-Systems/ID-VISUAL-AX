@@ -1,23 +1,22 @@
 /**
  * Firmware ESP32 Andon - Sistema ID Visual AX
- * Versão: 2.3.0
+ * Versão: 2.4.0
  * Data: 2026-04-07
  *
  * Arquitetura: WiFi Direto com fallback para ESP-MESH
  *
  * Lógica de conexão:
- *   1. Escaneia a rede AX-CORPORATIVO
- *   2. Se RSSI >= WIFI_RSSI_MIN_DBM (-80dBm ≈ 30% qualidade) → conecta direto
- *      e vira nó RAIZ (faz ponte WiFi↔MQTT para a mesh)
- *   3. Se rede não encontrada ou sinal fraco → entra como NÓ FOLHA na mesh,
- *      roteia eventos de botão via broadcast para o nó raiz
- *   4. Nó raiz monitora RSSI continuamente — se cair abaixo do limiar,
- *      anuncia degradação e reinicia para renegociar papel
- *   5. Máximo MESH_MAX_CHILDREN (4) filhos diretos por nó para estabilidade
+ *   1. Tenta WiFi.begin() diretamente — sem scan prévio (scan conflita com mesh)
+ *   2. Se conectar em WIFI_TIMEOUT_MS → vira RAIZ (inicia mesh + MQTT)
+ *   3. Se timeout → MESH_NODE (folha); mesh inicia sem WiFi
+ *   4. Em OPERATIONAL: WiFi cai → aguarda WIFI_LOSS_FALLBACK_MS (60s) antes
+ *      de rebaixar para folha — absorve quedas rápidas (no-break)
+ *   5. Em MESH_NODE: tenta WiFi.begin() periodicamente; se conectar → vira raiz
+ *   6. Máximo MESH_MAX_CHILDREN (4) filhos diretos por nó
  *
  * Máquina de estados:
- *   BOOT → WIFI_SCAN → WIFI_CONNECTING → MQTT_CONNECTING → OPERATIONAL (raiz)
- *                    ↘ MESH_NODE (folha, sem WiFi direto)
+ *   BOOT → WIFI_CONNECTING → MQTT_CONNECTING → OPERATIONAL (raiz)
+ *                          ↘ MESH_NODE (folha) → WIFI_CONNECTING (retry periódico)
  */
 
 #include <Arduino.h>
@@ -36,18 +35,16 @@
 
 enum SystemState {
     BOOT,
-    WIFI_SCAN,          // Escaneia sinal antes de decidir WiFi ou Mesh
-    WIFI_CONNECTING,    // Conectando ao AP diretamente (sinal bom)
+    WIFI_CONNECTING,    // Tentando conectar ao AP (direto, sem scan)
     MQTT_CONNECTING,    // Conectando ao broker (nó raiz)
     OPERATIONAL,        // Funcionando — raiz com MQTT ativo
-    MESH_NODE           // Nó folha — sem WiFi direto, roteia via mesh
+    MESH_NODE           // Nó folha — sem WiFi, roteia via mesh
 };
 
 struct ButtonState {
     uint8_t pin;
-    bool lastState;
-    bool currentState;
-    unsigned long lastDebounceTime;
+    bool lastReading;
+    unsigned long lastChangeTime;
     bool pressed;
 };
 
@@ -75,31 +72,37 @@ SystemState currentState = BOOT;
 String macAddress;
 String deviceName;
 
+// Estado Andon recebido do backend
+String g_andonStatus = "UNKNOWN";  // GREEN, YELLOW, RED, GRAY, UNKNOWN
+unsigned long g_lastAndonUpdate = 0;
+
 // Papel na mesh
-bool g_isRoot         = false;   // true = nó raiz (tem WiFi direto)
-bool g_meshStarted    = false;   // mesh já foi inicializada
-uint8_t g_directChildren = 0;   // filhos diretos atuais
-bool g_announcedFull  = false;   // já anunciou capacidade cheia
-std::set<uint32_t> g_fullNodes; // nós que anunciaram estar cheios
+bool g_isRoot            = false;
+bool g_meshStarted       = false;
+uint8_t g_directChildren = 0;
+bool g_announcedFull     = false;
+std::set<uint32_t> g_fullNodes;
 
-// Scan WiFi
-int8_t  g_scannedRSSI = 0;       // RSSI encontrado no scan
-bool    g_scanDone    = false;   // scan concluído
+// Fallback WiFi→Mesh: marca quando o WiFi caiu em OPERATIONAL
+unsigned long g_wifiLostAt = 0;   // 0 = WiFi está ok
 
-ButtonState greenButton  = {BTN_VERDE,    HIGH, HIGH, 0, false};
-ButtonState yellowButton = {BTN_AMARELO,  HIGH, HIGH, 0, false};
-ButtonState redButton    = {BTN_VERMELHO, HIGH, HIGH, 0, false};
-ButtonState pauseButton  = {BTN_PAUSE,    HIGH, HIGH, 0, false};
+// Retry WiFi em MESH_NODE: tenta reconectar periodicamente
+Timer wifiRetryTimer = {WIFI_RETRY_INTERVAL_MS, 0};
+
+ButtonState greenButton  = {BTN_VERDE,    HIGH, 0, false};
+ButtonState yellowButton = {BTN_AMARELO,  HIGH, 0, false};
+ButtonState redButton    = {BTN_VERMELHO, HIGH, 0, false};
+ButtonState pauseButton  = {BTN_PAUSE,    HIGH, 0, false};
 
 LEDState redLED     = {LED_VERMELHO_PIN, false};
 LEDState yellowLED  = {LED_AMARELO_PIN,  false};
 LEDState greenLED   = {LED_VERDE_PIN,    false};
 LEDState onboardLED = {LED_ONBOARD_PIN,  false};
 
-Timer heartbeatTimer    = {HEARTBEAT_INTERVAL_MS,    0};
-Timer heapMonitorTimer  = {HEAP_MONITOR_INTERVAL_MS, 0};
-Timer ledBlinkTimer     = {WIFI_BLINK_MS,            0};
-Timer rssiMonitorTimer  = {RSSI_MONITOR_INTERVAL_MS, 0};  // monitora sinal do raiz
+Timer heartbeatTimer   = {HEARTBEAT_INTERVAL_MS,    0};
+Timer heapMonitorTimer = {HEAP_MONITOR_INTERVAL_MS, 0};
+Timer ledBlinkTimer    = {WIFI_BLINK_MS,            0};
+Timer disconnectBlinkTimer = {60000UL, 0};  // 1 minuto para piscar vermelho quando desconectado
 
 ReconnectionState wifiReconnect = {0, INITIAL_BACKOFF_MS, 0};
 ReconnectionState mqttReconnect = {0, INITIAL_BACKOFF_MS, 0};
@@ -115,26 +118,32 @@ painlessMesh g_mesh;
 void logSerial(const String& message);
 void updateBackoff(ReconnectionState* state);
 void resetBackoff(ReconnectionState* state);
-void handleWiFiScan();
+bool checkTimer(Timer* timer);
+void updateLEDState(LEDState* led, bool state);
+void updateAndonLEDs();
+void playBootAnimation();
+void playWiFiConnectedAnimation();
+void playMeshConnectedAnimation();
+void playDisconnectedBlink();
 void handleWiFiConnecting();
-void updateOnboardLED();
 void handleMQTTConnecting();
+void handleOperational();
+void handleMeshNode();
+void updateOnboardLED();
 void mqttCallback(char* topic, byte* payload, unsigned int length);
 String createDiscoveryMessage();
 void logMQTT(const String& message);
 void processButton(ButtonState* btn);
 void publishButtonEvent(const String& color);
 bool processLEDCommand(const String& payload);
-void updateLEDState(LEDState* led, bool state);
-bool checkTimer(Timer* timer);
-void handleOperational();
-void handleMeshNode();
 void initializeGPIOs();
 void initializeWatchdog();
 void obtainMACAddress();
 void startMesh(bool asRoot);
+void stopMeshAndRejoinWiFi();
 void announceMeshCapacity(bool full);
 void updateMeshCapacity();
+void beginWiFiConnect();
 
 // ═══════════════════════════════════════════════════════════
 // UTILITÁRIOS
@@ -170,6 +179,86 @@ bool checkTimer(Timer* timer) {
 void updateLEDState(LEDState* led, bool state) {
     led->state = state;
     digitalWrite(led->pin, state ? HIGH : LOW);
+}
+
+// ═══════════════════════════════════════════════════════════
+// CONTROLE DOS LEDS ANDON
+// ═══════════════════════════════════════════════════════════
+
+void updateAndonLEDs() {
+    // Atualiza LEDs baseado no status Andon recebido do backend
+    if (g_andonStatus == "GREEN") {
+        updateLEDState(&greenLED, true);
+        updateLEDState(&yellowLED, false);
+        updateLEDState(&redLED, false);
+    } else if (g_andonStatus == "YELLOW") {
+        updateLEDState(&greenLED, false);
+        updateLEDState(&yellowLED, true);
+        updateLEDState(&redLED, false);
+    } else if (g_andonStatus == "RED") {
+        updateLEDState(&greenLED, false);
+        updateLEDState(&yellowLED, false);
+        updateLEDState(&redLED, true);
+    } else if (g_andonStatus == "GRAY") {
+        // Pausado - todos apagados
+        updateLEDState(&greenLED, false);
+        updateLEDState(&yellowLED, false);
+        updateLEDState(&redLED, false);
+    }
+    // UNKNOWN mantém o estado atual
+}
+
+void playBootAnimation() {
+    // Jogo de luzes na inicialização: onda contínua
+    for (int ciclo = 0; ciclo < 3; ciclo++) {
+        // Verde acende
+        digitalWrite(LED_VERDE_PIN, HIGH);
+        delay(200);
+        // Verde apaga enquanto amarelo acende
+        digitalWrite(LED_VERDE_PIN, LOW);
+        digitalWrite(LED_AMARELO_PIN, HIGH);
+        delay(200);
+        // Amarelo apaga enquanto vermelho acende
+        digitalWrite(LED_AMARELO_PIN, LOW);
+        digitalWrite(LED_VERMELHO_PIN, HIGH);
+        delay(200);
+        // Vermelho apaga
+        digitalWrite(LED_VERMELHO_PIN, LOW);
+        delay(200);
+    }
+}
+
+void playWiFiConnectedAnimation() {
+    // Verde pisca 3 vezes quando conecta WiFi
+    for (int i = 0; i < 3; i++) {
+        digitalWrite(LED_VERDE_PIN, HIGH);
+        delay(200);
+        digitalWrite(LED_VERDE_PIN, LOW);
+        delay(200);
+    }
+}
+
+void playMeshConnectedAnimation() {
+    // Amarelo pisca 3 vezes quando conecta mesh
+    for (int i = 0; i < 3; i++) {
+        digitalWrite(LED_AMARELO_PIN, HIGH);
+        delay(200);
+        digitalWrite(LED_AMARELO_PIN, LOW);
+        delay(200);
+    }
+}
+
+void playDisconnectedBlink() {
+    // Pisca vermelho 3 vezes (mantém LED do último status Andon)
+    bool wasOn = redLED.state;
+    for (int i = 0; i < 3; i++) {
+        digitalWrite(LED_VERMELHO_PIN, HIGH);
+        delay(200);
+        digitalWrite(LED_VERMELHO_PIN, LOW);
+        delay(200);
+    }
+    // Restaura estado anterior
+    digitalWrite(LED_VERMELHO_PIN, wasOn ? HIGH : LOW);
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -216,14 +305,12 @@ void onMeshChangedConnections() {
 
 void onMeshNodeTimeAdjusted(int32_t) {}
 
-// Mensagens recebidas via mesh (nó raiz republica no MQTT)
 void onMeshMessage(uint32_t from, String& msg) {
     StaticJsonDocument<128> doc;
     if (deserializeJson(doc, msg) != DeserializationError::Ok) return;
 
     const char* type = doc["type"] | "";
 
-    // Atualizar mapa de capacidade
     if (strcmp(type, "capacity") == 0) {
         uint32_t nodeId = (uint32_t)(doc["id"].as<String>().toInt());
         bool full = doc["full"] | false;
@@ -244,7 +331,6 @@ void onMeshMessage(uint32_t from, String& msg) {
     }
 }
 
-// Inicia a mesh (modo AP+STA para o raiz, AP para folhas)
 void startMesh(bool asRoot) {
     if (g_meshStarted) return;
     g_meshStarted = true;
@@ -254,8 +340,6 @@ void startMesh(bool asRoot) {
     g_mesh.init(MESH_ID, MESH_PASSWORD, MESH_PORT, WIFI_AP_STA, MESH_CHANNEL);
 
     if (asRoot) {
-        // Raiz já tem WiFi conectado — passa as credenciais para a mesh
-        // usar a interface STA já associada
         g_mesh.stationManual(WIFI_SSID, WIFI_PASSWORD);
     }
 
@@ -271,6 +355,19 @@ void startMesh(bool asRoot) {
               " | ID=" + String(MESH_ID) + " canal=" + String(MESH_CHANNEL));
 }
 
+// Para a mesh e prepara para reconectar ao WiFi (quando WiFi volta em MESH_NODE)
+void stopMeshAndRejoinWiFi() {
+    logSerial("MESH: encerrando para reconectar ao WiFi...");
+    g_mesh.stop();
+    g_meshStarted    = false;
+    g_isRoot         = false;
+    g_announcedFull  = false;
+    g_directChildren = 0;
+    g_fullNodes.clear();
+    WiFi.mode(WIFI_STA);
+    delay(100);
+}
+
 // ═══════════════════════════════════════════════════════════
 // LED ONBOARD
 // ═══════════════════════════════════════════════════════════
@@ -278,9 +375,7 @@ void startMesh(bool asRoot) {
 void updateOnboardLED() {
     unsigned long now = millis();
     switch (currentState) {
-        case WIFI_SCAN:
         case WIFI_CONNECTING:
-            // Pisca rápido 500ms — buscando WiFi
             if (now - ledBlinkTimer.lastTrigger >= WIFI_BLINK_MS) {
                 onboardLED.state = !onboardLED.state;
                 digitalWrite(LED_ONBOARD_PIN, onboardLED.state ? HIGH : LOW);
@@ -288,7 +383,6 @@ void updateOnboardLED() {
             }
             break;
         case MQTT_CONNECTING:
-            // Pisca lento 1s — WiFi ok, aguardando MQTT
             if (now - ledBlinkTimer.lastTrigger >= MQTT_BLINK_MS) {
                 onboardLED.state = !onboardLED.state;
                 digitalWrite(LED_ONBOARD_PIN, onboardLED.state ? HIGH : LOW);
@@ -296,9 +390,7 @@ void updateOnboardLED() {
             }
             break;
         case MESH_NODE:
-            // Dois pulsos rápidos a cada 2s — modo folha mesh
             {
-                unsigned long t = (now / 2000) % 2;
                 unsigned long phase = now % 2000;
                 bool on = (phase < 150) || (phase > 300 && phase < 450);
                 if (on != onboardLED.state) {
@@ -308,7 +400,6 @@ void updateOnboardLED() {
             }
             break;
         case OPERATIONAL:
-            // Aceso fixo — tudo ok
             if (!onboardLED.state) {
                 onboardLED.state = true;
                 digitalWrite(LED_ONBOARD_PIN, HIGH);
@@ -319,103 +410,76 @@ void updateOnboardLED() {
 }
 
 // ═══════════════════════════════════════════════════════════
-// WIFI SCAN — decide WiFi direto ou Mesh
+// WIFI — conecta diretamente sem scan prévio
+// Scan conflita com painlessMesh que já segura a interface WiFi.
 // ═══════════════════════════════════════════════════════════
 
-void handleWiFiScan() {
-    if (!g_scanDone) {
-        // Inicia scan assíncrono na primeira chamada
-        logSerial("WIFI: escaneando rede " + String(WIFI_SSID) + "...");
-        WiFi.mode(WIFI_STA);
-        WiFi.disconnect(true);
-        delay(100);
-        WiFi.scanNetworks(true); // assíncrono
-        g_scanDone = true;
-        return;
-    }
-
-    int n = WiFi.scanComplete();
-    if (n == WIFI_SCAN_RUNNING) return; // ainda escaneando
-
-    if (n <= 0) {
-        // Rede não encontrada
-        logSerial("WIFI: rede '" + String(WIFI_SSID) + "' nao encontrada -> MESH_NODE");
-        WiFi.scanDelete();
-        currentState = MESH_NODE;
-        startMesh(false);
-        return;
-    }
-
-    // Procurar a rede alvo e pegar o melhor RSSI
-    int8_t bestRSSI = -127;
-    for (int i = 0; i < n; i++) {
-        if (WiFi.SSID(i) == String(WIFI_SSID)) {
-            if (WiFi.RSSI(i) > bestRSSI) bestRSSI = WiFi.RSSI(i);
-        }
-    }
-    WiFi.scanDelete();
-
-    if (bestRSSI == -127) {
-        logSerial("WIFI: SSID '" + String(WIFI_SSID) + "' nao encontrado -> MESH_NODE");
-        currentState = MESH_NODE;
-        startMesh(false);
-        return;
-    }
-
-    g_scannedRSSI = bestRSSI;
-    logSerial("WIFI: RSSI=" + String(bestRSSI) + "dBm (limiar=" + String(WIFI_RSSI_MIN_DBM) + "dBm)");
-
-    if (bestRSSI >= WIFI_RSSI_MIN_DBM) {
-        logSerial("WIFI: sinal bom -> WIFI_CONNECTING (modo raiz)");
-        currentState = WIFI_CONNECTING;
-    } else {
-        logSerial("WIFI: sinal fraco -> MESH_NODE (modo folha)");
-        currentState = MESH_NODE;
-        startMesh(false);
-    }
+// Inicia uma tentativa de conexão WiFi (chamado no boot e no retry do MESH_NODE)
+void beginWiFiConnect() {
+    logSerial("WIFI: conectando a " + String(WIFI_SSID) + " (timeout=" +
+              String(WIFI_TIMEOUT_MS / 1000) + "s)...");
+    WiFi.mode(WIFI_STA);
+    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+    wifiReconnect.lastAttempt  = millis();
+    wifiReconnect.attemptCount = 1;
+    currentState = WIFI_CONNECTING;
 }
 
-// ═══════════════════════════════════════════════════════════
-// WIFI CONNECTING
-// ═══════════════════════════════════════════════════════════
-
 void handleWiFiConnecting() {
+    // Animação de onda enquanto procura WiFi
+    static unsigned long lastWaveUpdate = 0;
+    static uint8_t waveStep = 0;
     unsigned long now = millis();
-
+    
+    if (now - lastWaveUpdate >= 250) {
+        lastWaveUpdate = now;
+        
+        // Ciclo de onda: verde → amarelo → vermelho → (pausa) → repete
+        switch (waveStep % 4) {
+            case 0: // Verde acende, outros apagados
+                digitalWrite(LED_VERDE_PIN, HIGH);
+                digitalWrite(LED_AMARELO_PIN, LOW);
+                digitalWrite(LED_VERMELHO_PIN, LOW);
+                break;
+            case 1: // Amarelo acende, verde apaga, vermelho apagado
+                digitalWrite(LED_VERDE_PIN, LOW);
+                digitalWrite(LED_AMARELO_PIN, HIGH);
+                digitalWrite(LED_VERMELHO_PIN, LOW);
+                break;
+            case 2: // Vermelho acende, amarelo apaga, verde apagado
+                digitalWrite(LED_VERDE_PIN, LOW);
+                digitalWrite(LED_AMARELO_PIN, LOW);
+                digitalWrite(LED_VERMELHO_PIN, HIGH);
+                break;
+            case 3: // Todos apagados (pausa antes de reiniciar)
+                digitalWrite(LED_VERDE_PIN, LOW);
+                digitalWrite(LED_AMARELO_PIN, LOW);
+                digitalWrite(LED_VERMELHO_PIN, LOW);
+                break;
+        }
+        waveStep++;
+    }
+    
     if (WiFi.status() == WL_CONNECTED) {
-        int8_t rssi = WiFi.RSSI();
         logSerial("WIFI: Conectado! IP=" + WiFi.localIP().toString() +
-                  " RSSI=" + String(rssi) + "dBm");
-
-        // Inicia mesh como raiz (usa a conexão WiFi já estabelecida)
+                  " RSSI=" + String(WiFi.RSSI()) + "dBm");
+        playWiFiConnectedAnimation();
         startMesh(true);
-
-        currentState = MQTT_CONNECTING;
         resetBackoff(&wifiReconnect);
-        logSerial("WIFI: -> MQTT_CONNECTING (raiz)");
+        currentState = MQTT_CONNECTING;
         return;
     }
 
-    if (now - wifiReconnect.lastAttempt < wifiReconnect.backoffDelay) return;
-
-    if (wifiReconnect.attemptCount == 0) {
-        logSerial("WIFI: conectando a " + String(WIFI_SSID) + "...");
-        WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-    }
-
-    wifiReconnect.lastAttempt = now;
-
-    // Timeout: se não conectou em WIFI_TIMEOUT_MS, cai para mesh
-    if (wifiReconnect.attemptCount > 0 &&
-        (now - wifiReconnect.lastAttempt) >= WIFI_TIMEOUT_MS) {
-        logSerial("WIFI: timeout -> MESH_NODE (fallback)");
+    if ((millis() - wifiReconnect.lastAttempt) >= WIFI_TIMEOUT_MS) {
+        logSerial("WIFI: timeout (" + String(WIFI_TIMEOUT_MS / 1000) +
+                  "s) sem conectar -> MESH_NODE (fallback)");
         WiFi.disconnect(true);
+        WiFi.mode(WIFI_OFF);
+        resetBackoff(&wifiReconnect);
         currentState = MESH_NODE;
+        playMeshConnectedAnimation();
         startMesh(false);
-        return;
     }
-
-    updateBackoff(&wifiReconnect);
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -455,19 +519,26 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
     if (String(topic) == ledTopic && currentState == OPERATIONAL) {
         processLEDCommand(payloadStr);
     } else if (String(topic) == stateTopic) {
-        payloadStr.trim(); payloadStr.toUpperCase();
-        logSerial("ANDON STATE: " + payloadStr);
+        payloadStr.trim();
+        payloadStr.toUpperCase();
+        
+        // Atualiza status Andon e reflete nos LEDs
+        if (payloadStr == "GREEN" || payloadStr == "YELLOW" || 
+            payloadStr == "RED" || payloadStr == "GRAY") {
+            g_andonStatus = payloadStr;
+            g_lastAndonUpdate = millis();
+            updateAndonLEDs();
+            logSerial("ANDON STATE: " + payloadStr);
+        }
     }
 }
 
 void handleMQTTConnecting() {
     unsigned long now = millis();
 
-    // Se WiFi caiu enquanto era raiz, tenta reconectar WiFi
     if (WiFi.status() != WL_CONNECTED) {
-        logSerial("MQTT: WiFi perdido -> WIFI_SCAN");
-        g_scanDone = false;
-        currentState = WIFI_SCAN;
+        logSerial("MQTT: WiFi perdido -> WIFI_CONNECTING");
+        beginWiFiConnect();
         return;
     }
 
@@ -489,6 +560,7 @@ void handleMQTTConnecting() {
         mqttClient.publish(reqTopic.c_str(), "REQUEST", false);
 
         currentState = OPERATIONAL;
+        g_wifiLostAt = 0;
         resetBackoff(&mqttReconnect);
         logSerial("MQTT: conectado -> OPERATIONAL (raiz, IP=" +
                   WiFi.localIP().toString() + " RSSI=" + String(WiFi.RSSI()) + "dBm)");
@@ -518,13 +590,43 @@ void handleMQTTConnecting() {
 }
 
 // ═══════════════════════════════════════════════════════════
-// MESH NODE — nó folha (sem WiFi direto)
+// ESTADO OPERATIONAL (nó raiz)
 // ═══════════════════════════════════════════════════════════
 
-void handleMeshNode() {
+void handleOperational() {
     g_mesh.update();
+    if (mqttClient.connected()) mqttClient.loop();
 
-    // Processar botões e enviar via mesh broadcast para o raiz
+    if (WiFi.status() != WL_CONNECTED) {
+        unsigned long now = millis();
+        if (g_wifiLostAt == 0) {
+            g_wifiLostAt = now;
+            logSerial("OPERATIONAL: WiFi perdido, aguardando " +
+                      String(WIFI_LOSS_FALLBACK_MS / 1000) + "s antes de fallback...");
+        } else if (now - g_wifiLostAt >= WIFI_LOSS_FALLBACK_MS) {
+            logSerial("OPERATIONAL: WiFi ausente por " +
+                      String(WIFI_LOSS_FALLBACK_MS / 1000) + "s -> MESH_NODE (fallback)");
+            mqttClient.disconnect();
+            g_mesh.setRoot(false);
+            g_isRoot     = false;
+            g_wifiLostAt = 0;
+            currentState = MESH_NODE;
+        }
+        return;
+    } else {
+        if (g_wifiLostAt != 0) {
+            logSerial("OPERATIONAL: WiFi restaurado dentro da janela de fallback");
+            g_wifiLostAt = 0;
+        }
+    }
+
+    if (!mqttClient.connected()) {
+        logSerial("OPERATIONAL: MQTT perdido -> MQTT_CONNECTING");
+        resetBackoff(&mqttReconnect);
+        currentState = MQTT_CONNECTING;
+        return;
+    }
+
     processButton(&greenButton);
     processButton(&yellowButton);
     processButton(&redButton);
@@ -535,10 +637,57 @@ void handleMeshNode() {
     if (redButton.pressed)    { publishButtonEvent("red");    redButton.pressed    = false; }
     if (pauseButton.pressed)  { publishButtonEvent("pause");  pauseButton.pressed  = false; }
 
-    // Heartbeat local a cada 5 minutos (sem MQTT, só serial)
+    if (checkTimer(&heartbeatTimer)) {
+        StaticJsonDocument<128> hb;
+        hb["heap"]          = ESP.getFreeHeap();
+        hb["rssi"]          = WiFi.RSSI();
+        hb["mesh_nodes"]    = (int)(g_mesh.getNodeList().size() + 1);
+        hb["mesh_children"] = g_directChildren;
+        hb["is_root"]       = true;
+        String s; serializeJson(hb, s);
+        mqttClient.publish(("andon/status/" + macAddress).c_str(), s.c_str(), false);
+        logSerial("HEARTBEAT: " + s);
+    }
+
+    if (checkTimer(&heapMonitorTimer)) {
+        uint32_t heap = ESP.getFreeHeap();
+        if (heap < HEAP_WARN_THRESHOLD)
+            logMQTT("AVISO: Heap baixo - " + String(heap) + " bytes");
+    }
+}
+
+// ═══════════════════════════════════════════════════════════
+// MESH NODE — nó folha; verifica periodicamente se WiFi voltou
+// ═══════════════════════════════════════════════════════════
+
+void handleMeshNode() {
+    g_mesh.update();
+
+    processButton(&greenButton);
+    processButton(&yellowButton);
+    processButton(&redButton);
+    processButton(&pauseButton);
+
+    if (greenButton.pressed)  { publishButtonEvent("green");  greenButton.pressed  = false; }
+    if (yellowButton.pressed) { publishButtonEvent("yellow"); yellowButton.pressed = false; }
+    if (redButton.pressed)    { publishButtonEvent("red");    redButton.pressed    = false; }
+    if (pauseButton.pressed)  { publishButtonEvent("pause");  pauseButton.pressed  = false; }
+
     if (checkTimer(&heartbeatTimer))
         logSerial("MESH-NODE: heap=" + String(ESP.getFreeHeap()) +
                   " nos=" + String(g_mesh.getNodeList().size() + 1));
+
+    // Pisca vermelho a cada 1 minuto quando sem conexão WiFi
+    if (checkTimer(&disconnectBlinkTimer)) {
+        playDisconnectedBlink();
+    }
+
+    // Verifica periodicamente se o WiFi voltou — tenta conectar diretamente
+    if (checkTimer(&wifiRetryTimer)) {
+        logSerial("MESH-NODE: tentando reconectar ao WiFi...");
+        stopMeshAndRejoinWiFi();
+        beginWiFiConnect();
+    }
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -546,22 +695,22 @@ void handleMeshNode() {
 // ═══════════════════════════════════════════════════════════
 
 void processButton(ButtonState* btn) {
-    unsigned long now = millis();
     bool reading = digitalRead(btn->pin);
-
-    if (reading != btn->lastState) btn->lastDebounceTime = now;
-
-    if ((now - btn->lastDebounceTime) > DEBOUNCE_MS) {
-        if (reading != btn->currentState) {
-            btn->currentState = reading;
-            if (btn->currentState == LOW) btn->pressed = true;
-        }
+    unsigned long now = millis();
+    
+    if (reading == btn->lastReading) return;
+    if ((now - btn->lastChangeTime) < DEBOUNCE_MS) return;
+    
+    btn->lastReading = reading;
+    btn->lastChangeTime = now;
+    
+    if (reading == LOW) {
+        btn->pressed = true;
+        logSerial("BTN: GPIO " + String(btn->pin));
     }
-    btn->lastState = reading;
 }
 
 void publishButtonEvent(const String& color) {
-    // Nó raiz com MQTT: publica direto
     if (g_isRoot && mqttClient.connected()) {
         String topic = "andon/button/" + macAddress + "/" + color;
         if (mqttClient.publish(topic.c_str(), "PRESSED", false))
@@ -570,7 +719,6 @@ void publishButtonEvent(const String& color) {
             logSerial("ERRO: falha ao publicar botão " + color);
         return;
     }
-    // Nó folha: envia via mesh broadcast para o raiz republicar
     StaticJsonDocument<128> doc;
     doc["type"]  = "button";
     doc["mac"]   = macAddress;
@@ -597,74 +745,6 @@ bool processLEDCommand(const String& payload) {
               " yellow=" + String((bool)doc["yellow"]) +
               " green="  + String((bool)doc["green"]));
     return true;
-}
-
-// ═══════════════════════════════════════════════════════════
-// ESTADO OPERATIONAL (nó raiz)
-// ═══════════════════════════════════════════════════════════
-
-void handleOperational() {
-    // Manter mesh atualizada mesmo sendo raiz
-    g_mesh.update();
-
-    if (mqttClient.connected()) mqttClient.loop();
-
-    // Verificar se WiFi ainda está ok
-    if (WiFi.status() != WL_CONNECTED) {
-        logSerial("OPERATIONAL: WiFi perdido -> WIFI_SCAN");
-        mqttClient.disconnect();
-        g_scanDone = false;
-        currentState = WIFI_SCAN;
-        return;
-    }
-
-    if (!mqttClient.connected()) {
-        logSerial("OPERATIONAL: MQTT perdido -> MQTT_CONNECTING");
-        resetBackoff(&mqttReconnect);
-        currentState = MQTT_CONNECTING;
-        return;
-    }
-
-    // Monitorar RSSI — se cair abaixo do limiar, reinicia para renegociar papel
-    if (checkTimer(&rssiMonitorTimer)) {
-        int8_t rssi = WiFi.RSSI();
-        if (rssi < WIFI_RSSI_MIN_DBM) {
-            logSerial("OPERATIONAL: RSSI degradado (" + String(rssi) +
-                      "dBm < " + String(WIFI_RSSI_MIN_DBM) + "dBm) -> reiniciando");
-            delay(500);
-            ESP.restart();
-        }
-    }
-
-    processButton(&greenButton);
-    processButton(&yellowButton);
-    processButton(&redButton);
-    processButton(&pauseButton);
-
-    if (greenButton.pressed)  { publishButtonEvent("green");  greenButton.pressed  = false; }
-    if (yellowButton.pressed) { publishButtonEvent("yellow"); yellowButton.pressed = false; }
-    if (redButton.pressed)    { publishButtonEvent("red");    redButton.pressed    = false; }
-    if (pauseButton.pressed)  { publishButtonEvent("pause");  pauseButton.pressed  = false; }
-
-    // Heartbeat a cada 5 minutos
-    if (checkTimer(&heartbeatTimer)) {
-        StaticJsonDocument<128> hb;
-        hb["heap"]          = ESP.getFreeHeap();
-        hb["rssi"]          = WiFi.RSSI();
-        hb["mesh_nodes"]    = (int)(g_mesh.getNodeList().size() + 1);
-        hb["mesh_children"] = g_directChildren;
-        hb["is_root"]       = true;
-        String s; serializeJson(hb, s);
-        mqttClient.publish(("andon/status/" + macAddress).c_str(), s.c_str(), false);
-        logSerial("HEARTBEAT: " + s);
-    }
-
-    // Monitor de heap a cada 30s
-    if (checkTimer(&heapMonitorTimer)) {
-        uint32_t heap = ESP.getFreeHeap();
-        if (heap < HEAP_WARN_THRESHOLD)
-            logMQTT("AVISO: Heap baixo - " + String(heap) + " bytes");
-    }
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -709,17 +789,16 @@ void setup() {
 
     Serial.println();
     Serial.println("═══════════════════════════════════════════════════════");
-    Serial.println("  Firmware ESP32 Andon v2.3.0 - ID Visual AX");
+    Serial.println("  Firmware ESP32 Andon v2.4.0 - ID Visual AX");
     Serial.println("  WiFi Direto + Fallback ESP-MESH");
     Serial.println("═══════════════════════════════════════════════════════");
     Serial.println();
 
-    for (int i = 0; i < 3; i++) {
-        digitalWrite(LED_ONBOARD_PIN, HIGH); delay(200);
-        digitalWrite(LED_ONBOARD_PIN, LOW);  delay(200);
-    }
-
     initializeGPIOs();
+    
+    // Jogo de luzes na inicialização
+    playBootAnimation();
+    
     initializeWatchdog();
     obtainMACAddress();
 
@@ -728,9 +807,8 @@ void setup() {
     mqttClient.setCallback(mqttCallback);
     logSerial("MQTT: broker=" + String(MQTT_BROKER) + ":" + String(MQTT_PORT));
 
-    // Começa sempre pelo scan para decidir WiFi direto ou mesh
-    currentState = WIFI_SCAN;
-    logSerial("BOOT: -> WIFI_SCAN");
+    // Tenta WiFi direto — sem scan (scan conflita com mesh)
+    beginWiFiConnect();
 }
 
 void loop() {
@@ -739,13 +817,12 @@ void loop() {
 
     switch (currentState) {
         case BOOT:            break;
-        case WIFI_SCAN:       handleWiFiScan();       break;
-        case WIFI_CONNECTING: handleWiFiConnecting();  break;
+        case WIFI_CONNECTING: handleWiFiConnecting(); break;
         case MQTT_CONNECTING:
             g_mesh.update();
             handleMQTTConnecting();
             break;
-        case OPERATIONAL:     handleOperational();    break;
-        case MESH_NODE:       handleMeshNode();       break;
+        case OPERATIONAL:     handleOperational();   break;
+        case MESH_NODE:       handleMeshNode();      break;
     }
 }

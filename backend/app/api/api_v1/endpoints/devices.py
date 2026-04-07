@@ -150,7 +150,8 @@ async def bind_device(
     return device
 
 
-@router.delete("/{mac_address}/bind", response_model=DeviceOut)async def unbind_device(
+@router.delete("/{mac_address}/bind", response_model=DeviceOut)
+async def unbind_device(
     mac_address: str,
     session: AsyncSession = Depends(get_session),
 ):

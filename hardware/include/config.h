@@ -5,24 +5,26 @@
 // ═══════════════════════════════════════════════════════════
 
 // ─── Versão ────────────────────────────────────────────────
-#define FIRMWARE_VERSION    "2.3.0"
+#define FIRMWARE_VERSION    "2.4.0"
 #define FIRMWARE_BUILD_DATE __DATE__
 
 // ─── WiFi ──────────────────────────────────────────────────
 #define WIFI_SSID           "AX-CORPORATIVO"
 #define WIFI_PASSWORD       "auto@bacia"
-#define WIFI_TIMEOUT_MS     15000UL     // 15s para conectar antes de desistir
+// Tempo máximo aguardando WL_CONNECTED antes de cair para mesh.
+// Sem scan prévio — WiFi.begin() direto evita conflito com painlessMesh.
+#define WIFI_TIMEOUT_MS     15000UL     // 15s
 #define WIFI_BLINK_MS       500UL
 
-// Limiar de qualidade de sinal para conexão direta.
-// -80 dBm ≈ 30% de qualidade. Abaixo disso, usa mesh como fallback.
-// Escala de referência: -50=excelente, -67=bom, -80=mínimo, -90=ruim
-#define WIFI_RSSI_MIN_DBM   (-80)
+// Tempo sem WiFi em OPERATIONAL antes de cair para mesh (absorve quedas rápidas)
+#define WIFI_LOSS_FALLBACK_MS   60000UL     // 60s
 
 // ─── ESP-MESH ──────────────────────────────────────────────
 // Todos os nós usam o mesmo MESH_ID/MESH_PASSWORD.
-// O nó com WiFi direto bom vira raiz e faz ponte para o MQTT.
-// Nós sem sinal suficiente entram como folhas e roteiam via mesh.
+// O nó que conseguir conectar ao WiFi vira raiz e faz ponte para o MQTT.
+// Nós sem WiFi entram como folhas e roteiam via mesh.
+// Intervalo de retry WiFi quando em modo folha.
+#define WIFI_RETRY_INTERVAL_MS  60000UL     // 60s
 #define MESH_ID             "IDVISUAL_ANDON"
 #define MESH_PASSWORD       "andon@mesh2024"
 #define MESH_PORT           5555
@@ -47,18 +49,17 @@
 #define BTN_PAUSE           33      // Toggle pause/resume fabricação
 
 // ─── Pinos — LEDs de status Andon ──────────────────────────
-#define LED_VERMELHO_PIN    25
-#define LED_AMARELO_PIN     26
-#define LED_VERDE_PIN       27
+#define LED_VERDE_PIN       19
+#define LED_AMARELO_PIN     18
+#define LED_VERMELHO_PIN    17
 #define LED_ONBOARD_PIN     2       // LED azul onboard
 
 // ─── Debounce ──────────────────────────────────────────────
-#define DEBOUNCE_MS         30UL
+#define DEBOUNCE_MS              50UL   // ms de estabilidade para confirmar pressionamento
 
 // ─── Intervalos de timer ───────────────────────────────────
 #define HEARTBEAT_INTERVAL_MS    300000UL   // 5 minutos
 #define HEAP_MONITOR_INTERVAL_MS  30000UL   // 30 segundos
-#define RSSI_MONITOR_INTERVAL_MS  60000UL   // 1 minuto — verifica sinal do raiz
 
 // ─── Reconexão com backoff exponencial ─────────────────────
 #define INITIAL_BACKOFF_MS  5000UL
