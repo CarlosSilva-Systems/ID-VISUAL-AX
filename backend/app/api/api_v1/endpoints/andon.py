@@ -92,13 +92,17 @@ async def update_or_create_status(
     device = result_device.scalars().first()
     
     if device:
-        # Mapear status do banco para estado MQTT
+        # Mapear status do banco para estado MQTT (aceita português e inglês)
         status_map = {
             "verde": "GREEN",
+            "green": "GREEN",
             "amarelo": "YELLOW",
             "amarelo_suave": "YELLOW",
+            "yellow": "YELLOW",
             "vermelho": "RED",
-            "cinza": "GRAY"
+            "red": "RED",
+            "cinza": "GRAY",
+            "gray": "GRAY"
         }
         mqtt_state = status_map.get(status, "GRAY")
         
