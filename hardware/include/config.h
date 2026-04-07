@@ -69,3 +69,24 @@
 
 // ─── Thresholds de saúde ───────────────────────────────────
 #define HEAP_WARN_THRESHOLD 10240   // 10 KB
+
+// ─── NVS ───────────────────────────────────────────────────
+// Namespace para armazenar credenciais WiFi via provisioning
+#define NVS_NAMESPACE "provisioning"
+
+// ─── NTP ───────────────────────────────────────────────────
+#define NTP_SERVER      "pool.ntp.org"
+#define NTP_TIMEOUT_MS  10000UL
+
+// ─── Viral Provisioning Seguro (AES-GCM + ESP-NOW) ─────────
+// Chave secreta para derivação AES-256 via SHA-256
+#define PROVISIONING_PASSPHRASE "ChaveSecretaAndon2026"
+
+// Janela de transmissão: 10 minutos após configuração
+#define PROVISIONING_TRANSMISSION_DURATION_MS  600000UL  // 10 minutos
+
+// Intervalo entre broadcasts: 30 segundos
+#define PROVISIONING_TRANSMISSION_INTERVAL_MS   30000UL  // 30 segundos
+
+// Janela de validação de timestamp (anti-replay): ±5 minutos
+#define PROVISIONING_TIMESTAMP_WINDOW_S  300             // 5 minutos
