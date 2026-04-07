@@ -494,7 +494,19 @@ async def _handle_state_request(mac: str, client):
 
 
 async def _send_andon_state(mac: str, state: str):
-    logger.info(f"MQTT: Estado {state} deve ser enviado para {mac}")
+    """Publica estado Andon para o ESP32 via conexão MQTT temporária."""
+    try:
+        import aiomqtt
+
+        host = getattr(settings, "MQTT_BROKER_HOST", "localhost")
+        port = int(getattr(settings, "MQTT_BROKER_PORT", 1883))
+        topic = f"andon/state/{mac}"
+
+        async with aiomqtt.Client(hostname=host, port=port) as client:
+            await client.publish(topic, state, qos=1)
+            logger.info(f"MQTT: Estado {state} enviado para {mac}")
+    except Exception as e:
+        logger.error(f"MQTT: Erro ao enviar estado para {mac} — {e}")
 
 
 async def _send_andon_state_via_client(mac: str, state: str, client):
