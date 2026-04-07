@@ -84,6 +84,28 @@ async def update_or_create_status(
         record.updated_by = user
     
     await session.commit()
+    
+    # Enviar estado atualizado para ESP32 vinculado a este workcenter
+    from app.models.esp_device import ESPDevice
+    stmt_device = select(ESPDevice).where(ESPDevice.workcenter_id == wc_id)
+    result_device = await session.execute(stmt_device)
+    device = result_device.scalars().first()
+    
+    if device:
+        # Mapear status do banco para estado MQTT
+        status_map = {
+            "verde": "GREEN",
+            "amarelo": "YELLOW",
+            "amarelo_suave": "YELLOW",
+            "vermelho": "RED",
+            "cinza": "GRAY"
+        }
+        mqtt_state = status_map.get(status, "GRAY")
+        
+        # Enviar via MQTT
+        from app.services.mqtt_service import _send_andon_state
+        await _send_andon_state(device.mac_address, mqtt_state)
+        logger.info(f"Estado {mqtt_state} enviado para ESP32 {device.mac_address} (workcenter {wc_id})")
 
 # --- Endpoints ---
 
