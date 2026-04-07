@@ -190,6 +190,23 @@ async def _handle_button(mac: str, color: str, payload_raw: bytes):
                 call.resolved_note = f"Resolvido via botão físico ESP32 ({device.device_name})"
                 call.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
                 session.add(call)
+
+            # Atualizar AndonStatus para verde
+            from app.models.andon import AndonStatus
+            stmt_status = select(AndonStatus).where(AndonStatus.workcenter_odoo_id == device.workcenter_id)
+            res_status = await session.execute(stmt_status)
+            andon_status = res_status.scalars().first()
+            if andon_status:
+                andon_status.status = "verde"
+                andon_status.updated_by = f"ESP32 {device.device_name}"
+            else:
+                session.add(AndonStatus(
+                    workcenter_odoo_id=device.workcenter_id,
+                    workcenter_name=f"Mesa {device.workcenter_id}",
+                    status="verde",
+                    updated_by=f"ESP32 {device.device_name}",
+                ))
+
             await session.commit()
             logger.info(f"MQTT button: {len(active_calls)} chamados resolvidos para workcenter {device.workcenter_id} via botão verde")
             await _send_andon_state(mac, "GREEN")
@@ -210,6 +227,24 @@ async def _handle_button(mac: str, color: str, payload_raw: bytes):
             is_stop=button_config["is_stop"]
         )
         session.add(call)
+
+        # Atualizar AndonStatus no banco para que pause/resume funcione corretamente
+        from app.models.andon import AndonStatus
+        stmt_status = select(AndonStatus).where(AndonStatus.workcenter_odoo_id == device.workcenter_id)
+        res_status = await session.execute(stmt_status)
+        andon_status = res_status.scalars().first()
+        color_lower = button_config["call_color"].lower()  # "yellow" ou "red"
+        if andon_status:
+            andon_status.status = color_lower
+            andon_status.updated_by = f"ESP32 {device.device_name}"
+        else:
+            session.add(AndonStatus(
+                workcenter_odoo_id=device.workcenter_id,
+                workcenter_name=f"Mesa {device.workcenter_id}",
+                status=color_lower,
+                updated_by=f"ESP32 {device.device_name}",
+            ))
+
         await session.commit()
         await session.refresh(call)
         logger.info(f"MQTT button: chamado {button_config['call_color']} criado para workcenter {device.workcenter_id} via {mac}")
