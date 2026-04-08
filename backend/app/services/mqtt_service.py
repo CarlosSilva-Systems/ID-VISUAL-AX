@@ -215,6 +215,20 @@ async def _handle_button(mac: str, color: str, payload_raw: bytes):
             })
             return
 
+        # Para amarelo/vermelho: resolve chamados anteriores antes de criar novo
+        # Garante que o ESP32 é fonte de verdade — estado anterior é sempre descartado
+        stmt_prev = select(AndonCall).where(
+            AndonCall.workcenter_id == device.workcenter_id,
+            AndonCall.status != "RESOLVED"
+        )
+        res_prev = await session.execute(stmt_prev)
+        prev_calls = res_prev.scalars().all()
+        for prev_call in prev_calls:
+            prev_call.status = "RESOLVED"
+            prev_call.resolved_note = f"Substituído por novo acionamento {button_config['call_color']} via ESP32 ({device.device_name})"
+            prev_call.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
+            session.add(prev_call)
+
         call = AndonCall(
             color=button_config["call_color"],
             category=button_config["category"],

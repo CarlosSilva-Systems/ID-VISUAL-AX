@@ -86,12 +86,23 @@ async def update_or_create_status(
     await session.commit()
     
     # Enviar estado atualizado para ESP32 vinculado a este workcenter
+    # REGRA: só envia para o ESP32 se não houver chamados ativos
+    # (chamados ativos = ESP32 é fonte de verdade, não o app)
     from app.models.esp_device import ESPDevice
+    from app.models.andon import AndonCall
     stmt_device = select(ESPDevice).where(ESPDevice.workcenter_id == wc_id)
     result_device = await session.execute(stmt_device)
     device = result_device.scalars().first()
     
     if device:
+        # Verificar se há chamados ativos — se sim, ESP32 é fonte de verdade
+        stmt_calls = select(AndonCall).where(
+            AndonCall.workcenter_id == wc_id,
+            AndonCall.status != "RESOLVED"
+        )
+        result_calls = await session.execute(stmt_calls)
+        active_calls = result_calls.scalars().all()
+        
         # Mapear status do banco para estado MQTT (aceita português e inglês)
         status_map = {
             "verde": "GREEN",
@@ -106,10 +117,13 @@ async def update_or_create_status(
         }
         mqtt_state = status_map.get(status, "GRAY")
         
-        # Enviar via MQTT
-        from app.services.mqtt_service import _send_andon_state
-        await _send_andon_state(device.mac_address, mqtt_state)
-        logger.info(f"Estado {mqtt_state} enviado para ESP32 {device.mac_address} (workcenter {wc_id})")
+        # Só envia para o ESP32 se não há chamados ativos OU se o status é verde (resolução)
+        if not active_calls or mqtt_state == "GREEN":
+            from app.services.mqtt_service import _send_andon_state
+            await _send_andon_state(device.mac_address, mqtt_state)
+            logger.info(f"Estado {mqtt_state} enviado para ESP32 {device.mac_address} (workcenter {wc_id})")
+        else:
+            logger.info(f"ESP32 {device.mac_address} tem chamados ativos — estado do app ignorado, ESP32 é fonte de verdade")
 
 # --- Endpoints ---
 
