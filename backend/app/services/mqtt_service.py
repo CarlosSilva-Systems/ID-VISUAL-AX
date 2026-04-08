@@ -529,9 +529,22 @@ async def _handle_state_request(mac: str, client):
             await _send_andon_state_via_client(mac, "UNASSIGNED", client)
             return
 
-        from app.models.andon import AndonCall
+        wc_id = device.workcenter_id
+
+        # 1. Verificar AndonStatus — pausa tem precedência absoluta
+        from app.models.andon import AndonStatus, AndonCall
+        stmt_status = select(AndonStatus).where(AndonStatus.workcenter_odoo_id == wc_id)
+        res_status = await session.execute(stmt_status)
+        andon_status = res_status.scalars().first()
+
+        if andon_status and andon_status.status == "cinza":
+            logger.info(f"MQTT state request: workcenter {wc_id} está pausado → enviando GRAY para {mac}")
+            await _send_andon_state_via_client(mac, "GRAY", client)
+            return
+
+        # 2. Verificar chamados ativos
         stmt_calls = select(AndonCall).where(
-            AndonCall.workcenter_id == device.workcenter_id,
+            AndonCall.workcenter_id == wc_id,
             AndonCall.status != "RESOLVED"
         ).order_by(AndonCall.created_at.desc())
 
