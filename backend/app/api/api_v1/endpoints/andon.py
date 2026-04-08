@@ -226,8 +226,13 @@ async def get_workcenters_status(
 
             status_color = "cinza"
             status_reason = "Mesa disponível"
-            
-            if red_calls:
+
+            # PAUSA tem precedência absoluta — se o operador pausou, mostra cinza
+            # independente de chamados ativos (vermelho/amarelo ficam suspensos)
+            if is_manually_paused:
+                status_color = "cinza"
+                status_reason = "Produção pausada"
+            elif red_calls:
                 status_color = "vermelho"
                 status_reason = f"PARADA CRÍTICA: {red_calls[0].reason}"
             elif yellow_stop_calls:
@@ -236,10 +241,6 @@ async def get_workcenters_status(
             elif yellow_soft_calls:
                 status_color = "amarelo_suave" if enriched["current"] else "amarelo"
                 status_reason = f"ALERTA: {yellow_soft_calls[0].reason}"
-            elif is_manually_paused and enriched["current"]:
-                # Pausa manual (ESP32 ou operador) tem precedência sobre verde
-                status_color = "cinza"
-                status_reason = "Produção pausada"
             elif enriched["current"]:
                 status_color = "verde"
                 status_reason = "Produção em andamento"
