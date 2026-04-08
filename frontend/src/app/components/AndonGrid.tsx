@@ -110,9 +110,19 @@ export const AndonGrid: React.FC<AndonGridProps> = ({ username }) => {
         return () => clearInterval(interval);
     }, []);
 
-    // Atualizar lista de devices em tempo real via WebSocket
-    useDeviceWebSocket(() => {
-        fetchDevices();
+    // Atualizar em tempo real via WebSocket — devices E eventos Andon
+    useDeviceWebSocket((event) => {
+        if (
+            event.event === 'andon_call_created' ||
+            event.event === 'andon_resolved' ||
+            event.event === 'production_paused' ||
+            event.event === 'production_resumed'
+        ) {
+            // Atualização imediata ao receber evento Andon
+            fetchWorkcenters();
+        } else {
+            fetchDevices();
+        }
     });
 
     const getBoundDevice = (wcId: number): ESPDevice | null =>

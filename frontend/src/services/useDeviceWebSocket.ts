@@ -10,7 +10,11 @@ export type DeviceEvent =
   | { event: 'device_status'; data: { mac_address: string; status: string } }
   | { event: 'device_log'; data: { mac_address: string; message: string } }
   | { event: 'device_bound'; data: { mac_address: string; workcenter_id: number } }
-  | { event: 'device_unbound'; data: { mac_address: string } };
+  | { event: 'device_unbound'; data: { mac_address: string } }
+  | { event: 'andon_call_created'; data: { call_id: number; color: string; workcenter_id: number; device_mac: string; reason: string } }
+  | { event: 'andon_resolved'; data: { workcenter_id: number; device_mac: string; resolved_count: number } }
+  | { event: 'production_paused'; data: { workcenter_id: number; device_mac: string } }
+  | { event: 'production_resumed'; data: { workcenter_id: number; device_mac: string } };
 
 type EventHandler = (event: DeviceEvent) => void;
 
