@@ -511,8 +511,8 @@ async def _handle_state_request(mac: str, client):
         device = result.scalars().first()
 
         if not device or not device.workcenter_id:
-            logger.warning(f"MQTT state request: dispositivo {mac} não encontrado ou não vinculado")
-            await _send_andon_state_via_client(mac, "GREEN", client)
+            logger.warning(f"MQTT state request: dispositivo {mac} não vinculado a nenhuma mesa")
+            await _send_andon_state_via_client(mac, "UNASSIGNED", client)
             return
 
         from app.models.andon import AndonCall

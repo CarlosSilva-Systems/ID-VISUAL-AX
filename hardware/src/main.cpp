@@ -205,6 +205,11 @@ void updateAndonLEDs() {
         updateLEDState(&greenLED, false);
         updateLEDState(&yellowLED, false);
         updateLEDState(&redLED, false);
+    } else if (g_andonStatus == "UNASSIGNED") {
+        // Não vinculado — apaga tudo; o blink amarelo é feito no loop()
+        updateLEDState(&greenLED, false);
+        updateLEDState(&yellowLED, false);
+        updateLEDState(&redLED, false);
     }
     // UNKNOWN mantém o estado atual
 }
@@ -222,6 +227,22 @@ void updatePauseBlink() {
         digitalWrite(LED_VERDE_PIN,    blinkOn ? HIGH : LOW);
         digitalWrite(LED_AMARELO_PIN,  blinkOn ? HIGH : LOW);
         digitalWrite(LED_VERMELHO_PIN, blinkOn ? HIGH : LOW);
+    }
+}
+
+// Blink não-bloqueante para estado UNASSIGNED (não vinculado a mesa).
+// Amarelo pisca rápido: 200ms ligado, 200ms desligado.
+#define UNASSIGNED_BLINK_HALF_MS 200UL
+void updateUnassignedBlink() {
+    static unsigned long lastToggle = 0;
+    static bool blinkOn = false;
+    unsigned long now = millis();
+    if (now - lastToggle >= UNASSIGNED_BLINK_HALF_MS) {
+        lastToggle = now;
+        blinkOn = !blinkOn;
+        digitalWrite(LED_VERDE_PIN,    LOW);
+        digitalWrite(LED_VERMELHO_PIN, LOW);
+        digitalWrite(LED_AMARELO_PIN,  blinkOn ? HIGH : LOW);
     }
 }
 
@@ -541,7 +562,8 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
         
         // Atualiza status Andon e reflete nos LEDs
         if (payloadStr == "GREEN" || payloadStr == "YELLOW" || 
-            payloadStr == "RED" || payloadStr == "GRAY") {
+            payloadStr == "RED" || payloadStr == "GRAY" ||
+            payloadStr == "UNASSIGNED") {
             g_andonStatus = payloadStr;
             g_lastAndonUpdate = millis();
             updateAndonLEDs();
@@ -835,6 +857,10 @@ void loop() {
     // Blink de pausa: todos os LEDs piscam juntos a ~70 BPM quando GRAY
     if (g_andonStatus == "GRAY") {
         updatePauseBlink();
+    }
+    // Blink de não-vinculado: amarelo pisca rápido quando UNASSIGNED
+    if (g_andonStatus == "UNASSIGNED") {
+        updateUnassignedBlink();
     }
 
     switch (currentState) {
