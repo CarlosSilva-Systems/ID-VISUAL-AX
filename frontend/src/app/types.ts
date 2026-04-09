@@ -156,6 +156,7 @@ export interface AndonCall {
   workcenter_name: string;
   owner_name?: string;
   work_type?: string;
+  production_name?: string;
   mo_id?: number;
   status: 'OPEN' | 'IN_PROGRESS' | 'RESOLVED';
   created_at: string;

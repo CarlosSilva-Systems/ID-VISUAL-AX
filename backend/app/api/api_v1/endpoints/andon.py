@@ -634,6 +634,15 @@ async def get_pending_justification(
         cleaned = normalize_label(wo_name)
         return cleaned if cleaned else '—'
 
+    def _extract_production_name(production_val: Any) -> str:
+        """Extrai o nome da fabricação do campo production_id (ex: [1839, 'WH/FAB/01638'])."""
+        if not production_val or production_val is False:
+            return '—'
+        if isinstance(production_val, (list, tuple)) and len(production_val) >= 2:
+            name = normalize_label(str(production_val[1]))
+            return name if name else '—'
+        return '—'
+
     def _process_wos(wos: list, priority_states: list) -> None:
         """Processa lista de WOs e preenche wc_info priorizando estados específicos."""
         for wo in wos:
@@ -646,16 +655,18 @@ async def get_pending_justification(
 
             # Só sobrescreve se: ainda não tem info OU esta WO tem estado prioritário
             if wc_id_int not in wc_info or is_priority:
-                # Passa workcenter_val como fallback para owner quando user_id=False
                 owner = _extract_owner(wo.get('user_id'), wo.get('workcenter_id'))
                 work_type = _extract_work_type(wo.get('name') or '')
+                production_name = _extract_production_name(wo.get('production_id'))
                 wc_info[wc_id_int] = {
                     'owner_name': owner,
                     'work_type': work_type,
+                    'production_name': production_name,
                 }
                 logger.debug(
                     f"WO enrich wc_id={wc_id_int} state={wo_state} "
-                    f"owner={owner!r} work_type={work_type!r} wo_name={wo.get('name')!r}"
+                    f"owner={owner!r} work_type={work_type!r} "
+                    f"production={production_name!r} wo_name={wo.get('name')!r}"
                 )
 
     try:
@@ -667,7 +678,7 @@ async def get_pending_justification(
                 ['workcenter_id', 'in', wc_ids],
                 ['state', 'in', active_states],
             ],
-            fields=['workcenter_id', 'user_id', 'name', 'state'],
+            fields=['workcenter_id', 'user_id', 'name', 'state', 'production_id'],
             limit=500,
             order='write_date desc',
         )
@@ -683,7 +694,7 @@ async def get_pending_justification(
                 domain=[
                     ['workcenter_id', 'in', missing_wc_ids],
                 ],
-                fields=['workcenter_id', 'user_id', 'name', 'state'],
+                fields=['workcenter_id', 'user_id', 'name', 'state', 'production_id'],
                 limit=200,
                 order='write_date desc',
             )
@@ -708,6 +719,7 @@ async def get_pending_justification(
             "workcenter_name": call.workcenter_name,
             "owner_name": info.get('owner_name', '—'),
             "work_type": info.get('work_type', '—'),
+            "production_name": info.get('production_name', '—'),
             "is_stop": call.is_stop,
             "status": call.status,
             "created_at": call.created_at.isoformat() if call.created_at else None,

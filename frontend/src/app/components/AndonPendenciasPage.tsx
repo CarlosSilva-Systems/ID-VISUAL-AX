@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { AlertTriangle, Filter, RefreshCw, Clock, ChevronDown, ChevronRight, User, Wrench } from 'lucide-react';
+import { AlertTriangle, Filter, RefreshCw, Clock, ChevronDown, ChevronRight, User, Wrench, Factory } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../../services/api';
 import { AndonCall, PendingJustificationFilters } from '../types';
@@ -183,6 +183,7 @@ export const AndonPendenciasPage: React.FC<AndonPendenciasPageProps> = ({ curren
             const hasRed = wcCalls.some(c => c.color === 'RED');
             const ownerName = firstCall.owner_name || '—';
             const workType = firstCall.work_type || '—';
+            const productionName = firstCall.production_name || '—';
 
             return (
               <div key={wcId} className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
@@ -208,6 +209,10 @@ export const AndonPendenciasPage: React.FC<AndonPendenciasPageProps> = ({ curren
                       <Wrench className="w-3.5 h-3.5" />
                       <span>{workType}</span>
                     </div>
+                    <div className="flex items-center gap-1.5 text-sm text-slate-500">
+                      <Factory className="w-3.5 h-3.5" />
+                      <span className="font-mono">{productionName}</span>
+                    </div>
                   </div>
                   <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${
                     hasRed ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'
@@ -225,6 +230,7 @@ export const AndonPendenciasPage: React.FC<AndonPendenciasPageProps> = ({ curren
                           <th className="text-left text-xs font-semibold text-slate-500 uppercase tracking-wider px-4 py-2.5">Cor</th>
                           <th className="text-left text-xs font-semibold text-slate-500 uppercase tracking-wider px-4 py-2.5">Responsável</th>
                           <th className="text-left text-xs font-semibold text-slate-500 uppercase tracking-wider px-4 py-2.5">Tipo</th>
+                          <th className="text-left text-xs font-semibold text-slate-500 uppercase tracking-wider px-4 py-2.5">Fabricação</th>
                           <th className="text-left text-xs font-semibold text-slate-500 uppercase tracking-wider px-4 py-2.5">Parou às</th>
                           <th className="text-left text-xs font-semibold text-slate-500 uppercase tracking-wider px-4 py-2.5">Retomou às</th>
                           <th className="text-left text-xs font-semibold text-slate-500 uppercase tracking-wider px-4 py-2.5">Duração</th>
@@ -249,6 +255,9 @@ export const AndonPendenciasPage: React.FC<AndonPendenciasPageProps> = ({ curren
                             </td>
                             <td className="px-4 py-3 text-sm text-slate-600">
                               {call.work_type || '—'}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-slate-600 font-mono">
+                              {call.production_name || '—'}
                             </td>
                             <td className="px-4 py-3 text-sm text-slate-600 font-mono">
                               {call.created_at ? formatDate(call.created_at) : '—'}
