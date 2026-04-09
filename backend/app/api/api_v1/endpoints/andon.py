@@ -570,8 +570,9 @@ async def get_pending_justification(
     from_date: Optional[datetime] = None,
     to_date: Optional[datetime] = None,
     session: AsyncSession = Depends(get_session),
+    odoo: Any = Depends(get_odoo_client),
 ):
-    """Retorna chamados resolvidos que requerem justificativa e ainda não foram justificados."""
+    """Retorna chamados resolvidos que requerem justificativa, enriquecidos com dados do Odoo."""
     stmt = select(AndonCall).where(
         AndonCall.requires_justification == True,
         AndonCall.justified_at == None,
@@ -587,7 +588,71 @@ async def get_pending_justification(
         stmt = stmt.where(AndonCall.created_at <= to_date)
     stmt = stmt.order_by(AndonCall.created_at.asc())
     result = await session.execute(stmt)
-    return result.scalars().all()
+    calls = result.scalars().all()
+
+    if not calls:
+        return []
+
+    # Enriquecer com dados do Odoo: owner_name e work_type por workcenter
+    wc_ids = list({c.workcenter_id for c in calls})
+    wc_info: dict[int, dict] = {}
+    try:
+        wos = await odoo.search_read(
+            'mrp.workorder',
+            domain=[
+                ['workcenter_id', 'in', wc_ids],
+                ['state', 'in', ['progress', 'ready', 'waiting', 'pending', 'pause']],
+            ],
+            fields=['workcenter_id', 'user_id', 'name'],
+        )
+        for wo in wos:
+            wc_id_val = wo.get('workcenter_id')
+            wc_id_int = wc_id_val[0] if isinstance(wc_id_val, (list, tuple)) else wc_id_val
+            if wc_id_int not in wc_info:
+                # Extrair tipo de montagem do campo name da WO
+                wo_name = (wo.get('name') or '').lower()
+                if 'pré' in wo_name or 'pre' in wo_name:
+                    work_type = 'Pré Montagem'
+                elif 'completo' in wo_name or 'complete' in wo_name:
+                    work_type = 'Completo'
+                elif 'montagem' in wo_name or 'assembly' in wo_name:
+                    work_type = 'Montagem'
+                else:
+                    work_type = normalize_label(wo.get('name') or '') or '—'
+
+                user_val = wo.get('user_id')
+                owner = normalize_label(user_val) if user_val else '—'
+
+                wc_info[wc_id_int] = {
+                    'owner_name': owner,
+                    'work_type': work_type,
+                }
+    except Exception as e:
+        logger.warning(f"Falha ao buscar dados Odoo para pendências: {e}")
+
+    # Montar resposta enriquecida
+    enriched = []
+    for call in calls:
+        info = wc_info.get(call.workcenter_id, {})
+        enriched.append({
+            "id": call.id,
+            "color": call.color,
+            "category": call.category,
+            "reason": call.reason,
+            "workcenter_id": call.workcenter_id,
+            "workcenter_name": call.workcenter_name,
+            "owner_name": info.get('owner_name', '—'),
+            "work_type": info.get('work_type', '—'),
+            "is_stop": call.is_stop,
+            "status": call.status,
+            "created_at": call.created_at.isoformat() if call.created_at else None,
+            "updated_at": call.updated_at.isoformat() if call.updated_at else None,
+            "downtime_minutes": call.downtime_minutes,
+            "requires_justification": call.requires_justification,
+            "justified_at": call.justified_at.isoformat() if call.justified_at else None,
+            "justified_by": call.justified_by,
+        })
+    return enriched
 
 
 @router.get("/calls/justification-stats", response_model=JustificationStats)
