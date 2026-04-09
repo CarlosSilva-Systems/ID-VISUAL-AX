@@ -71,25 +71,41 @@ async def update_settings(
 
 @router.post("/reset-database")
 async def reset_database(
+    session: AsyncSession = Depends(deps.get_session),
     current_user: Any = Depends(deps.get_current_user)
 ) -> Any:
     """
-    DANGER: Resets the entire local database.
+    DANGER: Resets all local operational data (andon, batches, requests, etc).
+    Preserves: users, system_settings, esp_devices.
     """
-    from app.db.session import engine, init_db
-    from sqlalchemy import create_engine
-    from sqlmodel import SQLModel
-    
-    sync_url = settings.DATABASE_URL.replace("+aiosqlite", "")
-    sync_engine = create_engine(sync_url)
-    
-    # Use a separate connection to avoid locking issues if possible
+    from sqlalchemy import text
+
+    tables_to_truncate = [
+        "andon_call",
+        "andon_event",
+        "andon_status",
+        "andon_material_request",
+        "sync_queue",
+        "batch",
+        "id_request",
+        "id_request_task",
+        "manufacturing_order",
+        "revisao_id_visual",
+        "mpr_analytics_snapshot",
+        "ota_update_log",
+        "esp_device_logs",
+    ]
+
     try:
-        # Import all models to ensure they are in metadata
-        import app.models # noqa
-        
-        SQLModel.metadata.drop_all(sync_engine)
-        SQLModel.metadata.create_all(sync_engine)
-        return {"status": "success", "message": "Base de dados resetada com sucesso."}
+        for table in tables_to_truncate:
+            try:
+                await session.execute(text(f'TRUNCATE TABLE "{table}" RESTART IDENTITY CASCADE'))
+            except Exception:
+                # Tabela pode não existir — ignorar silenciosamente
+                await session.rollback()
+                continue
+        await session.commit()
+        return {"status": "success", "message": "Dados operacionais resetados com sucesso."}
     except Exception as e:
+        await session.rollback()
         raise HTTPException(status_code=500, detail=f"Erro ao resetar banco: {str(e)}")
