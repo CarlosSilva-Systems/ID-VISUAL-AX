@@ -75,35 +75,38 @@ async def reset_database(
     current_user: Any = Depends(deps.get_current_user)
 ) -> Any:
     """
-    DANGER: Resets all local operational data (andon, batches, requests, etc).
-    Preserves: users, system_settings, esp_devices.
+    Limpa todos os dados operacionais locais.
+    Preserva: usuários, configurações do sistema e dispositivos ESP32.
     """
     from sqlalchemy import text
 
-    tables_to_truncate = [
-        "andon_call",
-        "andon_event",
-        "andon_status",
-        "andon_material_request",
-        "sync_queue",
+    # Um único statement — mais seguro e atômico
+    truncate_sql = """
+        TRUNCATE TABLE
+            andon_call,
+            andon_event,
+            andon_status,
+            andon_material_request,
+            sync_queue
+        RESTART IDENTITY CASCADE
+    """
+
+    optional_tables = [
         "batch",
         "id_request",
-        "id_request_task",
         "manufacturing_order",
-        "revisao_id_visual",
-        "mpr_analytics_snapshot",
-        "ota_update_log",
         "esp_device_logs",
+        "ota_update_log",
+        "mpr_analytics_snapshot",
     ]
 
     try:
-        for table in tables_to_truncate:
+        await session.execute(text(truncate_sql))
+        for table in optional_tables:
             try:
                 await session.execute(text(f'TRUNCATE TABLE "{table}" RESTART IDENTITY CASCADE'))
             except Exception:
-                # Tabela pode não existir — ignorar silenciosamente
-                await session.rollback()
-                continue
+                pass  # tabela pode não existir
         await session.commit()
         return {"status": "success", "message": "Dados operacionais resetados com sucesso."}
     except Exception as e:
