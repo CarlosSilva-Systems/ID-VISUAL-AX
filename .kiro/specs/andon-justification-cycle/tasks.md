@@ -6,7 +6,7 @@ Implementação incremental do ciclo de justificativa de paradas Andon, seguindo
 
 ## Tasks
 
-- [ ] 1. Adicionar campos de justificativa ao modelo AndonCall
+- [x] 1. Adicionar campos de justificativa ao modelo AndonCall
   - Abrir `backend/app/models/andon.py`
   - Adicionar ao final da classe `AndonCall` os 7 campos: `downtime_minutes`, `requires_justification`, `justified_at`, `justified_by`, `root_cause_category`, `root_cause_detail`, `action_taken`
   - Garantir imports de `Optional` e `datetime` já presentes no arquivo
@@ -16,14 +16,14 @@ Implementação incremental do ciclo de justificativa de paradas Andon, seguindo
     - **Property 2: `requires_justification` é imutável após a criação**
     - **Validates: Requirements 1.7**
 
-- [ ] 2. Criar migration Alembic para os novos campos
+- [x] 2. Criar migration Alembic para os novos campos
   - Criar novo arquivo em `backend/alembic/versions/` com `down_revision = 'f45dafaf98ee'`
   - Gerar um `revision` UUID único para o arquivo
   - Implementar `upgrade()`: adicionar as 7 colunas à tabela `andon_call` com os tipos e defaults corretos (`requires_justification` com `server_default='false'`, demais nullable)
   - Implementar `downgrade()`: remover as 7 colunas na ordem inversa
   - _Requirements: 2.1, 2.2, 2.3, 2.4_
 
-- [ ] 3. Implementar `justification_service.py` com regras de negócio
+- [x] 3. Implementar `justification_service.py` com regras de negócio
   - Criar `backend/app/services/justification_service.py`
   - Definir `ROOT_CAUSE_CATEGORIES` como `frozenset`
   - Implementar `compute_requires_justification(color: str, is_stop: bool) -> bool`
@@ -43,7 +43,7 @@ Implementação incremental do ciclo de justificativa de paradas Andon, seguindo
     - **Property 6: `validate_root_cause_category` aceita apenas o conjunto válido**
     - **Validates: Requirements 5.8**
 
-- [ ] 4. Atualizar endpoint `PATCH /calls/{call_id}/status` com downtime e WebSocket
+- [x] 4. Atualizar endpoint `PATCH /calls/{call_id}/status` com downtime e WebSocket
   - Abrir `backend/app/api/api_v1/endpoints/andon.py`
   - Importar `compute_downtime_minutes` de `justification_service`
   - Importar `ws_manager` de `websocket_manager`
@@ -55,7 +55,7 @@ Implementação incremental do ciclo de justificativa de paradas Andon, seguindo
 - [ ] 5. Checkpoint — Testar backend parcial
   - Garantir que todos os testes passam, verificar imports e que a migration aplica sem erros. Perguntar ao usuário se há dúvidas antes de continuar.
 
-- [ ] 6. Implementar endpoint `GET /calls/pending-justification`
+- [x] 6. Implementar endpoint `GET /calls/pending-justification`
   - Em `backend/app/api/api_v1/endpoints/andon.py`, registrar o novo endpoint **antes** do `GET /calls/{call_id}` para evitar conflito de rota
   - Aceitar query params opcionais: `workcenter_id`, `color`, `from_date`, `to_date`
   - Construir query com filtros base: `requires_justification=True`, `justified_at=None`, `status="RESOLVED"`
@@ -68,7 +68,7 @@ Implementação incremental do ciclo de justificativa de paradas Andon, seguindo
     - **Property 4: `GET /pending-justification` retorna exatamente o conjunto correto com filtros**
     - **Validates: Requirements 4.1, 4.2, 4.3, 4.4, 4.5**
 
-- [ ] 7. Implementar endpoint `PATCH /calls/{call_id}/justify`
+- [x] 7. Implementar endpoint `PATCH /calls/{call_id}/justify`
   - Adicionar schema `JustifyRequest(BaseModel)` com campos: `root_cause_category`, `root_cause_detail`, `action_taken`, `justified_by` (todos obrigatórios, `extra="forbid"`)
   - Implementar handler com as validações na ordem correta:
     1. Buscar chamado — HTTP 404 se não existe
@@ -88,7 +88,7 @@ Implementação incremental do ciclo de justificativa de paradas Andon, seguindo
     - **Property 8: Transição de estado de `justified_at`**
     - **Validates: Requirements 5.7, 10.5**
 
-- [ ] 8. Implementar endpoint `GET /calls/justification-stats`
+- [x] 8. Implementar endpoint `GET /calls/justification-stats`
   - Adicionar schema `JustificationStats(BaseModel)` com campos: `total_pending: int`, `by_color: dict[str, int]`, `oldest_pending_minutes: Optional[int]`
   - Implementar handler:
     - Query base: `requires_justification=True`, `justified_at=None`, `status="RESOLVED"`
@@ -101,7 +101,7 @@ Implementação incremental do ciclo de justificativa de paradas Andon, seguindo
     - **Property 7: `GET /justification-stats` calcula corretamente todas as métricas**
     - **Validates: Requirements 6.2, 6.3, 6.4, 6.5**
 
-- [ ] 9. Atualizar `POST /calls` para definir `requires_justification` na criação
+- [x] 9. Atualizar `POST /calls` para definir `requires_justification` na criação
   - Em `backend/app/api/api_v1/endpoints/andon.py`, no handler `create_andon_call`
   - Importar `compute_requires_justification` de `justification_service`
   - Antes de instanciar `AndonCall`, calcular: `requires_justification = compute_requires_justification(req.color, req.is_stop)`
@@ -111,14 +111,14 @@ Implementação incremental do ciclo de justificativa de paradas Andon, seguindo
 - [ ] 10. Checkpoint — Validar backend completo
   - Garantir que todos os testes passam e que os 3 novos endpoints respondem corretamente. Perguntar ao usuário se há dúvidas antes de continuar com o frontend.
 
-- [ ] 11. Adicionar tipos TypeScript para justificativa em `types.ts`
+- [x] 11. Adicionar tipos TypeScript para justificativa em `types.ts`
   - Abrir `frontend/src/app/types.ts`
   - Estender a interface `AndonCall` existente com os 7 novos campos opcionais/obrigatórios: `downtime_minutes?`, `requires_justification`, `justified_at?`, `justified_by?`, `root_cause_category?`, `root_cause_detail?`, `action_taken?`
   - Adicionar interface `JustificationStats` com `total_pending`, `by_color`, `oldest_pending_minutes`
   - Adicionar tipo `RootCauseCategory` e constante `ROOT_CAUSE_CATEGORIES`
   - _Requirements: 9.1, 9.2, 9.3_
 
-- [ ] 12. Adicionar métodos de API em `api.ts`
+- [x] 12. Adicionar métodos de API em `api.ts`
   - Abrir `frontend/src/services/api.ts`
   - Adicionar `getPendingJustification(filters?)` — `GET /andon/calls/pending-justification`
   - Adicionar `justifyCall(callId, payload)` — `PATCH /andon/calls/{callId}/justify`
@@ -126,7 +126,7 @@ Implementação incremental do ciclo de justificativa de paradas Andon, seguindo
   - Tipar todos os parâmetros e retornos com as interfaces de `types.ts`
   - _Requirements: 4.1, 5.1, 6.1_
 
-- [ ] 13. Criar componente `AndonPendenciasPage.tsx`
+- [x] 13. Criar componente `AndonPendenciasPage.tsx`
   - Criar `frontend/src/app/components/AndonPendenciasPage.tsx`
   - Busca inicial via `getPendingJustification()` ao montar o componente
   - Renderizar tabela com colunas: Workcenter | Cor | Categoria | Motivo | Duração | Aberto em | Resolvido em | Ações
@@ -147,7 +147,7 @@ Implementação incremental do ciclo de justificativa de paradas Andon, seguindo
     - Testar resposta a eventos WebSocket (adicionar/remover linha)
     - _Requirements: 7.1, 7.6, 7.7_
 
-- [ ] 14. Criar componente `JustificationModal.tsx`
+- [x] 14. Criar componente `JustificationModal.tsx`
   - Criar `frontend/src/app/components/JustificationModal.tsx`
   - Props: `call: AndonCall | null`, `currentUser: string`, `onClose: () => void`, `onSuccess: (callId: number) => void`
   - Estado local: `rootCauseCategory`, `rootCauseDetail`, `actionTaken`, `isSubmitting`
@@ -167,7 +167,7 @@ Implementação incremental do ciclo de justificativa de paradas Andon, seguindo
     - Testar estado do botão Salvar conforme preenchimento
     - **Validates: Requirements 9.4, 9.5**
 
-- [ ] 15. Adicionar badge de pendências no menu lateral
+- [x] 15. Adicionar badge de pendências no menu lateral
   - Localizar o componente de layout/menu lateral (ex: `Layout.tsx` ou equivalente)
   - Adicionar estado `pendingJustificationCount: number` inicializado com `0`
   - No `useEffect` de montagem: chamar `getJustificationStats()` e setar `pendingJustificationCount` com `total_pending`
