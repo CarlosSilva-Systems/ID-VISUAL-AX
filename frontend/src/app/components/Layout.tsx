@@ -19,7 +19,8 @@ import {
   Zap,
   LogOut,
   Activity,
-  AlertTriangle
+  AlertTriangle,
+  Cpu
 } from "lucide-react";
 import { useLocation, useNavigate, Link } from "react-router-dom";
 import { cn, Button } from "./ui";
@@ -155,6 +156,7 @@ export const Layout = ({ children, user }: LayoutProps) => {
           path: "/andon/pendencias",
           badge: pendingJustificationCount > 0 ? (pendingJustificationCount > 99 ? '99+' : pendingJustificationCount) : null
         },
+        { id: "andon-devices", label: "Dispositivos IoT", icon: Cpu, path: "/andon/devices" },
       ]
     },
     { id: "relatorios", label: "Relatórios MPR", icon: BarChart3, path: "/relatorios" },

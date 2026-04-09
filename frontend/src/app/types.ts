@@ -199,3 +199,46 @@ export interface PendingJustificationFilters {
   from_date?: string;
   to_date?: string;
 }
+
+// ── ESP32 Device Management (Fase 2) ──
+
+export interface ESPDeviceEnriched {
+  id: string;
+  mac_address: string;
+  device_name: string;
+  location: string;
+  workcenter_id: number | null;
+  workcenter_name: string | null;
+  status: 'online' | 'offline';
+  firmware_version: string | null;
+  latest_firmware: string | null;
+  firmware_outdated: boolean;
+  rssi: number | null;
+  rssi_quality: 'Ótimo' | 'Bom' | 'Fraco' | 'Crítico' | null;
+  is_root: boolean;
+  mesh_node_count: number | null;
+  ip_address: string | null;
+  uptime_seconds: number | null;
+  last_seen_at: string | null;
+  offline_minutes: number | null;
+  notes: string | null;
+  created_at: string;
+}
+
+export interface DeviceLog {
+  id: string;
+  level: 'INFO' | 'WARN' | 'ERROR';
+  message: string;
+  created_at: string;
+}
+
+export interface FirmwareVersion {
+  id: number;
+  version: string;
+  release_notes: string | null;
+  file_path: string;
+  file_size_bytes: number;
+  is_stable: boolean;
+  created_at: string;
+  created_by: string;
+}
