@@ -17,6 +17,8 @@ from app.models.id_request import IDRequest, IDRequestStatus
 from app.models.manufacturing import ManufacturingOrder
 from app.services.odoo_utils import normalize_label
 from app.services.sync_service import add_to_sync_queue, process_sync_queue
+from app.services.justification_service import compute_downtime_minutes
+from app.services.websocket_manager import ws_manager
 
 import logging
 import traceback
@@ -538,14 +540,30 @@ async def update_call_status(
     call = result.scalars().first()
     if not call:
         raise HTTPException(status_code=404, detail="Chamado não encontrado")
+    
     call.status = req.status
     call.updated_at = datetime.utcnow()
+    
     if req.status == "RESOLVED":
         call.resolved_note = req.resolved_note
+        # Calcular downtime automaticamente ao resolver
+        call.downtime_minutes = compute_downtime_minutes(call.created_at, call.updated_at)
         await update_or_create_status(session, call.workcenter_id, call.workcenter_name, "verde", "System")
+    
     session.add(call)
     await session.commit()
     update_sync_version("andon_version")
+    
+    # Emitir WebSocket após commit para garantir dados persistidos
+    if req.status == "RESOLVED" and call.requires_justification:
+        await ws_manager.broadcast("andon_justification_required", {
+            "call_id": call.id,
+            "workcenter_name": call.workcenter_name,
+            "color": call.color,
+            "reason": call.reason,
+            "downtime_minutes": call.downtime_minutes,
+        })
+    
     return call
 
 @router.get("/tv-data")
