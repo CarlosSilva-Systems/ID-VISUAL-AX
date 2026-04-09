@@ -64,19 +64,21 @@ BOOT → WIFI_CONNECTING → MQTT_CONNECTING → OPERATIONAL (nó raiz)
 
 ### 2.4 Padrões de LED
 
-| Estado | Padrão Visual |
-|---|---|
-| WIFI_CONNECTING | Onda verde→amarelo→vermelho (250ms cada) |
-| MQTT_CONNECTING | LED onboard pisca a cada 1s |
-| MESH_NODE | LED onboard double-pulse a cada 2s |
-| UNASSIGNED (não vinculado) | LED amarelo pisca rápido (200ms on/off) |
-| GREEN | LED verde sólido |
-| YELLOW | LED amarelo sólido |
-| RED | LED vermelho sólido |
-| GRAY (pausado) | Todos os LEDs piscam juntos a ~70 BPM (428ms on/off) |
-| Boot | Onda 3 ciclos: verde→amarelo→vermelho |
-| WiFi conectado | Verde pisca 3 vezes |
-| Mesh conectado | Amarelo pisca 3 vezes |
+| Estado | LEDs Andon | Descrição |
+|---|---|---|
+| Boot | Onda verde→amarelo→vermelho (3 ciclos, 200ms cada) | Inicialização |
+| WIFI_CONNECTING | Onda verde→amarelo→vermelho (250ms cada, contínua) | Procurando WiFi |
+| MQTT_CONNECTING | Vermelho/amarelo alternados (300ms) | WiFi ok, sem broker MQTT |
+| MESH_NODE | Amarelo pisca lento (1s on/off) | Sem WiFi direto, operando via mesh |
+| UNASSIGNED | Amarelo pisca rápido (200ms on/off) | Conectado mas não vinculado a mesa |
+| GRAY (pausado) | Todos piscam juntos ~70 BPM (428ms on/off) | Produção pausada |
+| GREEN | Verde sólido | Produção normal |
+| YELLOW | Amarelo sólido | Alerta ativo |
+| RED | Vermelho sólido | Parada crítica ativa |
+| WiFi conectado | Verde pisca 3x (200ms) | Confirmação de conexão WiFi |
+| Mesh conectado | Amarelo pisca 3x (200ms) | Confirmação de entrada na mesh |
+
+**Regra importante:** Ao perder WiFi ou MQTT em OPERATIONAL, os LEDs Andon são apagados imediatamente. O estado Andon só é exibido quando há conexão ativa com o backend.
 
 ### 2.5 Debounce e Watchdog
 
