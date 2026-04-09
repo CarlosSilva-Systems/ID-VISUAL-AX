@@ -929,9 +929,21 @@ void loop() {
     updateOnboardLED();
 
     // Blink de aguardando broker: vermelho e amarelo alternados quando sem MQTT
+    // Ao sair do estado MQTT_CONNECTING, força resincronização dos pinos com as structs
+    // (updateMQTTWaitBlink escreve direto nos pinos sem atualizar as structs LEDState)
+    static SystemState prevState = BOOT;
     if (currentState == MQTT_CONNECTING) {
         updateMQTTWaitBlink();
+    } else if (prevState == MQTT_CONNECTING) {
+        // Acabou de sair do MQTT_CONNECTING — limpa os pinos e aplica status Andon
+        digitalWrite(LED_VERMELHO_PIN, LOW);
+        digitalWrite(LED_AMARELO_PIN,  LOW);
+        digitalWrite(LED_VERDE_PIN,    LOW);
+        if (g_andonStatus != "UNKNOWN") {
+            updateAndonLEDs();
+        }
     }
+    prevState = currentState;
 
     // Blink de pausa: todos os LEDs piscam juntos a ~70 BPM quando GRAY
     if (currentState == OPERATIONAL && g_andonStatus == "GRAY") {
