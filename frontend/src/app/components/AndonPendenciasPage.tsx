@@ -211,7 +211,7 @@ export const AndonPendenciasPage: React.FC<AndonPendenciasPageProps> = ({ curren
                     </div>
                     <div className="flex items-center gap-1.5 text-sm text-slate-500">
                       <Factory className="w-3.5 h-3.5" />
-                      <span className="font-mono">{productionName}</span>
+                      <span className="font-mono text-xs">{productionName}</span>
                     </div>
                   </div>
                   <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${
