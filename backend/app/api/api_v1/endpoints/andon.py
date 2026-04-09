@@ -331,6 +331,7 @@ async def trigger_andon_basic(
     )
     
     # 2. Se o status for verde, resolver chamados abertos para este workcenter
+    resolved_calls: list = []
     if req.status == "verde":
         stmt = select(AndonCall).where(
             AndonCall.workcenter_id == req.workcenter_id,
@@ -338,15 +339,31 @@ async def trigger_andon_basic(
         )
         result = await session.execute(stmt)
         active_calls = result.scalars().all()
+        resolved_calls = []
         for call in active_calls:
+            now = datetime.utcnow()
             call.status = "RESOLVED"
             call.resolved_note = f"Resolvido por {req.triggered_by} via Produção Normal"
-            call.updated_at = datetime.utcnow()
+            call.updated_at = now
+            call.downtime_minutes = compute_downtime_minutes(call.created_at, now)
             session.add(call)
+            resolved_calls.append(call)
     
     update_sync_version("andon_version")
     await session.commit()
-    
+
+    # Emitir WebSocket para chamados que requerem justificativa
+    if req.status == "verde":
+        for call in resolved_calls:
+            if call.requires_justification:
+                await ws_manager.broadcast("andon_justification_required", {
+                    "call_id": call.id,
+                    "workcenter_name": call.workcenter_name,
+                    "color": call.color,
+                    "reason": call.reason,
+                    "downtime_minutes": call.downtime_minutes,
+                })
+
     return {"status": "ok", "message": f"Status alterado para {req.status}"}
 
 class AndonCallCreate(BaseModel):
