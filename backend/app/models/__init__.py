@@ -11,3 +11,4 @@ from app.models.analytics import FabricacaoBlock, RevisaoIDVisual, MPRConfig
 from app.models.custom_report import CustomReport
 from app.models.esp_device import ESPDevice, ESPDeviceLog
 from app.models.ota import FirmwareRelease, OTAUpdateLog
+from app.models.firmware_version import FirmwareVersion
