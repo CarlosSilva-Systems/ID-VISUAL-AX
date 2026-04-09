@@ -15,7 +15,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.config import settings
 from app.db.session import async_session_factory
-from app.models.esp_device import ESPDevice, ESPDeviceLog, DeviceStatus, EventType
+from app.models.esp_device import ESPDevice, ESPDeviceLog, DeviceStatus, EventType, LogLevel
 from app.services.websocket_manager import ws_manager
 
 logger = logging.getLogger(__name__)
@@ -46,9 +46,44 @@ async def _get_or_create_device(
     return device
 
 
-async def _add_log(session: AsyncSession, device_id, event_type: EventType, message: str):
-    log = ESPDeviceLog(device_id=device_id, event_type=event_type, message=message)
+async def _add_log(session: AsyncSession, device_id, event_type: EventType, message: str, level: LogLevel | None = None):
+    """Insere log e aplica retenção de 500 registros por device."""
+    if level is None:
+        level = _infer_log_level(message)
+    log = ESPDeviceLog(device_id=device_id, event_type=event_type, level=level, message=message)
     session.add(log)
+    # Retenção: manter apenas os últimos 500 logs por device
+    await _enforce_log_retention(session, device_id)
+
+
+def _infer_log_level(message: str) -> LogLevel:
+    """Infere o nível de severidade a partir do conteúdo da mensagem."""
+    lower = message.lower()
+    if any(kw in lower for kw in ("error", "erro", "fail", "falha", "critical")):
+        return LogLevel.ERROR
+    if any(kw in lower for kw in ("warn", "aviso", "atenção", "atencao", "timeout")):
+        return LogLevel.WARN
+    return LogLevel.INFO
+
+
+async def _enforce_log_retention(session: AsyncSession, device_id) -> None:
+    """Remove logs mais antigos quando o total excede 500 por device."""
+    from sqlmodel import func, delete
+    count_stmt = select(func.count()).select_from(ESPDeviceLog).where(ESPDeviceLog.device_id == device_id)
+    total = (await session.execute(count_stmt)).scalar_one()
+    if total > 500:
+        excess = total - 500
+        # Buscar IDs dos mais antigos para deletar
+        oldest_stmt = (
+            select(ESPDeviceLog.id)
+            .where(ESPDeviceLog.device_id == device_id)
+            .order_by(ESPDeviceLog.created_at.asc())
+            .limit(excess)
+        )
+        oldest_ids = (await session.execute(oldest_stmt)).scalars().all()
+        if oldest_ids:
+            del_stmt = delete(ESPDeviceLog).where(ESPDeviceLog.id.in_(oldest_ids))
+            await session.execute(del_stmt)
 
 
 async def _handle_discovery(payload_raw: bytes):
@@ -69,7 +104,20 @@ async def _handle_discovery(payload_raw: bytes):
         device.last_seen_at = datetime.now(timezone.utc).replace(tzinfo=None)
         if name:
             device.device_name = name
-        await _add_log(session, device.id, EventType.discovery, f"Dispositivo descoberto: {name or mac}")
+        # Persistir campos de diagnóstico se presentes no payload
+        if "firmware_version" in payload and payload["firmware_version"]:
+            device.firmware_version = str(payload["firmware_version"])
+        if "rssi" in payload and payload["rssi"] is not None:
+            device.rssi = int(payload["rssi"])
+        if "is_root" in payload:
+            device.is_root = bool(payload["is_root"])
+        if "mesh_node_count" in payload and payload["mesh_node_count"] is not None:
+            device.mesh_node_count = int(payload["mesh_node_count"])
+        if "ip_address" in payload and payload["ip_address"]:
+            device.ip_address = str(payload["ip_address"])
+        if "uptime_seconds" in payload and payload["uptime_seconds"] is not None:
+            device.uptime_seconds = int(payload["uptime_seconds"])
+        await _add_log(session, device.id, EventType.discovery, f"Dispositivo descoberto: {name or mac}", LogLevel.INFO)
         await session.commit()
         await session.refresh(device)
 
@@ -81,8 +129,37 @@ async def _handle_discovery(payload_raw: bytes):
 
 async def _handle_status(mac: str, payload_raw: bytes):
     try:
-        status_str = payload_raw.decode().strip().lower()
+        raw = payload_raw.decode().strip()
+        # Heartbeat pode vir como JSON com campos de diagnóstico
+        if raw.startswith("{"):
+            try:
+                hb = json.loads(raw)
+                status_str = hb.get("status", "").lower()
+                rssi_val = hb.get("rssi")
+                uptime_val = hb.get("uptime_seconds")
+            except Exception:
+                status_str = raw.lower()
+                rssi_val = None
+                uptime_val = None
+        else:
+            status_str = raw.lower()
+            rssi_val = None
+            uptime_val = None
+
         if status_str == "heartbeat":
+            # Atualizar last_seen_at e campos de diagnóstico sem mudar status
+            if rssi_val is not None or uptime_val is not None:
+                async with async_session_factory() as session:
+                    stmt = select(ESPDevice).where(ESPDevice.mac_address == mac)
+                    result = await session.execute(stmt)
+                    device = result.scalars().first()
+                    if device:
+                        device.last_seen_at = datetime.now(timezone.utc).replace(tzinfo=None)
+                        if rssi_val is not None:
+                            device.rssi = int(rssi_val)
+                        if uptime_val is not None:
+                            device.uptime_seconds = int(uptime_val)
+                        await session.commit()
             return
         if status_str not in ("online", "offline"):
             logger.warning(f"MQTT status: valor inválido '{status_str}' para {mac}")
@@ -102,7 +179,7 @@ async def _handle_status(mac: str, payload_raw: bytes):
         if device.status != new_status:
             device.status = new_status
             device.last_seen_at = datetime.now(timezone.utc).replace(tzinfo=None)
-            await _add_log(session, device.id, EventType.status_change, f"Status alterado para {status_str}")
+            await _add_log(session, device.id, EventType.status_change, f"Status alterado para {status_str}", LogLevel.INFO)
             await session.commit()
 
     await ws_manager.broadcast("device_status", {"mac_address": mac, "status": status_str})
@@ -123,10 +200,11 @@ async def _handle_log(mac: str, payload_raw: bytes):
         if not device:
             logger.warning(f"MQTT log: dispositivo {mac} não encontrado, descartado.")
             return
-        await _add_log(session, device.id, EventType.error, message)
+        level = _infer_log_level(message)
+        await _add_log(session, device.id, EventType.error, message, level)
         await session.commit()
 
-    await ws_manager.broadcast("device_log", {"mac_address": mac, "message": message})
+    await ws_manager.broadcast("device_log", {"mac_address": mac, "message": message, "level": level.value})
 
 
 async def _handle_button(mac: str, color: str, payload_raw: bytes):
