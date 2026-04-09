@@ -26,7 +26,8 @@
 #include <painlessMesh.h>
 #include <esp_task_wdt.h>
 #include <esp_system.h>
-#include <set>
+#include <esp_wifi.h>
+#include <esp_mac.h>
 #include "config.h"
 
 // ═══════════════════════════════════════════════════════════
@@ -81,7 +82,6 @@ bool g_isRoot            = false;
 bool g_meshStarted       = false;
 uint8_t g_directChildren = 0;
 bool g_announcedFull     = false;
-std::set<uint32_t> g_fullNodes;
 
 // Fallback WiFi→Mesh: marca quando o WiFi caiu em OPERATIONAL
 unsigned long g_wifiLostAt = 0;   // 0 = WiFi está ok
@@ -102,7 +102,7 @@ LEDState onboardLED = {LED_ONBOARD_PIN,  false};
 Timer heartbeatTimer   = {HEARTBEAT_INTERVAL_MS,    0};
 Timer heapMonitorTimer = {HEAP_MONITOR_INTERVAL_MS, 0};
 Timer ledBlinkTimer    = {WIFI_BLINK_MS,            0};
-Timer disconnectBlinkTimer = {60000UL, 0};  // 1 minuto para piscar vermelho quando desconectado
+Timer disconnectBlinkTimer = {60000UL, 30000UL};  // 1 min, offset de 30s para não coincidir com wifiRetryTimer
 
 ReconnectionState wifiReconnect = {0, INITIAL_BACKOFF_MS, 0};
 ReconnectionState mqttReconnect = {0, INITIAL_BACKOFF_MS, 0};
@@ -135,13 +135,11 @@ String createDiscoveryMessage();
 void logMQTT(const String& message);
 void processButton(ButtonState* btn);
 void publishButtonEvent(const String& color);
-bool processLEDCommand(const String& payload);
 void initializeGPIOs();
 void initializeWatchdog();
 void obtainMACAddress();
 void startMesh(bool asRoot);
 void stopMeshAndRejoinWiFi();
-void announceMeshCapacity(bool full);
 void updateMeshCapacity();
 void beginWiFiConnect();
 
@@ -246,6 +244,24 @@ void updateUnassignedBlink() {
     }
 }
 
+// Blink não-bloqueante para MQTT_CONNECTING (sem broker).
+// Vermelho e amarelo piscam alternados a cada 300ms — sinal claro de "sem broker".
+#define MQTT_WAIT_BLINK_MS 300UL
+void updateMQTTWaitBlink() {
+    static unsigned long lastToggle = 0;
+    static bool phase = false;
+    unsigned long now = millis();
+    if (now - lastToggle >= MQTT_WAIT_BLINK_MS) {
+        lastToggle = now;
+        phase = !phase;
+        // Fase A: vermelho aceso, amarelo apagado
+        // Fase B: vermelho apagado, amarelo aceso
+        digitalWrite(LED_VERMELHO_PIN, phase ? HIGH : LOW);
+        digitalWrite(LED_AMARELO_PIN,  phase ? LOW  : HIGH);
+        digitalWrite(LED_VERDE_PIN,    LOW);
+    }
+}
+
 void playBootAnimation() {
     // Jogo de luzes na inicialização: onda contínua
     for (int ciclo = 0; ciclo < 3; ciclo++) {
@@ -287,30 +303,38 @@ void playMeshConnectedAnimation() {
 }
 
 void playDisconnectedBlink() {
-    // Pisca vermelho 3 vezes (mantém LED do último status Andon)
-    bool wasOn = redLED.state;
-    for (int i = 0; i < 3; i++) {
+    // Pisca vermelho 3 vezes não-bloqueante via estado estático
+    // Chamado pelo timer — executa a sequência ao longo de múltiplos loops
+    static uint8_t blinkPhase = 0;
+    static unsigned long lastPhaseMs = 0;
+    unsigned long now = millis();
+
+    if (blinkPhase == 0) {
+        // Início da sequência — inicia fase 1
+        blinkPhase = 1;
+        lastPhaseMs = now;
         digitalWrite(LED_VERMELHO_PIN, HIGH);
-        delay(200);
-        digitalWrite(LED_VERMELHO_PIN, LOW);
-        delay(200);
+        return;
     }
-    // Restaura estado anterior
-    digitalWrite(LED_VERMELHO_PIN, wasOn ? HIGH : LOW);
+
+    if (now - lastPhaseMs < 200) return;
+    lastPhaseMs = now;
+    blinkPhase++;
+
+    if (blinkPhase <= 6) {
+        // Fases 2-6: alterna vermelho (3 pulsos = 6 transições)
+        bool on = (blinkPhase % 2 == 1);
+        digitalWrite(LED_VERMELHO_PIN, on ? HIGH : LOW);
+    } else {
+        // Fim — restaura estado do LED vermelho conforme status Andon
+        blinkPhase = 0;
+        digitalWrite(LED_VERMELHO_PIN, (redLED.state) ? HIGH : LOW);
+    }
 }
 
 // ═══════════════════════════════════════════════════════════
 // MESH — CAPACIDADE E CALLBACKS
 // ═══════════════════════════════════════════════════════════
-
-void announceMeshCapacity(bool full) {
-    StaticJsonDocument<64> doc;
-    doc["type"] = "capacity";
-    doc["full"] = full;
-    doc["id"]   = String(g_mesh.getNodeId());
-    String msg; serializeJson(doc, msg);
-    g_mesh.sendBroadcast(msg);
-}
 
 void updateMeshCapacity() {
     auto nb = g_mesh.getNodeList(true);
@@ -318,11 +342,10 @@ void updateMeshCapacity() {
     bool isFull = (g_directChildren >= MESH_MAX_CHILDREN);
     if (isFull && !g_announcedFull) {
         g_announcedFull = true;
-        announceMeshCapacity(true);
         logSerial("MESH: capacidade cheia (" + String(g_directChildren) + "/" + String(MESH_MAX_CHILDREN) + ")");
     } else if (!isFull && g_announcedFull) {
         g_announcedFull = false;
-        announceMeshCapacity(false);
+        logSerial("MESH: capacidade liberada (" + String(g_directChildren) + "/" + String(MESH_MAX_CHILDREN) + ")");
     }
 }
 
@@ -333,7 +356,6 @@ void onMeshNewConnection(uint32_t nodeId) {
 
 void onMeshDroppedConnection(uint32_t nodeId) {
     logSerial("MESH: nó desconectado " + String(nodeId));
-    g_fullNodes.erase(nodeId);
     updateMeshCapacity();
 }
 
@@ -348,14 +370,6 @@ void onMeshMessage(uint32_t from, String& msg) {
     if (deserializeJson(doc, msg) != DeserializationError::Ok) return;
 
     const char* type = doc["type"] | "";
-
-    if (strcmp(type, "capacity") == 0) {
-        uint32_t nodeId = (uint32_t)(doc["id"].as<String>().toInt());
-        bool full = doc["full"] | false;
-        if (full) g_fullNodes.insert(nodeId);
-        else      g_fullNodes.erase(nodeId);
-        return;
-    }
 
     // Nó raiz republica eventos de botão no MQTT
     if (strcmp(type, "button") == 0 && g_isRoot && mqttClient.connected()) {
@@ -389,8 +403,17 @@ void startMesh(bool asRoot) {
     g_mesh.onNodeTimeAdjusted(&onMeshNodeTimeAdjusted);
     g_mesh.onReceive(&onMeshMessage);
 
+    // Limita conexões diretas no nível do driver WiFi (SoftAP).
+    // Isso faz o hardware rejeitar novas conexões acima do limite,
+    // forçando nós excedentes a procurar outro pai na mesh.
+    wifi_config_t apConfig;
+    esp_wifi_get_config(WIFI_IF_AP, &apConfig);
+    apConfig.ap.max_connection = MESH_MAX_CHILDREN;
+    esp_wifi_set_config(WIFI_IF_AP, &apConfig);
+
     logSerial("MESH: iniciada como " + String(asRoot ? "RAIZ" : "NO-FOLHA") +
-              " | ID=" + String(MESH_ID) + " canal=" + String(MESH_CHANNEL));
+              " | ID=" + String(MESH_ID) + " canal=" + String(MESH_CHANNEL) +
+              " max_filhos=" + String(MESH_MAX_CHILDREN));
 }
 
 // Para a mesh e prepara para reconectar ao WiFi (quando WiFi volta em MESH_NODE)
@@ -401,7 +424,6 @@ void stopMeshAndRejoinWiFi() {
     g_isRoot         = false;
     g_announcedFull  = false;
     g_directChildren = 0;
-    g_fullNodes.clear();
     WiFi.mode(WIFI_STA);
     delay(100);
 }
@@ -551,22 +573,19 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
     String payloadStr;
     for (unsigned int i = 0; i < length; i++) payloadStr += (char)payload[i];
 
-    String ledTopic   = "andon/led/"   + macAddress + "/command";
     String stateTopic = "andon/state/" + macAddress;
 
-    if (String(topic) == ledTopic && currentState == OPERATIONAL) {
-        processLEDCommand(payloadStr);
-    } else if (String(topic) == stateTopic) {
+    if (String(topic) == stateTopic) {
         payloadStr.trim();
         payloadStr.toUpperCase();
-        
-        // Atualiza status Andon e reflete nos LEDs
-        if (payloadStr == "GREEN" || payloadStr == "YELLOW" || 
-            payloadStr == "RED" || payloadStr == "GRAY" ||
+        if (payloadStr == "GREEN" || payloadStr == "YELLOW" ||
+            payloadStr == "RED"   || payloadStr == "GRAY"   ||
             payloadStr == "UNASSIGNED") {
             g_andonStatus = payloadStr;
             g_lastAndonUpdate = millis();
-            updateAndonLEDs();
+            // Só atualiza LEDs se estiver OPERATIONAL — fora disso os LEDs
+            // estão sendo usados para indicar estado de conexão
+            if (currentState == OPERATIONAL) updateAndonLEDs();
             logSerial("ANDON STATE: " + payloadStr);
         }
     }
@@ -601,6 +620,10 @@ void handleMQTTConnecting() {
         currentState = OPERATIONAL;
         g_wifiLostAt = 0;
         resetBackoff(&mqttReconnect);
+        // Apaga LEDs de status de conexão — aguarda status do backend
+        digitalWrite(LED_VERMELHO_PIN, LOW);
+        digitalWrite(LED_AMARELO_PIN,  LOW);
+        digitalWrite(LED_VERDE_PIN,    LOW);
         logSerial("MQTT: conectado -> OPERATIONAL (raiz, IP=" +
                   WiFi.localIP().toString() + " RSSI=" + String(WiFi.RSSI()) + "dBm)");
         return;
@@ -811,7 +834,18 @@ void initializeWatchdog() {
 }
 
 void obtainMACAddress() {
+    // Garante que o WiFi está em modo STA para ler o MAC correto
+    if (WiFi.getMode() == WIFI_OFF) WiFi.mode(WIFI_STA);
     macAddress = WiFi.macAddress();
+    // Fallback: se MAC ainda inválido, usa o MAC do chip diretamente
+    if (macAddress == "00:00:00:00:00:00" || macAddress.isEmpty()) {
+        uint8_t mac[6];
+        esp_read_mac(mac, ESP_MAC_WIFI_STA);
+        char buf[18];
+        snprintf(buf, sizeof(buf), "%02X:%02X:%02X:%02X:%02X:%02X",
+                 mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+        macAddress = String(buf);
+    }
     String suffix = macAddress.substring(macAddress.length() - 5);
     suffix.replace(":", "");
     deviceName = "ESP32-Andon-" + suffix;
@@ -854,12 +888,17 @@ void loop() {
     esp_task_wdt_reset();
     updateOnboardLED();
 
+    // Blink de aguardando broker: vermelho e amarelo alternados quando sem MQTT
+    if (currentState == MQTT_CONNECTING) {
+        updateMQTTWaitBlink();
+    }
+
     // Blink de pausa: todos os LEDs piscam juntos a ~70 BPM quando GRAY
-    if (g_andonStatus == "GRAY") {
+    if (currentState == OPERATIONAL && g_andonStatus == "GRAY") {
         updatePauseBlink();
     }
     // Blink de não-vinculado: amarelo pisca rápido quando UNASSIGNED
-    if (g_andonStatus == "UNASSIGNED") {
+    if (currentState == OPERATIONAL && g_andonStatus == "UNASSIGNED") {
         updateUnassignedBlink();
     }
 
