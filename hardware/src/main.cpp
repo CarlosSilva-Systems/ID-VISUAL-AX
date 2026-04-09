@@ -86,6 +86,10 @@ bool g_announcedFull     = false;
 // Fallback WiFi→Mesh: marca quando o WiFi caiu em OPERATIONAL
 unsigned long g_wifiLostAt = 0;   // 0 = WiFi está ok
 
+// Reset por botão: pause segurado por 5s
+unsigned long g_pauseHeldSince = 0;
+#define RESET_HOLD_MS 5000UL
+
 // Retry WiFi em MESH_NODE: tenta reconectar periodicamente
 Timer wifiRetryTimer = {WIFI_RETRY_INTERVAL_MS, 0};
 
@@ -134,6 +138,7 @@ void mqttCallback(char* topic, byte* payload, unsigned int length);
 String createDiscoveryMessage();
 void logMQTT(const String& message);
 void processButton(ButtonState* btn);
+void checkResetCombo();
 void publishButtonEvent(const String& color);
 void initializeGPIOs();
 void initializeWatchdog();
@@ -583,9 +588,9 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
             payloadStr == "UNASSIGNED") {
             g_andonStatus = payloadStr;
             g_lastAndonUpdate = millis();
-            // Só atualiza LEDs se estiver OPERATIONAL — fora disso os LEDs
-            // estão sendo usados para indicar estado de conexão
-            if (currentState == OPERATIONAL) updateAndonLEDs();
+            // Atualiza LEDs sempre — se ainda em MQTT_CONNECTING o status
+            // será aplicado quando entrar em OPERATIONAL
+            updateAndonLEDs();
             logSerial("ANDON STATE: " + payloadStr);
         }
     }
@@ -620,10 +625,16 @@ void handleMQTTConnecting() {
         currentState = OPERATIONAL;
         g_wifiLostAt = 0;
         resetBackoff(&mqttReconnect);
-        // Apaga LEDs de status de conexão — aguarda status do backend
-        digitalWrite(LED_VERMELHO_PIN, LOW);
-        digitalWrite(LED_AMARELO_PIN,  LOW);
-        digitalWrite(LED_VERDE_PIN,    LOW);
+        // Apaga LEDs de conexão e aplica status Andon já conhecido (se houver)
+        // O backend pode ter respondido ao REQUEST antes desta linha
+        if (g_andonStatus != "UNKNOWN") {
+            updateAndonLEDs();
+            logSerial("MQTT: status Andon restaurado -> " + g_andonStatus);
+        } else {
+            digitalWrite(LED_VERMELHO_PIN, LOW);
+            digitalWrite(LED_AMARELO_PIN,  LOW);
+            digitalWrite(LED_VERDE_PIN,    LOW);
+        }
         logSerial("MQTT: conectado -> OPERATIONAL (raiz, IP=" +
                   WiFi.localIP().toString() + " RSSI=" + String(WiFi.RSSI()) + "dBm)");
         return;
@@ -772,6 +783,34 @@ void processButton(ButtonState* btn) {
     }
 }
 
+// Verifica se o botão pause está sendo segurado para reset
+void checkResetCombo() {
+    bool pauseDown = (digitalRead(BTN_PAUSE) == LOW);
+    unsigned long now = millis();
+
+    if (pauseDown) {
+        if (g_pauseHeldSince == 0) {
+            g_pauseHeldSince = now;
+        } else if (now - g_pauseHeldSince >= RESET_HOLD_MS) {
+            logSerial("RESET: botao pause segurado 5s -> reiniciando...");
+            // Pisca todos os LEDs 3x para confirmar o reset
+            for (int i = 0; i < 3; i++) {
+                digitalWrite(LED_VERDE_PIN,    HIGH);
+                digitalWrite(LED_AMARELO_PIN,  HIGH);
+                digitalWrite(LED_VERMELHO_PIN, HIGH);
+                delay(150);
+                digitalWrite(LED_VERDE_PIN,    LOW);
+                digitalWrite(LED_AMARELO_PIN,  LOW);
+                digitalWrite(LED_VERMELHO_PIN, LOW);
+                delay(150);
+            }
+            ESP.restart();
+        }
+    } else {
+        g_pauseHeldSince = 0;
+    }
+}
+
 void publishButtonEvent(const String& color) {
     if (g_isRoot && mqttClient.connected()) {
         String topic = "andon/button/" + macAddress + "/" + color;
@@ -886,6 +925,7 @@ void setup() {
 
 void loop() {
     esp_task_wdt_reset();
+    checkResetCombo();
     updateOnboardLED();
 
     // Blink de aguardando broker: vermelho e amarelo alternados quando sem MQTT
