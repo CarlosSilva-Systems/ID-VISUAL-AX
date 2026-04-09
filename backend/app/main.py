@@ -58,6 +58,11 @@ async def lifespan(app: FastAPI):
     from app.services.mqtt_service import start_mqtt_service
     start_mqtt_service()
     logger.info("✓ MQTT service started")
+
+    # Iniciar monitor de devices offline
+    from app.services.device_monitor_service import start_device_monitor
+    start_device_monitor()
+    logger.info("✓ Device monitor started")
     
     # Event Loop Watchdog
     async def loop_watchdog():
@@ -80,6 +85,8 @@ async def lifespan(app: FastAPI):
     logger.info("Shutting down...")
     from app.services.mqtt_service import stop_mqtt_service
     stop_mqtt_service()
+    from app.services.device_monitor_service import stop_device_monitor
+    stop_device_monitor()
     watchdog_task.cancel()
     try:
         await watchdog_task
