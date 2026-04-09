@@ -320,6 +320,35 @@ export const api = {
         return api.patch(`/andon/calls/${callId}/status`, { status, resolved_note: resolvedNote });
     },
 
+    // ── Andon Justification Cycle ──
+    getPendingJustification: async (filters?: {
+        workcenter_id?: number;
+        color?: string;
+        from_date?: string;
+        to_date?: string;
+    }) => {
+        const params = new URLSearchParams();
+        if (filters?.workcenter_id) params.append('workcenter_id', String(filters.workcenter_id));
+        if (filters?.color) params.append('color', filters.color);
+        if (filters?.from_date) params.append('from_date', filters.from_date);
+        if (filters?.to_date) params.append('to_date', filters.to_date);
+        const query = params.toString();
+        return api.get(`/andon/calls/pending-justification${query ? `?${query}` : ''}`);
+    },
+
+    justifyCall: async (callId: number, payload: {
+        root_cause_category: string;
+        root_cause_detail: string;
+        action_taken: string;
+        justified_by: string;
+    }) => {
+        return api.patch(`/andon/calls/${callId}/justify`, payload);
+    },
+
+    getJustificationStats: async () => {
+        return api.get('/andon/calls/justification-stats');
+    },
+
     // --- Métodos Legados ---
     triggerAndon: async (color: 'amarelo' | 'vermelho' | 'basico', payload: any) => {
         return api.post(`/andon/trigger/${color}`, payload);
