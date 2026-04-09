@@ -597,15 +597,26 @@ async def get_pending_justification(
     wc_ids = list({c.workcenter_id for c in calls})
     wc_info: dict[int, dict] = {}
 
-    def _extract_owner(user_val: Any) -> str:
-        """Extrai nome do responsável do campo user_id do Odoo."""
-        if not user_val or user_val is False:
-            return '—'
-        if isinstance(user_val, (list, tuple)) and len(user_val) >= 2:
-            name = normalize_label(str(user_val[1]))
-            return name if name else '—'
-        if isinstance(user_val, str) and user_val.strip():
-            return normalize_label(user_val)
+    def _extract_owner(user_val: Any, workcenter_val: Any = None) -> str:
+        """Extrai nome do responsável.
+        Tenta user_id primeiro; se vazio, usa o nome do workcenter como fallback
+        (no Odoo desta empresa o workcenter_id[1] contém o nome do operador)."""
+        # Tenta user_id primeiro
+        if user_val and user_val is not False:
+            if isinstance(user_val, (list, tuple)) and len(user_val) >= 2:
+                name = normalize_label(str(user_val[1]))
+                if name:
+                    return name
+            elif isinstance(user_val, str) and user_val.strip():
+                return normalize_label(user_val)
+
+        # Fallback: nome do workcenter (ex: [28, 'CASSIO HENRIQUE'] → 'CASSIO HENRIQUE')
+        if workcenter_val and workcenter_val is not False:
+            if isinstance(workcenter_val, (list, tuple)) and len(workcenter_val) >= 2:
+                name = normalize_label(str(workcenter_val[1]))
+                if name:
+                    return name
+
         return '—'
 
     def _extract_work_type(wo_name: str) -> str:
@@ -615,7 +626,7 @@ async def get_pending_justification(
         name_lower = wo_name.lower()
         if 'pré' in name_lower or 'pre-' in name_lower or 'pre ' in name_lower:
             return 'Pré Montagem'
-        if 'completo' in name_lower or 'complete' in name_lower:
+        if 'completo' in name_lower or 'complete' in name_lower or 'completa' in name_lower:
             return 'Completo'
         if 'montagem' in name_lower or 'assembly' in name_lower:
             return 'Montagem'
@@ -635,7 +646,8 @@ async def get_pending_justification(
 
             # Só sobrescreve se: ainda não tem info OU esta WO tem estado prioritário
             if wc_id_int not in wc_info or is_priority:
-                owner = _extract_owner(wo.get('user_id'))
+                # Passa workcenter_val como fallback para owner quando user_id=False
+                owner = _extract_owner(wo.get('user_id'), wo.get('workcenter_id'))
                 work_type = _extract_work_type(wo.get('name') or '')
                 wc_info[wc_id_int] = {
                     'owner_name': owner,
