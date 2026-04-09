@@ -17,7 +17,12 @@ from app.models.id_request import IDRequest, IDRequestStatus
 from app.models.manufacturing import ManufacturingOrder
 from app.services.odoo_utils import normalize_label
 from app.services.sync_service import add_to_sync_queue, process_sync_queue
-from app.services.justification_service import compute_downtime_minutes
+from app.services.justification_service import (
+    compute_downtime_minutes,
+    compute_requires_justification,
+    validate_root_cause_category,
+    ROOT_CAUSE_CATEGORIES,
+)
 from app.services.websocket_manager import ws_manager
 
 import logging
@@ -361,6 +366,18 @@ class AndonCallUpdate(BaseModel):
     status: str
     resolved_note: Optional[str] = None
 
+class JustifyRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    root_cause_category: str
+    root_cause_detail: str
+    action_taken: str
+    justified_by: str
+
+class JustificationStats(BaseModel):
+    total_pending: int
+    by_color: dict
+    oldest_pending_minutes: Optional[int]
+
 @router.post("/calls")
 @limiter.limit("5/second")
 async def create_andon_call(
@@ -397,7 +414,8 @@ async def create_andon_call(
             mo_id=req.mo_id,
             status="OPEN",
             triggered_by=req.triggered_by,
-            is_stop=req.is_stop
+            is_stop=req.is_stop,
+            requires_justification=compute_requires_justification(req.color, req.is_stop),
         )
         session.add(call)
         await session.commit()
@@ -527,6 +545,114 @@ async def list_andon_calls(
     calls = result.scalars().all()
     sorted_calls = sorted(calls, key=lambda x: (0 if x.color == "RED" else 1, x.created_at))
     return sorted_calls
+
+@router.get("/calls/pending-justification")
+async def get_pending_justification(
+    workcenter_id: Optional[int] = None,
+    color: Optional[str] = None,
+    from_date: Optional[datetime] = None,
+    to_date: Optional[datetime] = None,
+    session: AsyncSession = Depends(get_session),
+):
+    """Retorna chamados resolvidos que requerem justificativa e ainda não foram justificados."""
+    stmt = select(AndonCall).where(
+        AndonCall.requires_justification == True,
+        AndonCall.justified_at == None,
+        AndonCall.status == "RESOLVED",
+    )
+    if workcenter_id is not None:
+        stmt = stmt.where(AndonCall.workcenter_id == workcenter_id)
+    if color is not None:
+        stmt = stmt.where(AndonCall.color == color)
+    if from_date is not None:
+        stmt = stmt.where(AndonCall.created_at >= from_date)
+    if to_date is not None:
+        stmt = stmt.where(AndonCall.created_at <= to_date)
+    stmt = stmt.order_by(AndonCall.created_at.asc())
+    result = await session.execute(stmt)
+    return result.scalars().all()
+
+
+@router.get("/calls/justification-stats", response_model=JustificationStats)
+async def get_justification_stats(session: AsyncSession = Depends(get_session)):
+    """Retorna estatísticas de chamados pendentes de justificativa."""
+    stmt = select(AndonCall).where(
+        AndonCall.requires_justification == True,
+        AndonCall.justified_at == None,
+        AndonCall.status == "RESOLVED",
+    )
+    result = await session.execute(stmt)
+    pending = result.scalars().all()
+
+    total_pending = len(pending)
+    by_color = {"RED": 0, "YELLOW": 0}
+    oldest_pending_minutes: Optional[int] = None
+
+    for call in pending:
+        if call.color in by_color:
+            by_color[call.color] += 1
+        if call.updated_at:
+            minutes = int((datetime.utcnow() - call.updated_at).total_seconds() // 60)
+            if oldest_pending_minutes is None or minutes > oldest_pending_minutes:
+                oldest_pending_minutes = minutes
+
+    return JustificationStats(
+        total_pending=total_pending,
+        by_color=by_color,
+        oldest_pending_minutes=oldest_pending_minutes,
+    )
+
+
+@router.patch("/calls/{call_id}/justify")
+async def justify_call(
+    call_id: int,
+    req: JustifyRequest,
+    session: AsyncSession = Depends(get_session),
+):
+    """Registra a justificativa de uma parada Andon."""
+    stmt = select(AndonCall).where(AndonCall.id == call_id)
+    result = await session.execute(stmt)
+    call = result.scalars().first()
+
+    if not call:
+        raise HTTPException(status_code=404, detail=f"Chamado #{call_id} não encontrado")
+
+    if not call.requires_justification:
+        raise HTTPException(status_code=422, detail="Chamado não requer justificativa")
+
+    if call.status != "RESOLVED":
+        raise HTTPException(
+            status_code=422,
+            detail="Chamado precisa estar com status RESOLVED antes de ser justificado",
+        )
+
+    if call.justified_at is not None:
+        raise HTTPException(status_code=409, detail="Chamado já foi justificado")
+
+    if not validate_root_cause_category(req.root_cause_category):
+        raise HTTPException(
+            status_code=422,
+            detail=f"Categoria de causa raiz inválida. Valores aceitos: {', '.join(sorted(ROOT_CAUSE_CATEGORIES))}",
+        )
+
+    call.root_cause_category = req.root_cause_category
+    call.root_cause_detail = req.root_cause_detail
+    call.action_taken = req.action_taken
+    call.justified_by = req.justified_by
+    call.justified_at = datetime.utcnow()
+
+    session.add(call)
+    await session.commit()
+    await session.refresh(call)
+
+    await ws_manager.broadcast("andon_call_justified", {
+        "call_id": call.id,
+        "workcenter_name": call.workcenter_name,
+        "justified_by": call.justified_by,
+    })
+
+    return call
+
 
 @router.patch("/calls/{call_id}/status")
 async def update_call_status(
