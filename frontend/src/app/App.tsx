@@ -16,6 +16,7 @@ import { OTAProgressDashboard } from './components/OTAProgressDashboard';
 
 import { AndonGrid } from './components/AndonGrid';
 import { AndonTV } from './components/AndonTV';
+import { AndonPendenciasPage } from './components/AndonPendenciasPage';
 import { Fabrication, User } from './types';
 import { api } from '../services/api';
 import { pollingManager } from '../services/pollingManager';
@@ -119,6 +120,7 @@ function AppContent() {
               <Route path="/id-visual/solicitacoes" element={<Solicitacoes onCreateBatch={handleCreateBatch} />} />
               <Route path="/id-visual/producao" element={<VisaoProducao />} />
               <Route path="/andon/painel" element={<AndonGrid username={currentUser?.username || ''} />} />
+              <Route path="/andon/pendencias" element={<AndonPendenciasPage currentUser={currentUser?.username || ''} />} />
               <Route path="/relatorios" element={<MPRAnalyticsDashboard />} />
               <Route path="/relatorios/meus" element={<MyReports />} />
               <Route path="/relatorios/visualizar/:reportId" element={<DynamicDashboard />} />

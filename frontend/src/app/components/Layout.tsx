@@ -18,7 +18,8 @@ import {
   Menu,
   Zap,
   LogOut,
-  Activity
+  Activity,
+  AlertTriangle
 } from "lucide-react";
 import { useLocation, useNavigate, Link } from "react-router-dom";
 import { cn, Button } from "./ui";
@@ -58,6 +59,7 @@ export const Layout = ({ children, user }: LayoutProps) => {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [manualCount, setManualCount] = useState(0);
+  const [pendingJustificationCount, setPendingJustificationCount] = useState(0);
 
   // Persistence for expanded groups
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() => {
@@ -88,6 +90,34 @@ export const Layout = ({ children, user }: LayoutProps) => {
     };
   }, []);
 
+  useEffect(() => {
+    const fetchJustificationStats = async () => {
+      try {
+        const stats = await api.getJustificationStats();
+        setPendingJustificationCount(stats.total_pending);
+      } catch { /* silencioso */ }
+    };
+    fetchJustificationStats();
+
+    // WebSocket para atualizações em tempo real
+    const apiUrl = (import.meta as any).env.VITE_API_URL || 'http://localhost:8000/api/v1';
+    const wsUrl = apiUrl.replace(/^http/, 'ws') + '/devices/ws';
+    const ws = new WebSocket(wsUrl);
+    ws.onmessage = (event) => {
+      try {
+        const msg = JSON.parse(event.data);
+        if (msg.event === 'andon_justification_required') {
+          setPendingJustificationCount(prev => prev + 1);
+        } else if (msg.event === 'andon_call_justified') {
+          setPendingJustificationCount(prev => Math.max(0, prev - 1));
+        }
+      } catch { /* ignore */ }
+    };
+    return () => {
+      if (ws.readyState === WebSocket.OPEN) ws.close();
+    };
+  }, []);
+
   const menuStructure: (MenuGroup | MenuItem)[] = [
     {
       id: "id-visual",
@@ -105,6 +135,13 @@ export const Layout = ({ children, user }: LayoutProps) => {
       icon: Activity,
       items: [
         { id: "andon", label: "Painel Andon", icon: Activity, path: "/andon/painel" },
+        {
+          id: "andon-pendencias",
+          label: "Pendências",
+          icon: AlertTriangle,
+          path: "/andon/pendencias",
+          badge: pendingJustificationCount > 0 ? (pendingJustificationCount > 99 ? '99+' : pendingJustificationCount) : null
+        },
       ]
     },
     { id: "relatorios", label: "Relatórios MPR", icon: BarChart3, path: "/relatorios" },
