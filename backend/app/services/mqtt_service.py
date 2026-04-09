@@ -185,11 +185,18 @@ async def _handle_button(mac: str, color: str, payload_raw: bytes):
             )
             result_calls = await session.execute(stmt_calls)
             active_calls = result_calls.scalars().all()
+            resolved_with_justification = []
             for call in active_calls:
+                now = datetime.now(timezone.utc).replace(tzinfo=None)
                 call.status = "RESOLVED"
                 call.resolved_note = f"Resolvido via botão físico ESP32 ({device.device_name})"
-                call.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
+                call.updated_at = now
+                # Calcular downtime
+                from app.services.justification_service import compute_downtime_minutes
+                call.downtime_minutes = compute_downtime_minutes(call.created_at, now)
                 session.add(call)
+                if call.requires_justification:
+                    resolved_with_justification.append(call)
 
             # Atualizar AndonStatus para verde
             from app.models.andon import AndonStatus
@@ -213,6 +220,15 @@ async def _handle_button(mac: str, color: str, payload_raw: bytes):
             await ws_manager.broadcast("andon_resolved", {
                 "workcenter_id": device.workcenter_id, "device_mac": mac, "resolved_count": len(active_calls)
             })
+            # Emitir WebSocket de justificativa para chamados que requerem
+            for call in resolved_with_justification:
+                await ws_manager.broadcast("andon_justification_required", {
+                    "call_id": call.id,
+                    "workcenter_name": call.workcenter_name,
+                    "color": call.color,
+                    "reason": call.reason,
+                    "downtime_minutes": call.downtime_minutes,
+                })
             return
 
         # Para amarelo/vermelho: resolve chamados anteriores antes de criar novo
@@ -238,7 +254,8 @@ async def _handle_button(mac: str, color: str, payload_raw: bytes):
             workcenter_name=f"Mesa {device.workcenter_id}",
             status="OPEN",
             triggered_by=f"ESP32 {device.device_name}",
-            is_stop=button_config["is_stop"]
+            is_stop=button_config["is_stop"],
+            requires_justification=button_config["call_color"] in ("RED", "YELLOW"),
         )
         session.add(call)
 

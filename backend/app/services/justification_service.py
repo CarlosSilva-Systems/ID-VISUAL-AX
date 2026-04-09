@@ -23,10 +23,10 @@ def compute_requires_justification(color: str, is_stop: bool) -> bool:
 
     Regra de negócio:
     - RED sempre requer justificativa
-    - YELLOW requer justificativa apenas se is_stop=True
+    - YELLOW sempre requer justificativa (independente de is_stop)
     - Qualquer outra cor não requer justificativa
     """
-    return color == "RED" or (color == "YELLOW" and is_stop)
+    return color in ("RED", "YELLOW")
 
 
 def compute_downtime_minutes(created_at: datetime, resolved_at: datetime) -> int:

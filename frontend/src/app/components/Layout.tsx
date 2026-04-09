@@ -108,6 +108,8 @@ export const Layout = ({ children, user }: LayoutProps) => {
       } catch { /* silencioso */ }
     };
     fetchJustificationStats();
+    // Polling a cada 30s para garantir sincronismo mesmo sem WebSocket
+    const interval = setInterval(fetchJustificationStats, 30000);
 
     // WebSocket para atualizações em tempo real
     const apiUrl = (import.meta as any).env.VITE_API_URL || 'http://localhost:8000/api/v1';
@@ -124,6 +126,7 @@ export const Layout = ({ children, user }: LayoutProps) => {
       } catch { /* ignore */ }
     };
     return () => {
+      clearInterval(interval);
       if (ws.readyState === WebSocket.OPEN) ws.close();
     };
   }, []);
