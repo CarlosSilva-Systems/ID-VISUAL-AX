@@ -64,7 +64,17 @@ export const Layout = ({ children, user }: LayoutProps) => {
   // Persistence for expanded groups
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() => {
     const saved = localStorage.getItem('id_visual_open_groups');
-    return saved ? JSON.parse(saved) : { 'id-visual': true, 'andon': true };
+    const parsed = saved ? JSON.parse(saved) : {};
+    // Garantir que os grupos principais estejam abertos por padrão
+    return {
+      'id-visual': true,
+      'andon-group': true,
+      ...parsed,
+      // Migrar chave legada 'andon' → 'andon-group'
+      ...(parsed['andon'] !== undefined && parsed['andon-group'] === undefined
+        ? { 'andon-group': parsed['andon'] }
+        : {}),
+    };
   });
 
   useEffect(() => {
