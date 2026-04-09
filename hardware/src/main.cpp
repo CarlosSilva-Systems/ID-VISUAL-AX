@@ -267,6 +267,22 @@ void updateMQTTWaitBlink() {
     }
 }
 
+// Blink não-bloqueante para MESH_NODE (sem WiFi, operando via mesh).
+// Amarelo pisca lento (1s on/off) — indica "online mas sem WiFi direto".
+#define MESH_NODE_BLINK_MS 1000UL
+void updateMeshNodeBlink() {
+    static unsigned long lastToggle = 0;
+    static bool blinkOn = false;
+    unsigned long now = millis();
+    if (now - lastToggle >= MESH_NODE_BLINK_MS) {
+        lastToggle = now;
+        blinkOn = !blinkOn;
+        digitalWrite(LED_VERDE_PIN,    LOW);
+        digitalWrite(LED_VERMELHO_PIN, LOW);
+        digitalWrite(LED_AMARELO_PIN,  blinkOn ? HIGH : LOW);
+    }
+}
+
 void playBootAnimation() {
     // Jogo de luzes na inicialização: onda contínua
     for (int ciclo = 0; ciclo < 3; ciclo++) {
@@ -962,6 +978,10 @@ void loop() {
     // Blink de não-vinculado: amarelo pisca rápido quando UNASSIGNED
     if (currentState == OPERATIONAL && g_andonStatus == "UNASSIGNED") {
         updateUnassignedBlink();
+    }
+    // Blink de nó folha: amarelo lento (1s) indica sem WiFi direto, operando via mesh
+    if (currentState == MESH_NODE) {
+        updateMeshNodeBlink();
     }
 
     switch (currentState) {
