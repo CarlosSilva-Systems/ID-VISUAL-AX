@@ -414,12 +414,67 @@ export const api = {
         return api.get('/devices');
     },
 
-    getDeviceLogs: async (macAddress: string, page = 1, pageSize = 50, eventType?: string) => {
-        const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
-        if (eventType) params.append('event_type', eventType);
-        return api.get(`/devices/${encodeURIComponent(macAddress)}/logs?${params}`);
+    getDeviceLogs: async (deviceId: string, level?: string, limit = 100) => {
+        const params = new URLSearchParams({ limit: String(limit) });
+        if (level) params.append('level', level);
+        return api.get(`/devices/${encodeURIComponent(deviceId)}/logs?${params}`);
     },
 
+    updateDevice: async (deviceId: string, payload: {
+        device_name?: string;
+        location?: string;
+        workcenter_id?: number | null;
+        notes?: string;
+    }) => {
+        return api.patch(`/devices/${encodeURIComponent(deviceId)}`, payload);
+    },
+
+    syncDevice: async (deviceId: string) => {
+        return api.post(`/devices/${encodeURIComponent(deviceId)}/sync`, {});
+    },
+
+    deleteDevice: async (deviceId: string) => {
+        return api.delete(`/devices/${encodeURIComponent(deviceId)}`);
+    },
+
+    getFirmwareVersions: async () => {
+        return api.get('/devices/firmware/versions');
+    },
+
+    uploadFirmwareVersion: async (formData: FormData): Promise<unknown> => {
+        return new Promise((resolve, reject) => {
+            const xhr = new XMLHttpRequest();
+            xhr.addEventListener('load', () => {
+                if (xhr.status >= 200 && xhr.status < 300) {
+                    resolve(JSON.parse(xhr.responseText));
+                } else {
+                    reject(new Error('Upload falhou'));
+                }
+            });
+            xhr.addEventListener('error', () => reject(new Error('Upload falhou')));
+            const token = localStorage.getItem('id_visual_token');
+            xhr.open('POST', `${API_URL}/devices/firmware/versions`);
+            if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+            xhr.send(formData);
+        });
+    },
+
+    triggerDeviceOTA: async (deviceId: string, payload: {
+        firmware_version_id: number;
+        triggered_by: string;
+    }) => {
+        return api.post(`/devices/${encodeURIComponent(deviceId)}/ota`, payload);
+    },
+
+    triggerOTABatch: async (payload: {
+        firmware_version_id: number;
+        triggered_by: string;
+        device_ids?: string[];
+    }) => {
+        return api.post('/devices/ota/batch', payload);
+    },
+
+    // Legado — mantido para compatibilidade com IoTDeviceModal
     bindDevice: async (macAddress: string, workcenterId: number) => {
         return api.post(`/devices/${encodeURIComponent(macAddress)}/bind`, { workcenter_id: workcenterId });
     },
