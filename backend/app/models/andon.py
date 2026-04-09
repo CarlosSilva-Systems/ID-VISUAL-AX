@@ -108,6 +108,17 @@ class AndonCall(SQLModel, table=True):
     odoo_picking_id: Optional[int] = Field(default=None)
     odoo_activity_id: Optional[int] = Field(default=None)
 
+    # Campos de parada
+    downtime_minutes: Optional[int] = Field(default=None)
+
+    # Campos de justificativa
+    requires_justification: bool = Field(default=False)
+    justified_at: Optional[datetime] = Field(default=None)
+    justified_by: Optional[str] = Field(default=None)
+    root_cause_category: Optional[str] = Field(default=None)
+    root_cause_detail: Optional[str] = Field(default=None)
+    action_taken: Optional[str] = Field(default=None)
+
 class SyncQueue(SQLModel, table=True):
     """Fila de sincronização para comandos enviados ao Odoo."""
     __tablename__ = "sync_queue"
