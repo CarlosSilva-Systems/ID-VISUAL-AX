@@ -55,6 +55,15 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
   - Mensagens de erro genéricas (não revelar detalhes internos)
   - Teste de conexão antes de persistir seleção de banco
 
+- **Melhorias na Tela de Pendências Andon**
+  - Endpoint `/calls/pending-justification` agora retorna campos enriquecidos do Odoo:
+    - `owner_name`: Nome do responsável pela mesa (extraído do campo `user_id` da Work Order)
+    - `work_type`: Tipo de montagem em execução (extraído do campo `name` da Work Order)
+  - Lógica de enriquecimento com priorização de Work Orders em progresso
+  - Parsing inteligente de tipos de montagem: "Pré Montagem", "Completo", "Montagem"
+  - Fallback para "—" quando dados do Odoo não estão disponíveis
+  - Tratamento robusto de erros sem interromper funcionalidade principal
+
 #### Frontend
 - **Componente DatabaseSelector**
   - Dropdown para seleção de banco de dados na tela de Configurações
@@ -68,6 +77,15 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
   - Estados: 🟢 CONECTADO (production), 🟡 CONECTADO (test), 🔴 DESCONECTADO
   - Atualiza automaticamente ao mudar banco de dados
   - Exibe nome do banco ativo
+
+- **Melhorias na Tela de Pendências Andon**
+  - Cabeçalho de grupos agora exibe:
+    - Nome do responsável pela mesa (com ícone de usuário 👤)
+    - Tipo de montagem em execução (com ícone de ferramenta 🔧)
+  - Nova coluna "Tipo" na tabela de paradas expandida
+  - Coluna posicionada entre "Responsável" e "Parou às"
+  - Exibição de "—" quando dados não estão disponíveis
+  - Interface TypeScript atualizada com campos `owner_name` e `work_type`
 
 - **OTA Management UI**
   - Componente `OTASettings` - Aba de gerenciamento de firmware em Configurações
