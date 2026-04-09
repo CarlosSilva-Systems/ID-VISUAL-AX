@@ -674,6 +674,11 @@ void handleOperational() {
         unsigned long now = millis();
         if (g_wifiLostAt == 0) {
             g_wifiLostAt = now;
+            // Limpa LEDs Andon imediatamente ao perder WiFi
+            g_andonStatus = "UNKNOWN";
+            digitalWrite(LED_VERDE_PIN,    LOW);
+            digitalWrite(LED_AMARELO_PIN,  LOW);
+            digitalWrite(LED_VERMELHO_PIN, LOW);
             logSerial("OPERATIONAL: WiFi perdido, aguardando " +
                       String(WIFI_LOSS_FALLBACK_MS / 1000) + "s antes de fallback...");
         } else if (now - g_wifiLostAt >= WIFI_LOSS_FALLBACK_MS) {
@@ -695,6 +700,11 @@ void handleOperational() {
 
     if (!mqttClient.connected()) {
         logSerial("OPERATIONAL: MQTT perdido -> MQTT_CONNECTING");
+        // Limpa LEDs Andon — não deve mostrar estado Andon sem conexão ativa
+        g_andonStatus = "UNKNOWN";
+        digitalWrite(LED_VERDE_PIN,    LOW);
+        digitalWrite(LED_AMARELO_PIN,  LOW);
+        digitalWrite(LED_VERMELHO_PIN, LOW);
         resetBackoff(&mqttReconnect);
         currentState = MQTT_CONNECTING;
         return;
