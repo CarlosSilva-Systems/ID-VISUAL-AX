@@ -596,47 +596,92 @@ async def get_pending_justification(
     # Enriquecer com dados do Odoo: owner_name e work_type por workcenter
     wc_ids = list({c.workcenter_id for c in calls})
     wc_info: dict[int, dict] = {}
-    try:
-        # Busca WOs ativas E recentes (últimas 24h) para cobrir chamados já resolvidos
-        wos = await odoo.search_read(
-            'mrp.workorder',
-            domain=[
-                ['workcenter_id', 'in', wc_ids],
-            ],
-            fields=['workcenter_id', 'user_id', 'name', 'state'],
-            limit=200,
-        )
-        # Priorizar WOs em progresso; fallback para qualquer WO da mesa
+
+    def _extract_owner(user_val: Any) -> str:
+        """Extrai nome do responsável do campo user_id do Odoo."""
+        if not user_val or user_val is False:
+            return '—'
+        if isinstance(user_val, (list, tuple)) and len(user_val) >= 2:
+            name = normalize_label(str(user_val[1]))
+            return name if name else '—'
+        if isinstance(user_val, str) and user_val.strip():
+            return normalize_label(user_val)
+        return '—'
+
+    def _extract_work_type(wo_name: str) -> str:
+        """Extrai tipo de montagem do campo name da WO — retorna o nome original se não mapear."""
+        if not wo_name:
+            return '—'
+        name_lower = wo_name.lower()
+        if 'pré' in name_lower or 'pre-' in name_lower or 'pre ' in name_lower:
+            return 'Pré Montagem'
+        if 'completo' in name_lower or 'complete' in name_lower:
+            return 'Completo'
+        if 'montagem' in name_lower or 'assembly' in name_lower:
+            return 'Montagem'
+        # Retorna o nome original normalizado em vez de '—'
+        cleaned = normalize_label(wo_name)
+        return cleaned if cleaned else '—'
+
+    def _process_wos(wos: list, priority_states: list) -> None:
+        """Processa lista de WOs e preenche wc_info priorizando estados específicos."""
         for wo in wos:
             wc_id_val = wo.get('workcenter_id')
+            if not wc_id_val:
+                continue
             wc_id_int = wc_id_val[0] if isinstance(wc_id_val, (list, tuple)) else wc_id_val
-            if wc_id_int not in wc_info or wo.get('state') == 'progress':
-                # user_id retorna como [id, "Nome"] no Odoo
-                user_val = wo.get('user_id')
-                if isinstance(user_val, (list, tuple)) and len(user_val) >= 2:
-                    owner = normalize_label(str(user_val[1]))
-                elif user_val and not isinstance(user_val, bool):
-                    owner = normalize_label(str(user_val))
-                else:
-                    owner = '—'
+            wo_state = wo.get('state', '')
+            is_priority = wo_state in priority_states
 
-                # Extrair tipo de montagem do campo name da WO
-                wo_name = (wo.get('name') or '').lower()
-                if 'pré' in wo_name or 'pre' in wo_name:
-                    work_type = 'Pré Montagem'
-                elif 'completo' in wo_name or 'complete' in wo_name:
-                    work_type = 'Completo'
-                elif 'montagem' in wo_name or 'assembly' in wo_name:
-                    work_type = 'Montagem'
-                else:
-                    work_type = normalize_label(wo.get('name') or '') or '—'
-
+            # Só sobrescreve se: ainda não tem info OU esta WO tem estado prioritário
+            if wc_id_int not in wc_info or is_priority:
+                owner = _extract_owner(wo.get('user_id'))
+                work_type = _extract_work_type(wo.get('name') or '')
                 wc_info[wc_id_int] = {
                     'owner_name': owner,
                     'work_type': work_type,
                 }
+                logger.debug(
+                    f"WO enrich wc_id={wc_id_int} state={wo_state} "
+                    f"owner={owner!r} work_type={work_type!r} wo_name={wo.get('name')!r}"
+                )
+
+    try:
+        # Passagem 1: WOs em estados ativos (progress, ready, waiting, pending)
+        active_states = ['progress', 'ready', 'waiting', 'pending']
+        wos_active = await odoo.search_read(
+            'mrp.workorder',
+            domain=[
+                ['workcenter_id', 'in', wc_ids],
+                ['state', 'in', active_states],
+            ],
+            fields=['workcenter_id', 'user_id', 'name', 'state'],
+            limit=500,
+            order='write_date desc',
+        )
+        logger.info(f"Pendências enrich: {len(wos_active)} WOs ativas para wc_ids={wc_ids}")
+        _process_wos(wos_active, priority_states=['progress'])
+
+        # Passagem 2: Para workcenters sem info, busca WOs recentes (qualquer estado)
+        missing_wc_ids = [wc_id for wc_id in wc_ids if wc_id not in wc_info]
+        if missing_wc_ids:
+            logger.info(f"Pendências enrich: buscando WOs recentes para wc_ids sem info: {missing_wc_ids}")
+            wos_recent = await odoo.search_read(
+                'mrp.workorder',
+                domain=[
+                    ['workcenter_id', 'in', missing_wc_ids],
+                ],
+                fields=['workcenter_id', 'user_id', 'name', 'state'],
+                limit=200,
+                order='write_date desc',
+            )
+            logger.info(f"Pendências enrich: {len(wos_recent)} WOs recentes encontradas")
+            _process_wos(wos_recent, priority_states=['progress', 'done'])
+
+        logger.info(f"Pendências enrich resultado: {wc_info}")
+
     except Exception as e:
-        logger.warning(f"Falha ao buscar dados Odoo para pendências: {e}")
+        logger.error(f"Falha ao buscar dados Odoo para pendências: {e}", exc_info=True)
 
     # Montar resposta enriquecida
     enriched = []
