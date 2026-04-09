@@ -223,7 +223,8 @@ export const AndonPendenciasPage: React.FC<AndonPendenciasPageProps> = ({ curren
                       <thead>
                         <tr className="bg-slate-50">
                           <th className="text-left text-xs font-semibold text-slate-500 uppercase tracking-wider px-4 py-2.5">Cor</th>
-                          <th className="text-left text-xs font-semibold text-slate-500 uppercase tracking-wider px-4 py-2.5">Motivo</th>
+                          <th className="text-left text-xs font-semibold text-slate-500 uppercase tracking-wider px-4 py-2.5">Responsável</th>
+                          <th className="text-left text-xs font-semibold text-slate-500 uppercase tracking-wider px-4 py-2.5">Tipo</th>
                           <th className="text-left text-xs font-semibold text-slate-500 uppercase tracking-wider px-4 py-2.5">Parou às</th>
                           <th className="text-left text-xs font-semibold text-slate-500 uppercase tracking-wider px-4 py-2.5">Retomou às</th>
                           <th className="text-left text-xs font-semibold text-slate-500 uppercase tracking-wider px-4 py-2.5">Duração</th>
@@ -243,11 +244,14 @@ export const AndonPendenciasPage: React.FC<AndonPendenciasPageProps> = ({ curren
                                 {call.color === 'RED' ? '🔴 Vermelho' : '🟡 Amarelo'}
                               </span>
                             </td>
-                            <td className="px-4 py-3 text-sm text-slate-700 max-w-[220px] truncate" title={call.reason}>
-                              {call.reason}
+                            <td className="px-4 py-3 text-sm text-slate-700 font-medium">
+                              {call.owner_name || '—'}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-slate-600">
+                              {call.work_type || '—'}
                             </td>
                             <td className="px-4 py-3 text-sm text-slate-600 font-mono">
-                              {formatDate(call.created_at)}
+                              {call.created_at ? formatDate(call.created_at) : '—'}
                             </td>
                             <td className="px-4 py-3 text-sm text-slate-600 font-mono">
                               {call.updated_at ? formatDate(call.updated_at) : '—'}

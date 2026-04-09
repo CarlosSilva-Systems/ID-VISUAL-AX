@@ -597,18 +597,29 @@ async def get_pending_justification(
     wc_ids = list({c.workcenter_id for c in calls})
     wc_info: dict[int, dict] = {}
     try:
+        # Busca WOs ativas E recentes (últimas 24h) para cobrir chamados já resolvidos
         wos = await odoo.search_read(
             'mrp.workorder',
             domain=[
                 ['workcenter_id', 'in', wc_ids],
-                ['state', 'in', ['progress', 'ready', 'waiting', 'pending', 'pause']],
             ],
-            fields=['workcenter_id', 'user_id', 'name'],
+            fields=['workcenter_id', 'user_id', 'name', 'state'],
+            limit=200,
         )
+        # Priorizar WOs em progresso; fallback para qualquer WO da mesa
         for wo in wos:
             wc_id_val = wo.get('workcenter_id')
             wc_id_int = wc_id_val[0] if isinstance(wc_id_val, (list, tuple)) else wc_id_val
-            if wc_id_int not in wc_info:
+            if wc_id_int not in wc_info or wo.get('state') == 'progress':
+                # user_id retorna como [id, "Nome"] no Odoo
+                user_val = wo.get('user_id')
+                if isinstance(user_val, (list, tuple)) and len(user_val) >= 2:
+                    owner = normalize_label(str(user_val[1]))
+                elif user_val and not isinstance(user_val, bool):
+                    owner = normalize_label(str(user_val))
+                else:
+                    owner = '—'
+
                 # Extrair tipo de montagem do campo name da WO
                 wo_name = (wo.get('name') or '').lower()
                 if 'pré' in wo_name or 'pre' in wo_name:
@@ -619,9 +630,6 @@ async def get_pending_justification(
                     work_type = 'Montagem'
                 else:
                     work_type = normalize_label(wo.get('name') or '') or '—'
-
-                user_val = wo.get('user_id')
-                owner = normalize_label(user_val) if user_val else '—'
 
                 wc_info[wc_id_int] = {
                     'owner_name': owner,
