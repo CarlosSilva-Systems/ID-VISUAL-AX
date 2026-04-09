@@ -128,3 +128,71 @@ export const MOCK_FABRICATIONS: Fabrication[] = [
     docs: { diagrama: true, legenda: true },
   }
 ];
+
+// ── Andon Justification Cycle ──
+
+export type RootCauseCategory =
+  | 'Máquina'
+  | 'Material'
+  | 'Mão de obra'
+  | 'Método'
+  | 'Meio ambiente';
+
+export const ROOT_CAUSE_CATEGORIES: RootCauseCategory[] = [
+  'Máquina',
+  'Material',
+  'Mão de obra',
+  'Método',
+  'Meio ambiente',
+];
+
+export interface AndonCall {
+  id: number;
+  color: 'YELLOW' | 'RED';
+  category: string;
+  reason: string;
+  description?: string;
+  workcenter_id: number;
+  workcenter_name: string;
+  mo_id?: number;
+  status: 'OPEN' | 'IN_PROGRESS' | 'RESOLVED';
+  created_at: string;
+  updated_at: string;
+  triggered_by: string;
+  assigned_team?: string;
+  resolved_note?: string;
+  is_stop: boolean;
+  odoo_picking_id?: number;
+  odoo_activity_id?: number;
+  // Campos de justificativa (Fase 1)
+  downtime_minutes?: number;
+  requires_justification: boolean;
+  justified_at?: string;
+  justified_by?: string;
+  root_cause_category?: RootCauseCategory;
+  root_cause_detail?: string;
+  action_taken?: string;
+}
+
+export interface JustificationStats {
+  total_pending: number;
+  by_color: {
+    RED: number;
+    YELLOW: number;
+  };
+  oldest_pending_minutes: number | null;
+}
+
+export interface JustifyPayload {
+  root_cause_category: RootCauseCategory;
+  root_cause_detail: string;
+  action_taken: string;
+  justified_by: string;
+}
+
+export interface PendingJustificationFilters {
+  workcenter_id?: number;
+  color?: 'RED' | 'YELLOW';
+  from_date?: string;
+  to_date?: string;
+}
