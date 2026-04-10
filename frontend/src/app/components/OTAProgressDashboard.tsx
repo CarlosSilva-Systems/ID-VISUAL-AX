@@ -5,12 +5,14 @@ import {
   AlertCircle,
   Loader2,
   ChevronDown,
-  Info
+  Info,
+  ChevronRight
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../../services/api';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import { useBreakpoint } from '../../hooks/useBreakpoint';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -35,21 +37,25 @@ interface OTAProgressDashboardProps {
   onClose: () => void;
 }
 
+const SHOW_INITIAL = 10;
+
 export function OTAProgressDashboard({ onClose }: OTAProgressDashboardProps) {
   const [devices, setDevices] = useState<DeviceStatus[]>([]);
   const [targetVersion, setTargetVersion] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [gatewaysExpanded, setGatewaysExpanded] = useState(true);
   const [nodesExpanded, setNodesExpanded] = useState(true);
+  const [showAllGateways, setShowAllGateways] = useState(false);
+  const [showAllNodes, setShowAllNodes] = useState(false);
+
+  const bp = useBreakpoint();
+  const isMobile = bp === 'mobile' || bp === 'sm';
 
   useEffect(() => {
     fetchOTAStatus();
-    
+
     // TODO: Subscribe to WebSocket events for real-time updates
     // This will be implemented when WebSocket integration is ready
-    // const ws = useWebSocket();
-    // const unsubscribe = ws.subscribe('ota_progress', handleProgressUpdate);
-    // return unsubscribe;
 
     // For now, poll every 5 seconds
     const interval = setInterval(fetchOTAStatus, 5000);
@@ -60,31 +66,19 @@ export function OTAProgressDashboard({ onClose }: OTAProgressDashboardProps) {
     try {
       const status = await api.getOTAStatus();
       setDevices(status.devices || []);
-      
+
       // Get target version from first device with target_version
       const deviceWithTarget = status.devices?.find((d: DeviceStatus) => d.target_version);
       if (deviceWithTarget) {
         setTargetVersion(deviceWithTarget.target_version || '');
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Erro desconhecido';
       console.error('Erro ao buscar status OTA:', err);
-      toast.error('Erro ao atualizar status: ' + err.message);
+      toast.error('Erro ao atualizar status: ' + message);
     } finally {
       setLoading(false);
     }
-  };
-
-  const handleProgressUpdate = (data: any) => {
-    setDevices(prev => prev.map(device => 
-      device.mac_address === data.mac
-        ? {
-            ...device,
-            status: data.status,
-            progress_percent: data.progress,
-            error_message: data.error
-          }
-        : device
-    ));
   };
 
   const stats = useMemo(() => ({
@@ -94,10 +88,12 @@ export function OTAProgressDashboard({ onClose }: OTAProgressDashboardProps) {
     total: devices.length
   }), [devices]);
 
-  // Separate gateways and nodes (for now, all devices are treated as nodes)
-  // In a real implementation, you would check device.is_gateway or similar
+  // Separate gateways and nodes
   const gateways = devices.filter(d => d.device_name.toLowerCase().includes('gateway'));
   const nodes = devices.filter(d => !d.device_name.toLowerCase().includes('gateway'));
+
+  const visibleGateways = showAllGateways ? gateways : gateways.slice(0, SHOW_INITIAL);
+  const visibleNodes = showAllNodes ? nodes : nodes.slice(0, SHOW_INITIAL);
 
   const allComplete = stats.inProgress === 0 && stats.total > 0;
 
@@ -113,7 +109,7 @@ export function OTAProgressDashboard({ onClose }: OTAProgressDashboardProps) {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 p-8">
+    <div className="min-h-screen bg-slate-50 p-4 sm:p-6 lg:p-8">
       <div className="max-w-6xl mx-auto space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
@@ -125,7 +121,7 @@ export function OTAProgressDashboard({ onClose }: OTAProgressDashboardProps) {
               <ArrowLeft size={20} />
               Voltar
             </button>
-            <h1 className="text-3xl font-black text-slate-900">
+            <h1 className="text-2xl sm:text-3xl font-black text-slate-900">
               Atualização OTA em Andamento
             </h1>
             {targetVersion && (
@@ -136,15 +132,15 @@ export function OTAProgressDashboard({ onClose }: OTAProgressDashboardProps) {
           </div>
         </div>
 
-        {/* Stats Summary */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        {/* Stats Summary — 2 cols mobile, 4 cols md+ */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <div className="bg-white rounded-2xl border border-slate-100 p-6 shadow-sm">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-1">
                   Concluídos
                 </p>
-                <p className="text-3xl font-black text-emerald-600">{stats.completed}</p>
+                <p className="text-2xl sm:text-3xl font-black text-emerald-600">{stats.completed}</p>
               </div>
               <div className="w-12 h-12 bg-emerald-100 rounded-xl flex items-center justify-center">
                 <CheckCircle className="text-emerald-600" size={24} />
@@ -158,7 +154,7 @@ export function OTAProgressDashboard({ onClose }: OTAProgressDashboardProps) {
                 <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-1">
                   Em Progresso
                 </p>
-                <p className="text-3xl font-black text-amber-600">{stats.inProgress}</p>
+                <p className="text-2xl sm:text-3xl font-black text-amber-600">{stats.inProgress}</p>
               </div>
               <div className="w-12 h-12 bg-amber-100 rounded-xl flex items-center justify-center">
                 <Loader2 className="text-amber-600 animate-spin" size={24} />
@@ -172,7 +168,7 @@ export function OTAProgressDashboard({ onClose }: OTAProgressDashboardProps) {
                 <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-1">
                   Falharam
                 </p>
-                <p className="text-3xl font-black text-red-600">{stats.failed}</p>
+                <p className="text-2xl sm:text-3xl font-black text-red-600">{stats.failed}</p>
               </div>
               <div className="w-12 h-12 bg-red-100 rounded-xl flex items-center justify-center">
                 <AlertCircle className="text-red-600" size={24} />
@@ -186,7 +182,7 @@ export function OTAProgressDashboard({ onClose }: OTAProgressDashboardProps) {
                 <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-1">
                   Total
                 </p>
-                <p className="text-3xl font-black text-slate-900">{stats.total}</p>
+                <p className="text-2xl sm:text-3xl font-black text-slate-900">{stats.total}</p>
               </div>
               <div className="w-12 h-12 bg-slate-100 rounded-xl flex items-center justify-center">
                 <Info className="text-slate-600" size={24} />
@@ -215,9 +211,20 @@ export function OTAProgressDashboard({ onClose }: OTAProgressDashboardProps) {
             </button>
             {gatewaysExpanded && (
               <div className="border-t border-slate-100 divide-y divide-slate-50">
-                {gateways.map(device => (
-                  <DeviceProgressItem key={device.device_id} device={device} />
+                {visibleGateways.map(device => (
+                  <DeviceProgressItem key={device.device_id} device={device} isMobile={isMobile} />
                 ))}
+                {gateways.length > SHOW_INITIAL && !showAllGateways && (
+                  <div className="p-4 flex justify-center">
+                    <button
+                      onClick={() => setShowAllGateways(true)}
+                      className="flex items-center gap-2 px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold text-sm transition-all active:scale-95"
+                    >
+                      <ChevronRight size={16} />
+                      Ver mais {gateways.length - SHOW_INITIAL} dispositivos
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -243,9 +250,20 @@ export function OTAProgressDashboard({ onClose }: OTAProgressDashboardProps) {
             </button>
             {nodesExpanded && (
               <div className="border-t border-slate-100 divide-y divide-slate-50">
-                {nodes.map(device => (
-                  <DeviceProgressItem key={device.device_id} device={device} />
+                {visibleNodes.map(device => (
+                  <DeviceProgressItem key={device.device_id} device={device} isMobile={isMobile} />
                 ))}
+                {nodes.length > SHOW_INITIAL && !showAllNodes && (
+                  <div className="p-4 flex justify-center">
+                    <button
+                      onClick={() => setShowAllNodes(true)}
+                      className="flex items-center gap-2 px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold text-sm transition-all active:scale-95"
+                    >
+                      <ChevronRight size={16} />
+                      Ver mais {nodes.length - SHOW_INITIAL} dispositivos
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -269,9 +287,10 @@ export function OTAProgressDashboard({ onClose }: OTAProgressDashboardProps) {
 
 interface DeviceProgressItemProps {
   device: DeviceStatus;
+  isMobile: boolean;
 }
 
-function DeviceProgressItem({ device }: DeviceProgressItemProps) {
+function DeviceProgressItem({ device, isMobile }: DeviceProgressItemProps) {
   const getStatusIcon = () => {
     switch (device.status) {
       case 'success':
@@ -308,58 +327,76 @@ function DeviceProgressItem({ device }: DeviceProgressItemProps) {
 
   const isActive = ['downloading', 'installing'].includes(device.status);
 
+  const progressBar = isActive && (
+    <div className={cn(isMobile ? "w-full mt-3" : "w-64 shrink-0")}>
+      <div className="flex items-center justify-between mb-1">
+        <span className="text-xs font-bold text-slate-600">Progresso</span>
+        <span className="text-xs font-bold text-slate-900">{device.progress_percent}%</span>
+      </div>
+      <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
+        <div
+          className={cn(
+            "h-full transition-all duration-300 rounded-full",
+            "bg-gradient-to-r from-blue-500 to-blue-600",
+            "animate-pulse"
+          )}
+          style={{ width: `${device.progress_percent}%` }}
+        />
+      </div>
+    </div>
+  );
+
   return (
     <div className="p-6 hover:bg-slate-50 transition-colors">
-      <div className="flex items-center gap-4">
-        {/* Status Icon */}
-        <div className="shrink-0">
-          {getStatusIcon()}
-        </div>
-
-        {/* Device Info */}
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-3 mb-1">
-            <p className="font-bold text-slate-900 truncate">{device.device_name}</p>
-            <span className={cn("text-xs font-bold uppercase tracking-wider", getStatusColor())}>
-              {getStatusText()}
-            </span>
+      {/* Layout em coluna em mobile, linha em desktop */}
+      <div className={cn("flex gap-4", isMobile ? "flex-col" : "items-center")}>
+        <div className={cn("flex gap-4", isMobile ? "items-start" : "items-center flex-1")}>
+          {/* Status Icon */}
+          <div className="shrink-0">
+            {getStatusIcon()}
           </div>
-          <p className="text-sm text-slate-500 font-mono">{device.mac_address}</p>
-          
-          {/* Error Message */}
-          {device.error_message && (
-            <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded-lg">
-              <p className="text-xs text-red-700 font-medium">{device.error_message}</p>
+
+          {/* Device Info */}
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-3 mb-1">
+              <p className="font-bold text-slate-900 truncate">{device.device_name}</p>
+              <span className={cn("text-xs font-bold uppercase tracking-wider", getStatusColor())}>
+                {getStatusText()}
+              </span>
+            </div>
+            <p className="text-sm text-slate-500 font-mono">{device.mac_address}</p>
+
+            {/* Error Message */}
+            {device.error_message && (
+              <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded-lg">
+                <p className="text-xs text-red-700 font-medium">{device.error_message}</p>
+              </div>
+            )}
+          </div>
+
+          {/* Success Icon — inline em desktop */}
+          {!isMobile && device.status === 'success' && (
+            <div className="shrink-0">
+              <div className="w-10 h-10 bg-emerald-100 rounded-xl flex items-center justify-center">
+                <CheckCircle className="text-emerald-600" size={20} />
+              </div>
             </div>
           )}
+
+          {/* Progress Bar — inline em desktop */}
+          {!isMobile && progressBar}
         </div>
 
-        {/* Progress Bar */}
-        {isActive && (
-          <div className="w-64 shrink-0">
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-xs font-bold text-slate-600">Progresso</span>
-              <span className="text-xs font-bold text-slate-900">{device.progress_percent}%</span>
-            </div>
-            <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
-              <div
-                className={cn(
-                  "h-full transition-all duration-300 rounded-full",
-                  "bg-gradient-to-r from-blue-500 to-blue-600",
-                  "animate-pulse"
-                )}
-                style={{ width: `${device.progress_percent}%` }}
-              />
-            </div>
-          </div>
-        )}
+        {/* Progress Bar — abaixo em mobile */}
+        {isMobile && progressBar}
 
-        {/* Success Icon */}
-        {device.status === 'success' && (
-          <div className="shrink-0">
-            <div className="w-10 h-10 bg-emerald-100 rounded-xl flex items-center justify-center">
-              <CheckCircle className="text-emerald-600" size={20} />
+        {/* Success Icon — abaixo em mobile */}
+        {isMobile && device.status === 'success' && (
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 bg-emerald-100 rounded-xl flex items-center justify-center">
+              <CheckCircle className="text-emerald-600" size={16} />
             </div>
+            <span className="text-xs font-bold text-emerald-600">Atualização concluída</span>
           </div>
         )}
       </div>
