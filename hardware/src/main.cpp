@@ -568,7 +568,7 @@ void handleWiFiConnecting() {
 // ═══════════════════════════════════════════════════════════
 
 String createDiscoveryMessage() {
-    StaticJsonDocument<320> doc;
+    StaticJsonDocument<384> doc;
     doc["mac_address"]      = macAddress;
     doc["device_name"]      = deviceName;
     doc["firmware_version"] = FIRMWARE_VERSION;
@@ -577,6 +577,9 @@ String createDiscoveryMessage() {
     doc["mesh_node_count"]  = (int)(g_mesh.getNodeList().size() + 1);
     doc["mesh_children"]    = g_directChildren;
     doc["rssi"]             = WiFi.RSSI();
+    doc["ip_address"]       = WiFi.localIP().toString();
+    // connection_type: "wifi" = raiz com WiFi direto, "mesh" = nó folha sem WiFi
+    doc["connection_type"]  = g_isRoot ? "wifi" : "mesh";
     String output;
     serializeJson(doc, output);
     return output;
