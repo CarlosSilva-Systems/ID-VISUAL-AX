@@ -1,4 +1,6 @@
 from typing import Any, List, Dict
+import logging
+import uuid
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -8,6 +10,7 @@ from app.models.system_setting import SystemSetting
 from app.services.odoo_client import OdooClient
 from app.core.config import settings
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 @router.get("/", response_model=List[Dict[str, Any]])
@@ -111,4 +114,6 @@ async def reset_database(
         return {"status": "success", "message": "Dados operacionais resetados com sucesso."}
     except Exception as e:
         await session.rollback()
-        raise HTTPException(status_code=500, detail=f"Erro ao resetar banco: {str(e)}")
+        request_id = str(uuid.uuid4())[:8]
+        logger.exception(f"Erro ao resetar banco [ref:{request_id}]: {e}")
+        raise HTTPException(status_code=500, detail=f"Erro ao resetar banco [ref: {request_id}]")

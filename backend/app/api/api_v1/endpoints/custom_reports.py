@@ -46,8 +46,9 @@ async def create_ia_report(
         
         return new_report
     except Exception as e:
-        logger.error(f"Erro na geração de relatório: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        request_id = str(uuid.uuid4())[:8]
+        logger.exception(f"Erro na geração de relatório [ref:{request_id}]: {e}")
+        raise HTTPException(status_code=500, detail=f"Erro ao gerar relatório [ref: {request_id}]")
 
 @router.patch("/{id}/refine", response_model=CustomReportRead)
 async def refine_ia_report(
@@ -80,8 +81,9 @@ async def refine_ia_report(
         
         return report
     except Exception as e:
-        logger.error(f"Erro no refinamento do relatório: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Erro ao refinar: {str(e)}")
+        request_id = str(uuid.uuid4())[:8]
+        logger.exception(f"Erro no refinamento do relatório [ref:{request_id}]: {e}")
+        raise HTTPException(status_code=500, detail=f"Erro ao refinar relatório [ref: {request_id}]")
 
 @router.get("/", response_model=List[CustomReportRead])
 

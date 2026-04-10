@@ -190,8 +190,9 @@ class OTAService:
         except HTTPException:
             raise
         except Exception as e:
-            logger.error(f"OTA: GitHub download failed - {e}")
-            raise HTTPException(500, f"Erro ao baixar firmware: {str(e)}")
+            request_id = str(uuid.uuid4())[:8]
+            logger.exception(f"OTA: GitHub download failed [ref:{request_id}]: {e}")
+            raise HTTPException(500, f"Erro ao baixar firmware [ref: {request_id}]")
         
         # Criar registro no banco
         release = FirmwareRelease(

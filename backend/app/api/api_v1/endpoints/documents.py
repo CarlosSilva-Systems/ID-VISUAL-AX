@@ -1,5 +1,6 @@
 import logging
 import base64
+import uuid
 from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse, JSONResponse
@@ -94,8 +95,9 @@ async def list_mo_documents(
             "total": len(normalized)
         }
     except Exception as e:
-        logger.error(f"Error listing documents for MO {odoo_mo_id}: {e}")
-        raise HTTPException(status_code=502, detail=f"Erro ao buscar documentos no Odoo: {str(e)}")
+        request_id = str(uuid.uuid4())[:8]
+        logger.error(f"Error listing documents for MO {odoo_mo_id} [ref:{request_id}]: {e}")
+        raise HTTPException(status_code=502, detail=f"Erro ao buscar documentos no Odoo [ref: {request_id}]")
     finally:
         await client.close()
 
@@ -178,7 +180,8 @@ async def proxy_document(doc_id: str, disposition: str):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error proxying document {doc_id}: {e}")
-        raise HTTPException(status_code=502, detail=f"Erro ao processar documento: {str(e)}")
+        request_id = str(uuid.uuid4())[:8]
+        logger.error(f"Error proxying document {doc_id} [ref:{request_id}]: {e}")
+        raise HTTPException(status_code=502, detail=f"Erro ao processar documento [ref: {request_id}]")
     finally:
         await client.close()
