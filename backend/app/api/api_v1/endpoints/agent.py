@@ -4,6 +4,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import List, Dict, Any
 from app.core.config import settings
+from app.api.deps import get_current_user
 
 # AsyncOpenAI via OpenRouter
 from openai import AsyncOpenAI
@@ -87,7 +88,7 @@ async def execute_tool_call(tool_name: str, arguments: Dict[str, Any]) -> str:
 
 # --- SSE Stream Logic ---
 @router.post("/chat")
-async def chat_stream(request: ChatRequest):
+async def chat_stream(request: ChatRequest, current_user: Any = Depends(get_current_user)):
     """
     Recebe as mensagens, chama o modelo openai/gpt-4o-mini, 
     resolve tools localmente e retorna SSE text chunks.
