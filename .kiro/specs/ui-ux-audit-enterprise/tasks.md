@@ -47,7 +47,7 @@ A fase 11 cobre os testes de propriedade com `fast-check`, validando invariantes
     - Exibir botão CTA quando `action` for fornecido
     - _Requirements: 7.1, 7.2, 7.3, 7.4, 7.5_
 
-- [-] 5. Checkpoint — Fundação completa
+- [x] 5. Checkpoint — Fundação completa
   - Garantir que todos os testes passem. Verificar que `theme.css`, `ui.tsx`, `ConfirmModal`, `SkeletonLoader` e `EmptyState` compilam sem erros TypeScript. Perguntar ao usuário se há dúvidas antes de prosseguir.
 
 - [x] 6. Fase 5 — `Configuracoes.tsx`
@@ -106,7 +106,7 @@ A fase 11 cobre os testes de propriedade com `fast-check`, validando invariantes
   - [x] 11.3 Adicionar `EmptyState` no painel `PanelMesasParadas` de `AndonTV.tsx` quando `calls.length === 0`; corrigir textos `text-[9px]` e `text-[11px]` → `text-xs` mínimo
     - _Requirements: 12.1, 15.1, 15.5_
 
-- [~] 12. Checkpoint — Páginas completas
+- [x] 12. Checkpoint — Páginas completas
   - Garantir que todos os testes passem e que não há erros TypeScript. Verificar que `window.confirm()` e `confirm()` foram completamente removidos dos componentes auditados. Perguntar ao usuário se há dúvidas antes de prosseguir para os testes de propriedade.
 
 - [x] 13. Fase 11 — Instalar `fast-check` e escrever testes de propriedade
@@ -136,7 +136,7 @@ A fase 11 cobre os testes de propriedade com `fast-check`, validando invariantes
     - **Valida: Requirements 5.1, 5.5, 5.6, 5.7**
     - Usar `fc.record({ title: fc.string({ minLength: 1 }), description: fc.string(), variant: fc.constantFrom('destructive', 'warning', 'success') })` com 100 iterações
 
-- [~] 14. Checkpoint final — Garantir qualidade
+- [x] 14. Checkpoint final — Garantir qualidade
   - Garantir que todos os testes passem (`npm run test -- --run` em `frontend/`). Verificar ausência de erros TypeScript com `tsc --noEmit`. Confirmar que nenhum `window.confirm()`, `console.log` de debug ou bloco de debug visual permanece no código. Perguntar ao usuário se há ajustes finais.
 
 ---

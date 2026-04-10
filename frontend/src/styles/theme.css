@@ -266,6 +266,30 @@
   }
 }
 
+/* Touch targets mínimos globais para inputs e selects em mobile */
+@media (max-width: 767px) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  select,
+  textarea {
+    min-height: 2.75rem; /* 44px */
+  }
+
+  /* Checkboxes: área de toque expandida via padding no wrapper */
+  input[type="checkbox"],
+  input[type="radio"] {
+    min-width: 1.25rem;
+    min-height: 1.25rem;
+  }
+
+  /* Reduzir sombras complexas em mobile para melhorar performance de renderização */
+  .shadow-xl {
+    box-shadow: var(--shadow-md) !important;
+  }
+  .shadow-2xl {
+    box-shadow: var(--shadow-lg) !important;
+  }
+}
+
 /* Scroll suave em iOS para listas com overflow-x */
 .scroll-touch {
   -webkit-overflow-scrolling: touch;

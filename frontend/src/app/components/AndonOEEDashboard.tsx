@@ -107,7 +107,7 @@ export const AndonOEEDashboard: React.FC = () => {
       {/* Cabeçalho */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
+          <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold text-slate-900 flex items-center gap-2">
             <Activity className="w-6 h-6 text-blue-600" />
             Dashboard OEE
           </h1>
@@ -200,19 +200,21 @@ export const AndonOEEDashboard: React.FC = () => {
         <div className="bg-white rounded-2xl border border-slate-200 p-5">
           <h2 className="text-sm font-semibold text-slate-700 mb-4">Acionamentos por Dia</h2>
           {loading ? <ChartSkeleton /> : (
-            <ResponsiveContainer width="100%" height={240}>
-              <BarChart data={timeline} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                <XAxis dataKey="date" tick={{ fontSize: 10 }} tickFormatter={d => d.slice(5)} />
-                <YAxis tick={{ fontSize: 10 }} allowDecimals={false} />
-                <RechartsTooltip
-                  formatter={(value: number, name: string) => [value, name === 'red_calls' ? '🔴 Vermelho' : '🟡 Amarelo']}
-                  labelFormatter={l => `Data: ${l}`}
-                />
-                <Bar dataKey="red_calls" stackId="a" fill="#ef4444" name="red_calls" radius={[0, 0, 0, 0]} />
-                <Bar dataKey="yellow_calls" stackId="a" fill="#f59e0b" name="yellow_calls" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
+            <div className="h-48 sm:h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={timeline} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                  <XAxis dataKey="date" tick={{ fontSize: 10 }} tickFormatter={d => d.slice(5)} />
+                  <YAxis tick={{ fontSize: 10 }} allowDecimals={false} />
+                  <RechartsTooltip
+                    formatter={(value: number, name: string) => [value, name === 'red_calls' ? '🔴 Vermelho' : '🟡 Amarelo']}
+                    labelFormatter={l => `Data: ${l}`}
+                  />
+                  <Bar dataKey="red_calls" stackId="a" fill="#ef4444" name="red_calls" radius={[0, 0, 0, 0]} />
+                  <Bar dataKey="yellow_calls" stackId="a" fill="#f59e0b" name="yellow_calls" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
           )}
         </div>
 
@@ -220,28 +222,30 @@ export const AndonOEEDashboard: React.FC = () => {
         <div className="bg-white rounded-2xl border border-slate-200 p-5">
           <h2 className="text-sm font-semibold text-slate-700 mb-4">Causas Raiz (Tempo Parado)</h2>
           {loading ? <ChartSkeleton /> : topCauses.length === 0 ? (
-            <div className="flex items-center justify-center h-60 text-slate-400 text-sm">Sem dados de causas raiz no período</div>
+            <div className="flex items-center justify-center h-48 sm:h-64 text-slate-400 text-sm">Sem dados de causas raiz no período</div>
           ) : (
-            <ResponsiveContainer width="100%" height={240}>
-              <PieChart>
-                <Pie
-                  data={topCauses}
-                  dataKey="total_downtime_minutes"
-                  nameKey="category"
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={60}
-                  outerRadius={90}
-                  paddingAngle={3}
-                >
-                  {topCauses.map((_, idx) => (
-                    <Cell key={idx} fill={DONUT_COLORS[idx % DONUT_COLORS.length]} />
-                  ))}
-                </Pie>
-                <RechartsTooltip formatter={(v: number) => [`${v}min`, 'Tempo parado']} />
-                <Legend iconType="circle" iconSize={10} wrapperStyle={{ fontSize: 12 }} />
-              </PieChart>
-            </ResponsiveContainer>
+            <div className="h-48 sm:h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={topCauses}
+                    dataKey="total_downtime_minutes"
+                    nameKey="category"
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={60}
+                    outerRadius={90}
+                    paddingAngle={3}
+                  >
+                    {topCauses.map((_, idx) => (
+                      <Cell key={idx} fill={DONUT_COLORS[idx % DONUT_COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <RechartsTooltip formatter={(v: number) => [`${v}min`, 'Tempo parado']} />
+                  <Legend iconType="circle" iconSize={10} wrapperStyle={{ fontSize: 12 }} />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
           )}
         </div>
       </div>
