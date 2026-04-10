@@ -594,7 +594,8 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
     String payloadStr;
     for (unsigned int i = 0; i < length; i++) payloadStr += (char)payload[i];
 
-    String stateTopic = "andon/state/" + macAddress;
+    String stateTopic   = "andon/state/"   + macAddress;
+    String restartTopic = "andon/restart/" + macAddress;
 
     if (String(topic) == stateTopic) {
         payloadStr.trim();
@@ -604,10 +605,30 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
             payloadStr == "UNASSIGNED") {
             g_andonStatus = payloadStr;
             g_lastAndonUpdate = millis();
-            // Atualiza LEDs sempre — se ainda em MQTT_CONNECTING o status
-            // será aplicado quando entrar em OPERATIONAL
             updateAndonLEDs();
             logSerial("ANDON STATE: " + payloadStr);
+        }
+    } else if (String(topic) == restartTopic) {
+        payloadStr.trim();
+        payloadStr.toUpperCase();
+        if (payloadStr == "RESTART") {
+            logMQTT("RESTART: comando remoto recebido — reiniciando em 1s...");
+            // Publica ACK antes de reiniciar para o backend registrar
+            String ackTopic = "andon/restart/ack/" + macAddress;
+            mqttClient.publish(ackTopic.c_str(), "RESTARTING", false);
+            // Pisca todos os LEDs 2x para sinalizar restart ao operador
+            for (int i = 0; i < 2; i++) {
+                digitalWrite(LED_VERDE_PIN,    HIGH);
+                digitalWrite(LED_AMARELO_PIN,  HIGH);
+                digitalWrite(LED_VERMELHO_PIN, HIGH);
+                delay(200);
+                digitalWrite(LED_VERDE_PIN,    LOW);
+                digitalWrite(LED_AMARELO_PIN,  LOW);
+                digitalWrite(LED_VERMELHO_PIN, LOW);
+                delay(200);
+            }
+            delay(500);
+            ESP.restart();
         }
     }
 }
@@ -629,11 +650,13 @@ void handleMQTTConnecting() {
         if (!disc.isEmpty())
             mqttClient.publish("andon/discovery", disc.c_str(), false);
 
-        String ledTopic   = "andon/led/"   + macAddress + "/command";
-        String stateTopic = "andon/state/" + macAddress;
-        mqttClient.subscribe(ledTopic.c_str(),   1);
-        mqttClient.subscribe(stateTopic.c_str(), 1);
-        mqttClient.subscribe("andon/ota/trigger", 1);
+        String ledTopic     = "andon/led/"     + macAddress + "/command";
+        String stateTopic   = "andon/state/"   + macAddress;
+        String restartTopic = "andon/restart/" + macAddress;
+        mqttClient.subscribe(ledTopic.c_str(),     1);
+        mqttClient.subscribe(stateTopic.c_str(),   1);
+        mqttClient.subscribe(restartTopic.c_str(), 1);
+        mqttClient.subscribe("andon/ota/trigger",  1);
 
         String reqTopic = "andon/state/request/" + macAddress;
         mqttClient.publish(reqTopic.c_str(), "REQUEST", false);
