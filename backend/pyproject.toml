@@ -29,5 +29,5 @@ dev-dependencies = [
     "pytest>=8.3.3",
     "pytest-asyncio>=0.24.0",
     "requests-mock>=1.12.1",
-    "httpx-mock>=0.0.0"
+    "hypothesis>=6.0.0",
 ]
