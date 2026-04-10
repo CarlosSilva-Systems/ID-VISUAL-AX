@@ -19,6 +19,13 @@ import { toast } from 'sonner';
 import { api } from '../../services/api';
 import { ESPDeviceEnriched, FirmwareVersion } from '../types';
 import { DeviceDrawer } from './DeviceDrawer';
+import { ConfirmModal } from './ConfirmModal';
+import { SkeletonTableRow } from './SkeletonLoader';
+
+interface ConfirmState<T> {
+  isOpen: boolean;
+  payload: T | null;
+}
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -130,6 +137,8 @@ export const DevicesPage: React.FC = () => {
   const [drawerDevice, setDrawerDevice] = useState<ESPDeviceEnriched | null>(null);
   const [drawerTab, setDrawerTab] = useState<'info' | 'logs'>('info');
   const [firmwareVersions, setFirmwareVersions] = useState<FirmwareVersion[]>([]);
+  const [confirmRestart, setConfirmRestart] = useState<ConfirmState<ESPDeviceEnriched>>({ isOpen: false, payload: null });
+  const [confirmDelete, setConfirmDelete] = useState<ConfirmState<ESPDeviceEnriched>>({ isOpen: false, payload: null });
   const wsRef = useRef<WebSocket | null>(null);
 
   const loadDevices = useCallback(async () => {
@@ -192,7 +201,6 @@ export const DevicesPage: React.FC = () => {
   };
 
   const handleRestart = async (device: ESPDeviceEnriched) => {
-    if (!confirm(`Reiniciar ${device.device_name}?\n\nO dispositivo ficará offline por alguns segundos durante o restart.`)) return;
     setRestarting(device.id);
     try {
       await api.restartDevice(device.id);
@@ -206,7 +214,6 @@ export const DevicesPage: React.FC = () => {
   };
 
   const handleDelete = async (device: ESPDeviceEnriched) => {
-    if (!confirm(`Remover ${device.device_name}? Esta ação não pode ser desfeita.`)) return;
     setDeleting(device.id);
     try {
       await api.deleteDevice(device.id);
@@ -251,9 +258,23 @@ export const DevicesPage: React.FC = () => {
       {/* Table */}
       <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
         {loading ? (
-          <div className="flex items-center justify-center py-20 text-slate-400">
-            <Loader2 className="w-6 h-6 animate-spin mr-2" />
-            Carregando dispositivos...
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-slate-100 bg-slate-50/60">
+                  <th className="text-left px-5 py-3.5 text-xs font-bold text-slate-500 uppercase tracking-wider">Device</th>
+                  <th className="text-left px-4 py-3.5 text-xs font-bold text-slate-500 uppercase tracking-wider">Mesa Vinculada</th>
+                  <th className="text-left px-4 py-3.5 text-xs font-bold text-slate-500 uppercase tracking-wider">Status</th>
+                  <th className="text-left px-4 py-3.5 text-xs font-bold text-slate-500 uppercase tracking-wider">Sinal</th>
+                  <th className="text-left px-4 py-3.5 text-xs font-bold text-slate-500 uppercase tracking-wider">Firmware</th>
+                  <th className="text-left px-4 py-3.5 text-xs font-bold text-slate-500 uppercase tracking-wider">Último Contato</th>
+                  <th className="text-right px-5 py-3.5 text-xs font-bold text-slate-500 uppercase tracking-wider">Ações</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[...Array(5)].map((_, i) => <SkeletonTableRow key={i} />)}
+              </tbody>
+            </table>
           </div>
         ) : devices.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-slate-400">
@@ -367,7 +388,7 @@ export const DevicesPage: React.FC = () => {
                         </button>
                         {/* Reiniciar — só online */}
                         <button
-                          onClick={() => handleRestart(device)}
+                          onClick={() => setConfirmRestart({ isOpen: true, payload: device })}
                           title={device.status === 'offline' ? 'Dispositivo offline — não pode reiniciar' : 'Reiniciar ESP32'}
                           disabled={device.status === 'offline' || restarting === device.id}
                           className="p-2 rounded-lg text-slate-400 hover:text-orange-600 hover:bg-orange-50 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
@@ -380,7 +401,7 @@ export const DevicesPage: React.FC = () => {
                         </button>
                         {/* Remover — só offline */}
                         <button
-                          onClick={() => handleDelete(device)}
+                          onClick={() => setConfirmDelete({ isOpen: true, payload: device })}
                           title={device.status === 'online' ? 'Dispositivo online — não pode remover' : 'Remover'}
                           disabled={device.status === 'online' || deleting === device.id}
                           className="p-2 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
@@ -414,6 +435,34 @@ export const DevicesPage: React.FC = () => {
           }}
         />
       )}
+
+      <ConfirmModal
+        isOpen={confirmRestart.isOpen}
+        title={`Reiniciar ${confirmRestart.payload?.device_name ?? 'dispositivo'}?`}
+        description="O dispositivo ficará offline por alguns segundos durante o restart."
+        confirmLabel="Reiniciar"
+        variant="warning"
+        isLoading={restarting === confirmRestart.payload?.id}
+        onConfirm={() => {
+          if (confirmRestart.payload) handleRestart(confirmRestart.payload);
+          setConfirmRestart({ isOpen: false, payload: null });
+        }}
+        onCancel={() => setConfirmRestart({ isOpen: false, payload: null })}
+      />
+
+      <ConfirmModal
+        isOpen={confirmDelete.isOpen}
+        title={`Remover ${confirmDelete.payload?.device_name ?? 'dispositivo'}?`}
+        description="Esta ação não pode ser desfeita. O dispositivo precisará ser redescoberto via MQTT."
+        confirmLabel="Remover"
+        variant="destructive"
+        isLoading={deleting === confirmDelete.payload?.id}
+        onConfirm={() => {
+          if (confirmDelete.payload) handleDelete(confirmDelete.payload);
+          setConfirmDelete({ isOpen: false, payload: null });
+        }}
+        onCancel={() => setConfirmDelete({ isOpen: false, payload: null })}
+      />
     </div>
   );
 };

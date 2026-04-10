@@ -10,6 +10,7 @@ import { BatchHeader } from './BatchHeader';
 import { BatchKPIs } from './BatchKPIs';
 import { MatrixTable } from './MatrixTable';
 import { QADrawer } from './QADrawer';
+import { ConfirmModal } from '../../app/components/ConfirmModal';
 import { toast } from 'sonner';
 import { Loader2, AlertTriangle, RefreshCw, Box, X, ShieldAlert } from 'lucide-react';
 
@@ -37,6 +38,7 @@ export const ActiveBatch: React.FC<ActiveBatchProps> = ({ onBack, onNavigateFina
     const [error, setError] = useState<string | null>(null);
     const [activeFilter, setActiveFilter] = useState<string | null>(null);
     const [finalizing, setFinalizing] = useState(false);
+    const [confirmFinalize, setConfirmFinalize] = useState(false);
 
     // Pendencies Modal
     const [pendencies, setPendencies] = useState<Pendency[]>([]);
@@ -139,8 +141,6 @@ export const ActiveBatch: React.FC<ActiveBatchProps> = ({ onBack, onNavigateFina
     };
 
     const handleFinalizeBatch = async () => {
-        if (!confirm('Tem certeza que deseja finalizar este lote?')) return;
-
         setFinalizing(true);
         try {
             const result = await api.finalizeBatch(effectiveBatchId);
@@ -225,18 +225,18 @@ export const ActiveBatch: React.FC<ActiveBatchProps> = ({ onBack, onNavigateFina
     }
 
     return (
-        <div className="h-full flex flex-col bg-[#F8F9FA]">
+        <div className="h-full flex flex-col bg-slate-50">
             <BatchHeader
                 batchName={data.batch_name}
                 batchId={data.batch_id}
                 status={data.batch_status}
                 onBack={onBack}
                 onAddFabrications={() => toast.info('Funcionalidade em desenvolvimento')}
-                onFinishBatch={handleFinalizeBatch}
+                onFinishBatch={() => setConfirmFinalize(true)}
                 isFinishing={finalizing}
             />
 
-            <div className="flex-1 px-8 pb-8 flex flex-col overflow-hidden">
+            <div className="flex-1 px-3 pb-3 sm:px-6 sm:pb-6 lg:px-8 lg:pb-8 flex flex-col overflow-hidden">
                 <BatchKPIs
                     stats={data.stats}
                     activeFilter={activeFilter}
@@ -271,6 +271,17 @@ export const ActiveBatch: React.FC<ActiveBatchProps> = ({ onBack, onNavigateFina
                         );
                     }
                 }}
+            />
+
+            <ConfirmModal
+                isOpen={confirmFinalize}
+                title="Finalizar Lote?"
+                description="Tem certeza que deseja finalizar este lote? Todas as atividades pendentes serão concluídas no Odoo."
+                confirmLabel="Finalizar"
+                variant="success"
+                isLoading={finalizing}
+                onConfirm={() => { setConfirmFinalize(false); handleFinalizeBatch(); }}
+                onCancel={() => setConfirmFinalize(false)}
             />
 
             {/* Pendencies Modal */}
