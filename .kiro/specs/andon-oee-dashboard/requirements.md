@@ -39,7 +39,7 @@ O módulo depende funcionalmente da Fase 1 do Andon (acionamentos com `downtime_
 6. THE Dashboard_API SHALL calcular o campo `summary.avg_availability_percent` como a média aritmética das disponibilidades individuais de cada Workcenter no período, arredondada para uma casa decimal.
 7. THE Dashboard_API SHALL calcular o campo `summary.avg_mttr_minutes` como a média de `downtime_minutes` de todos os chamados resolvidos no período, arredondada para uma casa decimal.
 8. THE Dashboard_API SHALL calcular o campo `summary.pending_justifications` como a contagem de `AndonCall` com `requires_justification = true` e `justified_at = null`.
-9. THE Dashboard_API SHALL retornar o campo `by_workcenter` como um array onde cada elemento contém: `workcenter_id`, `workcenter_name`, `availability_percent`, `total_calls`, `red_calls`, `yellow_calls`, `total_downtime_minutes`, `mttr_minutes`, `pending_justifications`.
+9. THE Dashboard_API SHALL retornar o campo `by_workcenter` como um array onde cada elemento contém: `workcenter_id`, `workcenter_name`, `availability_percent`, `total_calls`, `red_calls`, `yellow_calls`, `total_downtime_minutes`, `mttr_minutes`, `pending_justifications`, `top_cause` (string com a categoria de causa raiz mais frequente do Workcenter no período, ou `null` se não houver chamados justificados).
 10. WHERE o parâmetro `workcenter_id` for fornecido na query string, THE Dashboard_API SHALL filtrar os resultados para incluir apenas o Workcenter correspondente.
 11. IF `from_date` ou `to_date` não forem fornecidos, THEN THE Dashboard_API SHALL retornar HTTP 422 com mensagem de erro descritiva em pt-BR.
 12. IF `from_date` for posterior a `to_date`, THEN THE Dashboard_API SHALL retornar HTTP 422 com mensagem de erro indicando intervalo inválido.
@@ -102,7 +102,7 @@ O módulo depende funcionalmente da Fase 1 do Andon (acionamentos com `downtime_
 #### Critérios de Aceitação
 
 1. THE Dashboard_API SHALL calcular o Tempo_Disponível por dia como o valor configurado no sistema de settings (padrão: 540 minutos, equivalente a 08:00–17:00).
-2. THE Dashboard_API SHALL calcular o Tempo_Produtivo como `Tempo_Disponível × número_de_dias_no_período − soma_de_downtime_minutes` dos chamados resolvidos no período.
+2. THE Dashboard_API SHALL calcular o Tempo_Produtivo como `Tempo_Disponível × número_de_dias_ÚTEIS_no_período − soma_de_downtime_minutes` dos chamados resolvidos no período, onde dias úteis são os dias da semana configurados em `AndonSettings.working_days` (ex: segunda a sexta = 5 dias em uma semana completa).
 3. IF o Tempo_Produtivo calculado for negativo (downtime superior ao Tempo_Disponível), THEN THE Dashboard_API SHALL retornar `availability_percent = 0.0` sem retornar valor negativo.
 4. THE Dashboard_API SHALL calcular o MTBF considerando apenas chamados com status `RESOLVED` e ordenados por `created_at` dentro do mesmo Workcenter.
 5. IF um Workcenter possuir apenas 1 chamado no período, THEN THE Dashboard_API SHALL retornar `mtbf_minutes = null` (indefinido, pois não há intervalo entre falhas).
@@ -121,13 +121,16 @@ O módulo depende funcionalmente da Fase 1 do Andon (acionamentos com `downtime_
 2. THE Dashboard_UI SHALL exibir um seletor de período (data início e data fim) e um filtro opcional de Workcenter no Bloco 1.
 3. THE Dashboard_UI SHALL exibir 5 cards de resumo no Bloco 1: "Chamados Total", "Paradas Críticas", "Tempo Parado", "Disponibilidade Média" e "MTTR Médio".
 4. WHEN o usuário alterar o período ou o filtro de Workcenter, THE Dashboard_UI SHALL recarregar os dados de todos os blocos chamando o endpoint `/api/v1/andon/dashboard/overview`.
-5. THE Dashboard_UI SHALL exibir no Bloco 2 um gráfico de barras empilhadas com acionamentos por dia, onde barras vermelhas representam chamados RED e barras amarelas representam chamados YELLOW.
-6. THE Dashboard_UI SHALL exibir no Bloco 2 um gráfico de rosca (donut) com as causas raiz, onde cada fatia representa uma `root_cause_category` e o tamanho é proporcional ao `total_downtime_minutes`.
-7. THE Dashboard_UI SHALL exibir no Bloco 3 uma tabela com as colunas: Workcenter, Disponib., Chamados, 🔴, 🟡, Tempo Parado, MTTR, Pendências, Detalhe.
-8. THE Dashboard_UI SHALL colorir a célula de Disponibilidade na tabela do Bloco 3 com: verde para valores ≥ 90%, amarelo para valores entre 75% e 89%, e vermelho para valores < 75%.
-9. WHEN o usuário clicar no botão "Detalhe" (→) de um Workcenter na tabela, THE Dashboard_UI SHALL navegar para a rota `/andon/dashboard/{wc_id}`.
-10. WHILE os dados estiverem sendo carregados, THE Dashboard_UI SHALL exibir indicadores de carregamento (skeleton ou spinner) em cada bloco.
-11. IF a requisição ao endpoint retornar erro, THE Dashboard_UI SHALL exibir uma mensagem de erro em pt-BR com opção de tentar novamente.
+5. WHEN o usuário alterar o período ou o filtro de Workcenter, THE Dashboard_UI SHALL também chamar `/api/v1/andon/dashboard/timeline` para atualizar o gráfico de acionamentos por dia.
+6. WHEN o usuário alterar o período ou o filtro de Workcenter, THE Dashboard_UI SHALL também chamar `/api/v1/andon/dashboard/top-causes` para atualizar o gráfico de causas raiz (donut).
+7. THE Dashboard_UI SHALL exibir no Bloco 2 um gráfico de barras empilhadas com acionamentos por dia, onde barras vermelhas representam chamados RED e barras amarelas representam chamados YELLOW.
+8. THE Dashboard_UI SHALL exibir no Bloco 2 um gráfico de rosca (donut) com as causas raiz, onde cada fatia representa uma `root_cause_category` e o tamanho é proporcional ao `total_downtime_minutes`.
+9. THE Dashboard_UI SHALL exibir no Bloco 3 uma tabela com as colunas: Workcenter, Disponib., Chamados, 🔴, 🟡, Tempo Parado, MTTR, Pendências, Detalhe.
+10. THE Dashboard_UI SHALL colorir a célula de Disponibilidade na tabela do Bloco 3 com: verde para valores ≥ 90%, amarelo para valores entre 75% e 89%, e vermelho para valores < 75%.
+11. WHEN o usuário clicar no botão "Detalhe" (→) de um Workcenter na tabela, THE Dashboard_UI SHALL navegar para a rota `/andon/dashboard/{wc_id}`.
+12. WHEN o usuário clicar no card "Pendências" no Bloco 1, THE Dashboard_UI SHALL navegar para a rota `/andon/pendencias`.
+13. WHILE os dados estiverem sendo carregados, THE Dashboard_UI SHALL exibir indicadores de carregamento (skeleton ou spinner) em cada bloco.
+14. IF a requisição ao endpoint retornar erro, THE Dashboard_UI SHALL exibir uma mensagem de erro em pt-BR com opção de tentar novamente.
 
 ---
 
@@ -146,7 +149,8 @@ O módulo depende funcionalmente da Fase 1 do Andon (acionamentos com `downtime_
 7. WHEN o usuário clicar em um chamado com ícone ⚠️ na tabela, THE Dashboard_UI SHALL abrir o modal de justificativa existente (`JustificationModal`) para o chamado selecionado.
 8. WHEN a justificativa for submetida com sucesso, THE Dashboard_UI SHALL recarregar os dados da tela de detalhe e atualizar os cards e gráficos.
 9. THE Dashboard_UI SHALL exibir o valor `null` de MTBF como "N/A" e o valor `null` de MTTR como "N/A" nos cards.
-10. WHEN o usuário clicar no botão "Voltar", THE Dashboard_UI SHALL navegar de volta para `/andon/dashboard` preservando os filtros de período anteriores.
+10. THE Dashboard_UI SHALL exibir um seletor de período na tela de detalhe do Workcenter, inicializado com o mesmo período selecionado na tela principal (`/andon/dashboard`).
+11. WHEN o usuário clicar no botão "Voltar", THE Dashboard_UI SHALL navegar de volta para `/andon/dashboard` preservando os filtros de período anteriores.
 
 ---
 
@@ -162,3 +166,5 @@ O módulo depende funcionalmente da Fase 1 do Andon (acionamentos com `downtime_
 4. THE Dashboard_API SHALL implementar todos os endpoints como funções `async` utilizando `AsyncSession`.
 5. THE Dashboard_API SHALL utilizar schemas Pydantic com `extra="forbid"` para todos os modelos de request e response do dashboard.
 6. THE Dashboard_API SHALL aplicar rate limiting nos endpoints de dashboard utilizando `slowapi`.
+7. THE `oee_service.py` SHALL consultar `AndonSettings` para obter `working_minutes_per_day` e `working_days` ao calcular o Tempo_Disponível global.
+8. THE `oee_service.py` SHALL consultar `AndonWorkCenterSettings.working_day_start_override` e `working_day_end_override` ao calcular o Tempo_Disponível de um Workcenter específico, utilizando os valores globais de `AndonSettings` como fallback quando o override for nulo.
