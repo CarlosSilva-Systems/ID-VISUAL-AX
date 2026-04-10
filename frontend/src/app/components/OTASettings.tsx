@@ -16,6 +16,7 @@ import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { OTAUploadModal } from './OTAUploadModal';
 import { OTAConfirmModal } from './OTAConfirmModal';
+import { useBreakpoint } from '../../hooks/useBreakpoint';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -45,6 +46,9 @@ export function OTASettings() {
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [selectedRelease, setSelectedRelease] = useState<FirmwareRelease | null>(null);
 
+  const bp = useBreakpoint();
+  const isMobile = bp === 'mobile' || bp === 'sm';
+
   useEffect(() => {
     fetchReleases();
     fetchFleetStatus();
@@ -55,8 +59,9 @@ export function OTASettings() {
     try {
       const data = await api.getFirmwareReleases();
       setReleases(data);
-    } catch (err: any) {
-      toast.error('Erro ao carregar releases: ' + err.message);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Erro desconhecido';
+      toast.error('Erro ao carregar releases: ' + message);
     } finally {
       setLoading(false);
     }
@@ -67,17 +72,17 @@ export function OTASettings() {
       const status = await api.getOTAStatus();
       // Calcular versão mais comum
       const versionCounts: Record<string, number> = {};
-      status.devices.forEach((device: any) => {
+      status.devices.forEach((device: { current_version?: string }) => {
         if (device.current_version) {
           versionCounts[device.current_version] = (versionCounts[device.current_version] || 0) + 1;
         }
       });
-      
+
       const mostCommon = Object.entries(versionCounts).sort((a, b) => b[1] - a[1])[0];
       if (mostCommon) {
         setFleetVersion(mostCommon[0]);
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Erro ao carregar status da frota:', err);
     }
   };
@@ -93,8 +98,9 @@ export function OTASettings() {
         toast.info('Sistema está atualizado');
         setAvailableUpdate(null);
       }
-    } catch (err: any) {
-      toast.error('Erro ao verificar GitHub: ' + err.message);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Erro desconhecido';
+      toast.error('Erro ao verificar GitHub: ' + message);
     } finally {
       setCheckingGitHub(false);
     }
@@ -107,8 +113,9 @@ export function OTASettings() {
       toast.success(`Firmware ${version || 'mais recente'} baixado com sucesso!`);
       setAvailableUpdate(null);
       await fetchReleases();
-    } catch (err: any) {
-      toast.error('Erro ao baixar firmware: ' + err.message);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Erro desconhecido';
+      toast.error('Erro ao baixar firmware: ' + message);
     } finally {
       setLoading(false);
     }
@@ -134,13 +141,13 @@ export function OTASettings() {
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
       {/* Fleet Status Card */}
-      <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-[2rem] border border-blue-200 p-8 shadow-sm">
+      <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-[2rem] border border-blue-200 p-4 sm:p-6 lg:p-8 shadow-sm">
         <div className="flex items-center justify-between">
           <div>
             <p className="text-xs font-black text-blue-600 uppercase tracking-widest mb-2">
               Versão Atual da Frota
             </p>
-            <p className="text-4xl font-black text-blue-900">
+            <p className="text-3xl sm:text-4xl font-black text-blue-900">
               {fleetVersion || '—'}
             </p>
           </div>
@@ -152,19 +159,19 @@ export function OTASettings() {
 
       {/* Available Update Card */}
       {availableUpdate && (
-        <div className="bg-gradient-to-br from-emerald-50 to-emerald-100 rounded-[2rem] border border-emerald-200 p-8 shadow-sm animate-in slide-in-from-top-4 duration-300">
+        <div className="bg-gradient-to-br from-emerald-50 to-emerald-100 rounded-[2rem] border border-emerald-200 p-4 sm:p-6 lg:p-8 shadow-sm animate-in slide-in-from-top-4 duration-300">
           <div className="flex items-center justify-between">
             <div className="flex-1">
               <p className="text-xs font-black text-emerald-600 uppercase tracking-widest mb-2 flex items-center gap-2">
                 <CheckCircle size={14} /> Nova Versão Disponível
               </p>
-              <p className="text-4xl font-black text-emerald-900 mb-4">
+              <p className="text-3xl sm:text-4xl font-black text-emerald-900 mb-4">
                 {availableUpdate}
               </p>
               <button
                 onClick={() => downloadFromGitHub(availableUpdate)}
                 disabled={loading}
-                className="px-6 py-3 bg-emerald-600 text-white rounded-xl font-bold text-sm hover:bg-emerald-700 transition-all flex items-center gap-2 shadow-lg shadow-emerald-600/20 active:scale-95 disabled:opacity-50"
+                className="px-6 py-3 bg-emerald-600 text-white rounded-xl font-bold text-sm hover:bg-emerald-700 transition-all flex items-center gap-2 shadow-lg shadow-emerald-600/20 active:scale-95 disabled:opacity-50 min-h-[44px]"
               >
                 <Download size={18} />
                 Baixar Versão {availableUpdate}
@@ -178,11 +185,11 @@ export function OTASettings() {
       )}
 
       {/* Actions */}
-      <div className="flex gap-4">
+      <div className="flex flex-col sm:flex-row gap-4">
         <button
           onClick={checkGitHub}
           disabled={checkingGitHub}
-          className="px-6 py-3 bg-white border-2 border-slate-200 text-slate-700 rounded-xl font-bold text-sm hover:bg-slate-50 transition-all flex items-center gap-2 active:scale-95 disabled:opacity-50"
+          className="w-full sm:w-auto min-h-[44px] px-6 py-3 bg-white border-2 border-slate-200 text-slate-700 rounded-xl font-bold text-sm hover:bg-slate-50 transition-all flex items-center justify-center gap-2 active:scale-95 disabled:opacity-50"
         >
           {checkingGitHub ? (
             <RefreshCw className="animate-spin" size={18} />
@@ -193,7 +200,7 @@ export function OTASettings() {
         </button>
         <button
           onClick={() => setShowUploadModal(true)}
-          className="px-6 py-3 bg-blue-600 text-white rounded-xl font-bold text-sm hover:bg-blue-700 transition-all flex items-center gap-2 shadow-lg shadow-blue-600/20 active:scale-95"
+          className="w-full sm:w-auto min-h-[44px] px-6 py-3 bg-blue-600 text-white rounded-xl font-bold text-sm hover:bg-blue-700 transition-all flex items-center justify-center gap-2 shadow-lg shadow-blue-600/20 active:scale-95"
         >
           <Upload size={18} />
           Upload Manual
@@ -219,7 +226,65 @@ export function OTASettings() {
             <p className="font-bold">Nenhuma versão disponível</p>
             <p className="text-sm mt-2">Faça upload manual ou baixe do GitHub</p>
           </div>
+        ) : isMobile ? (
+          /* Card View — mobile (< md) */
+          <div className="divide-y divide-slate-100">
+            {releases.map((release) => (
+              <div key={release.id} className="p-4 space-y-3">
+                {/* Versão + badge */}
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-slate-900">{release.version}</span>
+                  {release.is_latest && (
+                    <span className="px-2 py-1 bg-blue-100 text-blue-700 rounded-lg text-[10px] font-black uppercase">
+                      Mais Recente
+                    </span>
+                  )}
+                </div>
+
+                {/* Metadados */}
+                <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm text-slate-600">
+                  <div>
+                    <span className="text-xs font-black text-slate-400 uppercase tracking-widest block mb-0.5">Data</span>
+                    {formatDate(release.uploaded_at)}
+                  </div>
+                  <div>
+                    <span className="text-xs font-black text-slate-400 uppercase tracking-widest block mb-0.5">Origem</span>
+                    <span className={cn(
+                      "px-2 py-0.5 rounded-lg text-xs font-bold",
+                      release.source === 'github'
+                        ? "bg-purple-100 text-purple-700"
+                        : "bg-amber-100 text-amber-700"
+                    )}>
+                      {release.source === 'github' ? 'GitHub' : 'Manual'}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-xs font-black text-slate-400 uppercase tracking-widest block mb-0.5">Tamanho</span>
+                    <span className="font-mono">{formatBytes(release.file_size)}</span>
+                  </div>
+                  <div>
+                    <span className="text-xs font-black text-slate-400 uppercase tracking-widest block mb-0.5">Dispositivos</span>
+                    <span className="px-2 py-0.5 bg-slate-100 text-slate-700 rounded-lg text-sm font-bold">
+                      {release.device_count}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Botão */}
+                <button
+                  onClick={() => {
+                    setSelectedRelease(release);
+                    setShowConfirmModal(true);
+                  }}
+                  className="w-full min-h-[44px] px-4 py-2 bg-blue-600 text-white rounded-xl font-bold text-sm hover:bg-blue-700 transition-all active:scale-95"
+                >
+                  Atualizar Todos
+                </button>
+              </div>
+            ))}
+          </div>
         ) : (
+          /* Table View — tablet/desktop (>= md) */
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead className="bg-slate-50 border-b border-slate-100">
