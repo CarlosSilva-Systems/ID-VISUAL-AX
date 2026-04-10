@@ -22,6 +22,8 @@ import {
 import { Fabrication, PackageType } from '../types';
 import { ModalPacote } from './ModalPacote';
 import { DocumentPreviewModal } from './DocumentPreviewModal';
+import { EmptyState } from './EmptyState';
+import { SkeletonKPICard, SkeletonListItem } from './SkeletonLoader';
 import { clsx, type ClassValue } from 'clsx';
 import { formatObraDisplayName } from '../../lib/utils';
 import { twMerge } from 'tailwind-merge';
@@ -300,17 +302,24 @@ export function Dashboard({ onCreateBatch }: DashboardProps) {
 
   if (loadingMOs && odooMOs.length === 0) {
     return (
-      <div className="flex h-full items-center justify-center">
-        <div className="flex flex-col items-center gap-4">
-          <Loader2 className="animate-spin text-blue-600" size={48} />
-          <p className="font-medium text-slate-500">Carregando Produção do Odoo...</p>
+      <div className="p-3 sm:p-4 md:p-6 lg:p-8 max-w-7xl mx-auto space-y-6">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          {[...Array(4)].map((_, i) => <SkeletonKPICard key={i} />)}
+        </div>
+        <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+          <div className="p-6 border-b border-slate-100">
+            <div className="h-6 w-48 animate-shimmer rounded-md" />
+          </div>
+          <div className="divide-y divide-slate-100">
+            {[...Array(8)].map((_, i) => <SkeletonListItem key={i} />)}
+          </div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="p-8 max-w-7xl mx-auto space-y-6">
+    <div className="p-3 sm:p-4 md:p-6 lg:p-8 max-w-7xl mx-auto space-y-6">
       {/* Stats Section */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <StatCard label="Total Filas" value={odooMOs.length.toString()} icon={Package} color="blue" />
@@ -424,7 +433,12 @@ export function Dashboard({ onCreateBatch }: DashboardProps) {
                 <DashboardRow key={item.id} item={item} isSelected={selectedIds.has(item.id)} onToggle={() => toggleSelect(item.id)} onViewDocs={() => { setDocModalMoId(item.id); setDocModalMoNumber(item.mo_number); }} />
               ))}
               {filteredItems.filter(i => i.source !== 'producao').length === 0 && (
-                <div className="p-8 text-center text-slate-400 text-xs italic">Nenhuma ID de fluxo padrão.</div>
+                <EmptyState
+                  icon={Package}
+                  title="Nenhuma ID do Odoo"
+                  description="Não há fabricações do fluxo padrão no momento."
+                  className="py-10"
+                />
               )}
             </div>
           </div>
@@ -440,7 +454,12 @@ export function Dashboard({ onCreateBatch }: DashboardProps) {
                 <DashboardRow key={item.id} item={item} isSelected={selectedIds.has(item.id)} onToggle={() => toggleSelect(item.id)} onViewDocs={() => { setDocModalMoId(item.id); setDocModalMoNumber(item.mo_number); }} />
               ))}
               {filteredItems.filter(i => i.source === 'producao').length === 0 && (
-                <div className="p-8 text-center text-slate-400 text-xs italic">Nenhuma ID solicitada manualmente.</div>
+                <EmptyState
+                  icon={Package}
+                  title="Nenhuma ID manual"
+                  description="Não há solicitações manuais de produção no momento."
+                  className="py-10"
+                />
               )}
             </div>
           </div>

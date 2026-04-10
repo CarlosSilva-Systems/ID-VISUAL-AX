@@ -260,7 +260,7 @@ export const Layout = ({ children, user }: LayoutProps) => {
           <div className="flex-1 flex items-center justify-between ml-3">
             <span className="text-sm font-medium">{item.label}</span>
             {item.badge && (
-              <span className="bg-[#E53935] text-white text-[12px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">{item.badge}</span>
+              <span className="bg-red-600 text-white text-[12px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">{item.badge}</span>
             )}
           </div>
         )}
