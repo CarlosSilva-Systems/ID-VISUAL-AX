@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../../services/api';
 import { Users, AlertTriangle, MonitorPlay, Activity, Clock, Package, Calendar, KeyRound } from 'lucide-react';
+import { SkeletonCard } from './SkeletonLoader';
 import { cn } from '../../lib/utils';
 import { AndonOperador } from './AndonOperador';
 import { PlanningModal } from './PlanningModal';
@@ -149,7 +150,19 @@ export const AndonGrid: React.FC<AndonGridProps> = ({ username }) => {
     };
 
     if (loading) {
-        return <div className="flex justify-center items-center h-full text-slate-500">Carregando painel Andon...</div>;
+        return (
+            <div className="space-y-6">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div className="space-y-2">
+                        <div className="h-8 w-48 animate-shimmer rounded-md" />
+                        <div className="h-4 w-64 animate-shimmer rounded-md" />
+                    </div>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                    {[...Array(8)].map((_, i) => <SkeletonCard key={i} />)}
+                </div>
+            </div>
+        );
     }
 
     if (selectedWorkcenter) {
@@ -184,12 +197,14 @@ export const AndonGrid: React.FC<AndonGridProps> = ({ username }) => {
                 </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                 {workcenters.map((wc) => (
                     <div
                         key={wc.id}
+                        role="region"
+                        aria-label={wc.name}
                         className={cn(
-                            "relative flex flex-col rounded-[2rem] border-2 p-5 transition-all shadow-sm hover:shadow-xl hover:-translate-y-1 overflow-hidden",
+                            "relative flex flex-col rounded-3xl border-2 p-5 transition-all shadow-sm hover:shadow-md hover:-translate-y-1 overflow-hidden",
                             getStatusColor(wc.status)
                         )}
                     >
@@ -245,7 +260,7 @@ export const AndonGrid: React.FC<AndonGridProps> = ({ username }) => {
                         <div className="space-y-4 flex-1">
                             {/* 1. Owner */}
                             <div className="space-y-1">
-                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
+                                <label className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
                                     <Users size={12} /> Responsável
                                 </label>
                                 <p className={cn(
@@ -258,7 +273,7 @@ export const AndonGrid: React.FC<AndonGridProps> = ({ username }) => {
 
                             {/* 2. Current MO */}
                             <div className="space-y-1">
-                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
+                                <label className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
                                     <Package size={12} /> Fabricação Atual
                                 </label>
                                 <div className={cn(
