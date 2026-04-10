@@ -2,7 +2,7 @@
 import uuid
 import logging
 from collections import defaultdict
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -59,10 +59,12 @@ async def get_dashboard_overview(
         )
 
         # Buscar chamados RESOLVED no período
+        dt_from = datetime.combine(period.from_date, datetime.min.time())
+        dt_to = datetime.combine(period.to_date + timedelta(days=1), datetime.min.time())
         stmt = select(AndonCall).where(
             AndonCall.status == "RESOLVED",
-            AndonCall.created_at >= period.from_date.isoformat(),
-            AndonCall.created_at < (period.to_date + timedelta(days=1)).isoformat(),
+            AndonCall.created_at >= dt_from,
+            AndonCall.created_at < dt_to,
         )
         if period.workcenter_id is not None:
             stmt = stmt.where(AndonCall.workcenter_id == period.workcenter_id)
@@ -165,11 +167,13 @@ async def get_workcenter_detail(
         )
 
         # Buscar chamados do workcenter no período
+        dt_from = datetime.combine(from_date, datetime.min.time())
+        dt_to = datetime.combine(to_date + timedelta(days=1), datetime.min.time())
         stmt = select(AndonCall).where(
             AndonCall.workcenter_id == wc_id,
             AndonCall.status == "RESOLVED",
-            AndonCall.created_at >= from_date.isoformat(),
-            AndonCall.created_at < (to_date + timedelta(days=1)).isoformat(),
+            AndonCall.created_at >= dt_from,
+            AndonCall.created_at < dt_to,
         )
         result = await session.execute(stmt)
         calls = result.scalars().all()
@@ -289,11 +293,13 @@ async def get_top_causes(
 ) -> list[TopCauseEntry]:
     """Ranking global de causas raiz de paradas."""
     try:
+        dt_from = datetime.combine(period.from_date, datetime.min.time())
+        dt_to = datetime.combine(period.to_date + timedelta(days=1), datetime.min.time())
         stmt = select(AndonCall).where(
             AndonCall.status == "RESOLVED",
             AndonCall.root_cause_category.isnot(None),
-            AndonCall.created_at >= period.from_date.isoformat(),
-            AndonCall.created_at < (period.to_date + timedelta(days=1)).isoformat(),
+            AndonCall.created_at >= dt_from,
+            AndonCall.created_at < dt_to,
         )
         if period.workcenter_id is not None:
             stmt = stmt.where(AndonCall.workcenter_id == period.workcenter_id)
@@ -344,10 +350,12 @@ async def get_timeline(
 ) -> list[TimelineEntry]:
     """Série temporal de acionamentos por dia."""
     try:
+        dt_from = datetime.combine(period.from_date, datetime.min.time())
+        dt_to = datetime.combine(period.to_date + timedelta(days=1), datetime.min.time())
         stmt = select(AndonCall).where(
             AndonCall.status == "RESOLVED",
-            AndonCall.created_at >= period.from_date.isoformat(),
-            AndonCall.created_at < (period.to_date + timedelta(days=1)).isoformat(),
+            AndonCall.created_at >= dt_from,
+            AndonCall.created_at < dt_to,
         )
         if period.workcenter_id is not None:
             stmt = stmt.where(AndonCall.workcenter_id == period.workcenter_id)
