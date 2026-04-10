@@ -59,11 +59,77 @@ async def _add_log(session: AsyncSession, device_id, event_type: EventType, mess
 def _infer_log_level(message: str) -> LogLevel:
     """Infere o nível de severidade a partir do conteúdo da mensagem."""
     lower = message.lower()
-    if any(kw in lower for kw in ("error", "erro", "fail", "falha", "critical")):
+    if any(kw in lower for kw in ("error", "erro", "fail", "falha", "critical", "crash", "exception", "panic", "abort", "stack overflow", "watchdog", "wdt")):
         return LogLevel.ERROR
-    if any(kw in lower for kw in ("warn", "aviso", "atenção", "atencao", "timeout")):
+    if any(kw in lower for kw in ("warn", "aviso", "atenção", "atencao", "timeout", "heap baixo", "heap low", "retry", "tentativa", "reconect", "lost", "perdido", "perdeu", "queda", "fallback", "offline")):
         return LogLevel.WARN
     return LogLevel.INFO
+
+
+def _enrich_log_message(message: str) -> tuple[str, LogLevel]:
+    """
+    Enriquece a mensagem de log com contexto adicional e infere o nível.
+    Mapeia padrões conhecidos do firmware ESP32 para mensagens mais descritivas.
+    """
+    lower = message.lower()
+    level = _infer_log_level(message)
+
+    # Mapeamento de padrões do firmware para mensagens enriquecidas
+    enrichments = [
+        # WiFi
+        ("wifi: conectado", "🟢 WiFi conectado", LogLevel.INFO),
+        ("wifi: timeout", "🔴 WiFi timeout — sem conexão com o AP", LogLevel.WARN),
+        ("wifi perdido", "🔴 WiFi perdido — iniciando fallback para mesh", LogLevel.WARN),
+        ("wifi restaurado", "🟢 WiFi restaurado dentro da janela de fallback", LogLevel.INFO),
+        ("wifi: conectando", "🔄 WiFi conectando ao AP...", LogLevel.INFO),
+        # MQTT
+        ("mqtt: conectado", "🟢 MQTT conectado ao broker", LogLevel.INFO),
+        ("mqtt: falha", "🔴 MQTT falha de conexão", LogLevel.WARN),
+        ("mqtt perdido", "🔴 MQTT desconectado — reconectando...", LogLevel.WARN),
+        ("mqtt: max tentativas", "🔴 MQTT esgotou tentativas — reiniciando ESP32", LogLevel.ERROR),
+        ("mqtt: conectando", "🔄 MQTT conectando ao broker...", LogLevel.INFO),
+        # Mesh
+        ("mesh: iniciada como raiz", "🌐 Mesh iniciada — este nó é a RAIZ (gateway)", LogLevel.INFO),
+        ("mesh: iniciada como no-folha", "🌐 Mesh iniciada — este nó é FOLHA (sem WiFi)", LogLevel.INFO),
+        ("mesh: novo nó", "🔗 Novo nó conectado à mesh", LogLevel.INFO),
+        ("mesh: nó desconectado", "🔌 Nó desconectado da mesh", LogLevel.WARN),
+        ("mesh: capacidade cheia", "⚠️ Mesh com capacidade máxima de filhos atingida", LogLevel.WARN),
+        ("mesh: capacidade liberada", "✅ Mesh com capacidade liberada", LogLevel.INFO),
+        ("mesh-node: tentando reconectar", "🔄 Nó folha tentando reconectar ao WiFi...", LogLevel.INFO),
+        # Heap / Memória
+        ("heap baixo", "⚠️ Memória heap baixa — risco de instabilidade", LogLevel.WARN),
+        ("heap low", "⚠️ Memória heap baixa — risco de instabilidade", LogLevel.WARN),
+        ("aviso: heap", "⚠️ Alerta de heap — verificar vazamento de memória", LogLevel.WARN),
+        # Heartbeat
+        ("heartbeat:", "💓 Heartbeat — dispositivo ativo", LogLevel.INFO),
+        # Botões
+        ("btn: gpio 12", "🟢 Botão VERDE pressionado", LogLevel.INFO),
+        ("btn: gpio 13", "🟡 Botão AMARELO pressionado", LogLevel.INFO),
+        ("btn: gpio 32", "🔴 Botão VERMELHO pressionado", LogLevel.INFO),
+        ("btn: gpio 33", "⏸️ Botão PAUSE pressionado", LogLevel.INFO),
+        # Reset
+        ("reset: botao pause", "⚠️ Reset por botão físico (pause segurado 5s)", LogLevel.WARN),
+        ("restart remoto", "⚠️ Restart remoto solicitado via backend", LogLevel.WARN),
+        ("reiniciando", "🔄 ESP32 reiniciando...", LogLevel.WARN),
+        # OTA
+        ("ota:", "📦 Evento OTA", LogLevel.INFO),
+        # Estado Andon
+        ("andon state:", "📡 Estado Andon atualizado", LogLevel.INFO),
+        ("andon state: unknown", "❓ Estado Andon desconhecido — aguardando sincronização", LogLevel.WARN),
+        # Operational
+        ("operational: wifi perdido", "🔴 WiFi perdido em modo operacional", LogLevel.WARN),
+        ("operational: mqtt perdido", "🔴 MQTT perdido em modo operacional", LogLevel.WARN),
+        ("operational: wifi restaurado", "🟢 WiFi restaurado em modo operacional", LogLevel.INFO),
+        # Boot
+        ("boot", "🚀 ESP32 inicializando (boot)", LogLevel.INFO),
+    ]
+
+    for pattern, enriched, enriched_level in enrichments:
+        if pattern in lower:
+            # Preserva a mensagem original entre parênteses para rastreabilidade
+            return f"{enriched} | {message}", enriched_level
+
+    return message, level
 
 
 async def _enforce_log_retention(session: AsyncSession, device_id) -> None:
@@ -117,7 +183,7 @@ async def _handle_discovery(payload_raw: bytes):
             device.ip_address = str(payload["ip_address"])
         if "uptime_seconds" in payload and payload["uptime_seconds"] is not None:
             device.uptime_seconds = int(payload["uptime_seconds"])
-        await _add_log(session, device.id, EventType.discovery, f"Dispositivo descoberto: {name or mac}", LogLevel.INFO)
+        await _add_log(session, device.id, EventType.discovery, f"🚀 Dispositivo descoberto: {name or mac} | fw={payload.get('firmware_version','?')} rssi={payload.get('rssi','?')}dBm ip={payload.get('ip_address','?')}", LogLevel.INFO)
         await session.commit()
         await session.refresh(device)
 
@@ -179,7 +245,7 @@ async def _handle_status(mac: str, payload_raw: bytes):
         if device.status != new_status:
             device.status = new_status
             device.last_seen_at = datetime.now(timezone.utc).replace(tzinfo=None)
-            await _add_log(session, device.id, EventType.status_change, f"Status alterado para {status_str}", LogLevel.INFO)
+            await _add_log(session, device.id, EventType.status_change, f"{'🟢 Device voltou online' if status_str == 'online' else '🔴 Device ficou offline'} | status={status_str}", LogLevel.INFO if status_str == "online" else LogLevel.WARN)
             await session.commit()
 
     await ws_manager.broadcast("device_status", {"mac_address": mac, "status": status_str})
@@ -200,11 +266,29 @@ async def _handle_log(mac: str, payload_raw: bytes):
         if not device:
             logger.warning(f"MQTT log: dispositivo {mac} não encontrado, descartado.")
             return
-        level = _infer_log_level(message)
-        await _add_log(session, device.id, EventType.error, message, level)
+        enriched_message, level = _enrich_log_message(message)
+        await _add_log(session, device.id, EventType.error, enriched_message, level)
         await session.commit()
 
-    await ws_manager.broadcast("device_log", {"mac_address": mac, "message": message, "level": level.value})
+    await ws_manager.broadcast("device_log", {"mac_address": mac, "message": enriched_message, "level": level.value})
+
+
+async def _handle_restart_ack(mac: str, payload_raw: bytes):
+    """Registra confirmação de restart recebida do ESP32."""
+    async with async_session_factory() as session:
+        stmt = select(ESPDevice).where(ESPDevice.mac_address == mac)
+        result = await session.execute(stmt)
+        device = result.scalars().first()
+        if not device:
+            return
+        await _add_log(
+            session, device.id, EventType.status_change,
+            "🔄 ESP32 confirmou restart — aguardando reconexão", LogLevel.WARN
+        )
+        await session.commit()
+
+    await ws_manager.broadcast("device_restarting", {"mac_address": mac})
+    logger.info(f"MQTT restart ack: {mac}")
 
 
 async def _handle_button(mac: str, color: str, payload_raw: bytes):
@@ -708,7 +792,8 @@ async def _mqtt_loop():
                 await client.subscribe("andon/state/request/#")
                 await client.subscribe("andon/ota/progress/#")
                 await client.subscribe("andon/ota/trigger")
-                logger.info("MQTT: escutando tópicos andon/discovery, andon/status/#, andon/logs/#, andon/button/#, andon/state/request/#, andon/ota/progress/#, andon/ota/trigger")
+                await client.subscribe("andon/restart/ack/#")
+                logger.info("MQTT: escutando tópicos andon/discovery, andon/status/#, andon/logs/#, andon/button/#, andon/state/request/#, andon/ota/progress/#, andon/ota/trigger, andon/restart/ack/#")
 
                 async for message in client.messages:
                     topic = str(message.topic)
@@ -737,6 +822,9 @@ async def _mqtt_loop():
                     elif topic.startswith("andon/ota/progress/"):
                         mac = topic.split("/", 3)[3]
                         await _handle_ota_progress(mac, payload)
+                    elif topic.startswith("andon/restart/ack/"):
+                        mac = topic.split("/", 3)[3]
+                        await _handle_restart_ack(mac, payload)
 
         except asyncio.CancelledError:
             logger.info("MQTT: serviço encerrado.")
