@@ -114,7 +114,7 @@ export function Configuracoes({ user }: ConfiguracoesProps) {
 
   return (
     <div className="p-8 max-w-5xl mx-auto space-y-8 animate-in fade-in duration-500">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h2 className="text-2xl font-black text-slate-900 tracking-tight">Configurações do Sistema</h2>
           <p className="text-sm text-slate-500">Ajustes da conexão com Odoo e Backoffice.</p>
@@ -122,7 +122,7 @@ export function Configuracoes({ user }: ConfiguracoesProps) {
         <button 
           onClick={handleSave}
           disabled={isSaving || selectedRespId === initialRespId}
-          className="px-6 py-2.5 bg-blue-600 text-white rounded-xl font-bold text-sm hover:bg-blue-700 transition-all flex items-center gap-2 shadow-lg shadow-blue-600/20 active:scale-95 disabled:opacity-50 disabled:grayscale disabled:scale-100"
+          className="w-full sm:w-auto px-6 py-2.5 min-h-[44px] bg-blue-600 text-white rounded-xl font-bold text-sm hover:bg-blue-700 transition-all flex items-center justify-center gap-2 shadow-lg shadow-blue-600/20 active:scale-95 disabled:opacity-50 disabled:grayscale disabled:scale-100"
         >
           {isSaving ? <RefreshCw className="animate-spin" size={18} /> : <Save size={18} />} 
           Salvar Alterações
@@ -132,7 +132,7 @@ export function Configuracoes({ user }: ConfiguracoesProps) {
       <div className="flex flex-col md:flex-row gap-8">
         {/* Sidebar com abas */}
         <div className="w-full md:w-64 shrink-0 bg-slate-50 p-3 rounded-2xl">
-          <div className="flex md:flex-col gap-2 overflow-x-auto md:overflow-x-visible pb-1 md:pb-0">
+          <div className="flex flex-row md:flex-col gap-2 overflow-x-auto scrollbar-hide md:overflow-x-visible pb-1 md:pb-0">
             {tabs.map((tab) => {
               const Icon = tab.icon;
               const isActive = activeTab === tab.id;
@@ -148,15 +148,16 @@ export function Configuracoes({ user }: ConfiguracoesProps) {
                     }
                   }}
                   className={cn(
-                    "w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold text-sm transition-all",
+                    "shrink-0 flex items-center gap-3 px-4 py-3 min-h-[44px] rounded-xl font-bold text-sm transition-all",
+                    "md:w-full",
                     isActive
                       ? "bg-white text-blue-600 shadow-sm border border-slate-100 ring-1 ring-slate-100"
                       : "text-slate-500 hover:bg-slate-100"
                   )}
                 >
-                  <Icon size={20} />
-                  {tab.label}
-                  {isActive && <div className="ml-auto w-1.5 h-1.5 rounded-full bg-blue-600" />}
+                  <Icon size={20} className="shrink-0" />
+                  <span className="max-[400px]:hidden">{tab.label}</span>
+                  {isActive && <div className="ml-auto w-1.5 h-1.5 rounded-full bg-blue-600 max-[400px]:hidden" />}
                 </button>
               );
             })}
@@ -188,7 +189,7 @@ export function Configuracoes({ user }: ConfiguracoesProps) {
                     value={selectedRespId}
                     onChange={(e) => setSelectedRespId(e.target.value)}
                     disabled={loadingUsers}
-                    className="w-full p-4 rounded-xl border border-slate-100 bg-slate-50 font-bold text-sm focus:bg-white focus:ring-4 focus:ring-blue-500/10 focus:border-blue-600 transition-all outline-none"
+                    className="w-full p-4 min-h-[44px] rounded-xl border border-slate-100 bg-slate-50 font-bold text-sm focus:bg-white focus:ring-4 focus:ring-blue-500/10 focus:border-blue-600 transition-all outline-none"
                   >
                     <option value="">Selecione um usuário...</option>
                     {users.map(u => (
@@ -322,7 +323,7 @@ export function Configuracoes({ user }: ConfiguracoesProps) {
                 <div className="flex items-center gap-2 font-black text-red-600 uppercase tracking-widest text-xs">
                   <AlertTriangle size={16} /> Zona de Perigo
                 </div>
-                <div className="bg-red-50 border border-red-100 p-6 rounded-2xl flex flex-col md:flex-row items-center justify-between gap-4">
+                <div className="bg-red-50 border border-red-100 p-6 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4">
                   <div className="space-y-1">
                     <p className="font-bold text-red-900 text-sm">Limpar Base de Dados Local</p>
                     <p className="text-xs text-red-700/70 max-w-md">
@@ -332,7 +333,7 @@ export function Configuracoes({ user }: ConfiguracoesProps) {
                   </div>
                   <button
                     onClick={() => setConfirmReset(true)}
-                    className="px-6 py-3 bg-white border-2 border-red-100 text-red-600 rounded-xl font-black text-xs uppercase tracking-widest hover:bg-red-600 hover:text-white hover:border-red-600 transition-all active:scale-95 whitespace-nowrap"
+                    className="w-full sm:w-auto px-6 py-3 bg-white border-2 border-red-100 text-red-600 rounded-xl font-black text-xs uppercase tracking-widest hover:bg-red-600 hover:text-white hover:border-red-600 transition-all active:scale-95 whitespace-nowrap"
                   >
                     Resetar Agora
                   </button>
