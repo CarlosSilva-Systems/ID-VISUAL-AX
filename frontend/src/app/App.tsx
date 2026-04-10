@@ -17,6 +17,8 @@ import { OTAProgressDashboard } from './components/OTAProgressDashboard';
 import { AndonGrid } from './components/AndonGrid';
 import { AndonTV } from './components/AndonTV';
 import { AndonPendenciasPage } from './components/AndonPendenciasPage';
+import { AndonOEEDashboard } from './components/AndonOEEDashboard';
+import { AndonWorkcenterDetail } from './components/AndonWorkcenterDetail';
 import { DevicesPage } from './components/DevicesPage';
 import { Fabrication, User } from './types';
 import { api } from '../services/api';
@@ -122,6 +124,8 @@ function AppContent() {
               <Route path="/id-visual/producao" element={<VisaoProducao />} />
               <Route path="/andon/painel" element={<AndonGrid username={currentUser?.username || ''} />} />
               <Route path="/andon/pendencias" element={<AndonPendenciasPage currentUser={currentUser?.username || ''} />} />
+              <Route path="/andon/dashboard" element={<AndonOEEDashboard />} />
+              <Route path="/andon/dashboard/:wcId" element={<AndonWorkcenterDetail currentUser={currentUser?.username || ''} />} />
               <Route path="/andon/devices" element={<DevicesPage />} />
               <Route path="/relatorios" element={<MPRAnalyticsDashboard />} />
               <Route path="/relatorios/meus" element={<MyReports />} />
