@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { AlertTriangle, Filter, RefreshCw, Clock, ChevronDown, ChevronRight, User, Wrench, Factory } from 'lucide-react';
+import { AlertTriangle, Filter, RefreshCw, Clock, ChevronDown, ChevronRight, User, Wrench, Factory, CheckCircle2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../../services/api';
 import { AndonCall, PendingJustificationFilters } from '../types';
 import { JustificationModal } from './JustificationModal';
+import { EmptyState } from './EmptyState';
+import { SkeletonListItem } from './SkeletonLoader';
 
 interface AndonPendenciasPageProps {
   currentUser: string;
@@ -165,15 +167,18 @@ export const AndonPendenciasPage: React.FC<AndonPendenciasPageProps> = ({ curren
 
       {/* Conteúdo */}
       {loading ? (
-        <div className="flex items-center justify-center py-16 text-slate-400 bg-white rounded-2xl border border-slate-200">
-          <RefreshCw className="w-5 h-5 animate-spin mr-2" />
-          Carregando...
+        <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
+          <div className="divide-y divide-slate-100">
+            {[...Array(5)].map((_, i) => <SkeletonListItem key={i} />)}
+          </div>
         </div>
       ) : calls.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-16 text-slate-400 bg-white rounded-2xl border border-slate-200">
-          <AlertTriangle className="w-10 h-10 mb-3 opacity-30" />
-          <p className="font-medium">Nenhuma pendência encontrada</p>
-          <p className="text-sm mt-1">Todos os chamados foram justificados</p>
+        <div className="bg-white rounded-2xl border border-slate-200">
+          <EmptyState
+            icon={CheckCircle2}
+            title="Tudo em dia"
+            description="Nenhuma pendência de justificativa no momento."
+          />
         </div>
       ) : (
         <div className="space-y-4">

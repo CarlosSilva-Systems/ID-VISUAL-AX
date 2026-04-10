@@ -5,7 +5,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
     Activity, AlertTriangle, CheckCircle2, Clock, Factory,
-    Image as ImageIcon, MonitorPlay, Package, Users, Signal as Wifi, SignalLow as WifiOff, Zap,
+    Image as ImageIcon, MonitorPlay, Package, Users, Signal, SignalLow, Zap,
     AlertCircle, Info, ChevronRight
 } from 'lucide-react';
 import { AndonTVProvider, LogType, TVCall, TVIDRequest, TVLog, TVWorkcenter, useAndonTV } from './AndonTVContext';
@@ -118,7 +118,7 @@ function LogItem({ log }: { log: TVLog }) {
                     <span className="text-[13px] font-black tracking-widest text-slate-500 shrink-0">
                         {timeOnly}
                     </span>
-                    <span className={`text-[11px] uppercase tracking-wider ${style.badge}`}>
+                    <span className={`text-xs uppercase tracking-wider ${style.badge}`}>
                         {log.type.replace(/_/g, ' ')}
                     </span>
                 </div>
@@ -262,6 +262,15 @@ function PanelMesasParadas({ calls }: { calls: TVCall[] }) {
             </h2>
 
             <div className="flex-1 overflow-y-auto space-y-3 pr-1">
+                {sorted.length === 0 && (
+                    <div className="flex-1 flex items-center justify-center">
+                        <div className="text-center">
+                            <CheckCircle2 className="w-16 h-16 text-emerald-500 mx-auto mb-4" />
+                            <p className="text-xl font-black text-slate-300 uppercase tracking-widest">Todas as mesas em operação normal</p>
+                            <p className="text-slate-500 text-sm mt-2">Nenhum chamado Andon ativo</p>
+                        </div>
+                    </div>
+                )}
                 {sorted.map(call => {
                     const isRed = call.color === 'RED';
                     return (
@@ -369,7 +378,7 @@ function TVProductionCard({ wc }: { wc: TVWorkcenter }) {
                         {wc.operator_name !== "---" ? wc.operator_name : wc.name}
                     </div>
                     {wc.fabrication_code !== "---" && (
-                        <div className="text-[11px] font-bold opacity-70 tracking-tight">
+                        <div className="text-xs font-bold opacity-70 tracking-tight">
                             {wc.fabrication_code}
                         </div>
                     )}
@@ -383,12 +392,12 @@ function TVProductionCard({ wc }: { wc: TVWorkcenter }) {
 
             <div className="space-y-1.5 border-y border-white/5 py-2">
                 <div className="flex items-start gap-1.5 min-w-0">
-                    <span className="text-[9px] font-bold uppercase text-white/40 mt-0.5">Obra:</span>
-                    <span className="text-[11px] font-bold leading-none truncate">{wc.obra_name}</span>
+                    <span className="text-xs font-bold uppercase text-white/40 mt-0.5">Obra:</span>
+                    <span className="text-xs font-bold leading-none truncate">{wc.obra_name}</span>
                 </div>
                 <div className="flex items-start gap-1.5 min-w-0">
-                    <span className="text-[9px] font-bold uppercase text-white/40 mt-0.5">Etapa:</span>
-                    <span className="text-[11px] font-bold leading-none truncate">{wc.stage}</span>
+                    <span className="text-xs font-bold uppercase text-white/40 mt-0.5">Etapa:</span>
+                    <span className="text-xs font-bold leading-none truncate">{wc.stage}</span>
                 </div>
             </div>
 
@@ -405,7 +414,7 @@ function TVProductionCard({ wc }: { wc: TVWorkcenter }) {
                 </div>
 
                 {wc.sync_pending && (
-                    <div className="flex items-center gap-1 text-[9px] font-black text-blue-400 animate-pulse uppercase tracking-tighter">
+                    <div className="flex items-center gap-1 text-xs font-black text-blue-400 animate-pulse uppercase tracking-tighter">
                         <Clock size={10} /> Sync Odoo
                     </div>
                 )}
@@ -413,7 +422,7 @@ function TVProductionCard({ wc }: { wc: TVWorkcenter }) {
                 {wc.has_active_production && (
                     <div className="flex items-center gap-1.5 text-white/50">
                         <Clock size={12} className="shrink-0" />
-                        <span className="text-[11px] font-mono font-bold tracking-tighter">
+                        <span className="text-xs font-mono font-bold tracking-tighter">
                             {timeStr}
                         </span>
                     </div>
@@ -475,7 +484,7 @@ function IDVisualCard({ req, variant }: { req: TVIDRequest; variant: 'waiting' |
                     <div className="w-1 h-1" />
                 )}
                 {req.priority === 'urgent' && (
-                    <span className="bg-red-600 text-[9px] font-black text-white px-1.5 py-0.5 rounded uppercase animate-pulse">Urgente</span>
+                    <span className="bg-red-600 text-xs font-black text-white px-1.5 py-0.5 rounded uppercase animate-pulse">Urgente</span>
                 )}
             </div>
 
@@ -705,6 +714,13 @@ function AndonTVInner() {
     return (
         <div className="h-screen w-screen bg-slate-950 flex flex-col overflow-hidden font-sans select-none">
 
+            {/* ── Reconnection Banner ───────────────────────── */}
+            {!isConnected && (
+                <div className="fixed top-0 left-0 right-0 z-50 bg-amber-500 text-slate-900 text-center py-2 text-sm font-bold animate-pulse">
+                    Conexão perdida — reconectando...
+                </div>
+            )}
+
             {/* ── Top Header ────────────────────────────────── */}
             <header className={`flex items-center px-6 py-3 gap-6 border-b shrink-0 transition-colors ${hasRed ? 'border-red-800/60 bg-red-950/20' : 'border-slate-800 bg-slate-900/60'
                 }`}>
@@ -742,9 +758,15 @@ function AndonTVInner() {
                 </div>
 
                 {/* Connection */}
-                <div className={`flex items-center gap-1.5 text-xs font-semibold ${isConnected ? 'text-emerald-500' : 'text-red-500'}`}>
-                    <span>•</span>
-                    {isConnected ? 'Online' : 'Sem sinal'}
+                <div className={cn(
+                    "flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs font-bold",
+                    isConnected ? "text-emerald-400" : "text-red-400"
+                )}>
+                    {isConnected
+                        ? <Signal className="w-4 h-4" />
+                        : <SignalLow className="w-4 h-4 animate-pulse" />
+                    }
+                    <span className="hidden sm:inline">{isConnected ? 'Ao vivo' : 'Reconectando...'}</span>
                 </div>
 
                 {/* Clock */}
