@@ -21,6 +21,7 @@ import { toast } from 'sonner';
 import { api } from '../../services/api';
 import { DeviceLog, ESPDeviceEnriched, FirmwareVersion } from '../types';
 import { OTAProgressModal } from './OTAProgressModal';
+import { ConfirmModal } from './ConfirmModal';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -389,6 +390,7 @@ export const DeviceDrawer: React.FC<DeviceDrawerProps> = ({
   const [otaTarget, setOtaTarget] = useState<string | null>(null);
   const [hasLogErrors, setHasLogErrors] = useState(false);
   const [restarting, setRestarting] = useState(false);
+  const [confirmRestart, setConfirmRestart] = useState(false);
 
   // Detectar erros nos logs para badge
   useEffect(() => {
@@ -398,7 +400,6 @@ export const DeviceDrawer: React.FC<DeviceDrawerProps> = ({
   }, [device.id]);
 
   const handleRestart = async () => {
-    if (!confirm(`Reiniciar ${device.device_name}?\n\nO dispositivo ficará offline por alguns segundos.`)) return;
     setRestarting(true);
     try {
       await api.restartDevice(device.id);
@@ -477,7 +478,7 @@ export const DeviceDrawer: React.FC<DeviceDrawerProps> = ({
               firmwareVersions={firmwareVersions}
               onUpdated={onUpdated}
               onOTAStart={(version) => setOtaTarget(version)}
-              onRestart={handleRestart}
+              onRestart={() => setConfirmRestart(true)}
             />
           ) : (
             <LogsTab device={device} />
@@ -493,6 +494,17 @@ export const DeviceDrawer: React.FC<DeviceDrawerProps> = ({
           onClose={() => setOtaTarget(null)}
         />
       )}
+
+      <ConfirmModal
+        isOpen={confirmRestart}
+        title={`Reiniciar ${device.device_name}?`}
+        description="O dispositivo ficará offline por alguns segundos durante o restart."
+        confirmLabel="Reiniciar"
+        variant="warning"
+        isLoading={restarting}
+        onConfirm={() => { setConfirmRestart(false); handleRestart(); }}
+        onCancel={() => setConfirmRestart(false)}
+      />
     </>
   );
 };
