@@ -1,5 +1,6 @@
 from typing import List, Dict, Any, Optional as Opt
 import uuid
+import logging
 from uuid import UUID
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -18,6 +19,8 @@ from app.schemas.matrix_view import (
 )
 from app.api.api_v1.endpoints.sync import update_sync_version
 from app.services.task_service import initialize_request_tasks
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -263,8 +266,6 @@ async def update_batch_task(
     """
     try:
         # 1. Diagnostic Logging (Root Cause Investigation)
-        import logging
-        logger = logging.getLogger(__name__)
         logger.debug(f"Update PATCH received for Batch={batch_id}, Request={payload.request_id}, Task={payload.task_code}")
 
         # 2. Fetch Request and Validate Batch Ownership (Business Security)
@@ -371,7 +372,6 @@ async def update_batch_task(
     except HTTPException as e:
         raise e
     except Exception as e:
-        import traceback
         request_id = str(uuid.uuid4())[:8]
         logger.exception(f"ERROR IN UPDATE TASK [ref:{request_id}]: {e}")
         raise HTTPException(status_code=500, detail=f"Internal Server Error [ref: {request_id}]")

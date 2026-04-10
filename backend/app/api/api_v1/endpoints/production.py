@@ -6,7 +6,6 @@ POST /production/request — create manual ID Visual request (urgent, Lean + Pok
 from __future__ import annotations
 
 import logging
-import traceback
 import uuid
 from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional

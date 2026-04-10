@@ -1,5 +1,6 @@
 from typing import Any, List, Dict, Optional
 import uuid
+import logging
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import select, col, func
@@ -17,6 +18,8 @@ from app.core.config import settings
 from app.api.api_v1.endpoints.sync import update_sync_version
 from app.schemas.id_request import ManualRequestResponse
 from app.services.task_service import initialize_request_tasks
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -79,9 +82,7 @@ async def get_manual_requests(
             await session.commit()
             
         except Exception as e:
-            import traceback
-            print(f"Warning: Failed to fetch fresh Odoo states: {e}")
-            traceback.print_exc()
+            logger.warning(f"Warning: Failed to fetch fresh Odoo states: {e}")
             # Fallback to local state if Odoo fails
     
     response = []
@@ -262,7 +263,7 @@ async def transfer_manual_request(
         if existing:
             activity_id = existing[0]['id']
             created = False
-            print(f"DIAGNOSTIC: Reusing existing Odoo activity {activity_id} for MO {mo.name}")
+            logger.debug(f"Reusing existing Odoo activity {activity_id} for MO {mo.name}")
         else:
             # 2f. Create Activity (Full Payload)
             payload = {
@@ -275,7 +276,7 @@ async def transfer_manual_request(
                 'user_id': user_id 
             }
             
-            print(f"DIAGNOSTIC: Sending Payload to Odoo -> {payload}")
+            logger.debug(f"Sending Payload to Odoo -> {payload}")
             
             new_act = await client.call_kw('mail.activity', 'create', args=[payload])
             activity_id = new_act
@@ -284,11 +285,9 @@ async def transfer_manual_request(
     except HTTPException:
         raise # Re-raise known HTTP exceptions (422, 500)
     except Exception as e:
-        import traceback
-        error_msg = f"Odoo Transfer Execution Failed: {str(e)}"
-        print(error_msg)
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=error_msg)
+        request_id = str(uuid.uuid4())[:8]
+        logger.exception(f"Odoo Transfer Execution Failed [ref:{request_id}]: {e}")
+        raise HTTPException(status_code=500, detail=f"Erro na transferência para o Odoo [ref: {request_id}]")
     finally:
         await client.close()
         

@@ -1,5 +1,4 @@
 from typing import Any, List
-import traceback
 import uuid
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
