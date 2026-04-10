@@ -18,14 +18,12 @@ services:
       - "6379:6379"
 
   mosquitto:
-    image: eclipse-mosquitto:latest
+    build:
+      context: ./mosquitto
+      dockerfile: Dockerfile
     restart: unless-stopped
     ports:
       - "1883:1883"
-    volumes:
-      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
-    networks:
-      - default
 
   api:
     build:
@@ -33,16 +31,12 @@ services:
       dockerfile: Dockerfile
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     volumes:
-      - ./backend:/app
-      - ./.env:/app/.env
       # Volume persistente para armazenamento de firmware OTA (.bin files)
-      # Montado em /app/storage/ota/firmware dentro do container
-      # Permite que arquivos de firmware persistam entre restarts do container
       - ota_firmware:/app/storage/ota/firmware
     ports:
       - "8000:8000"
     env_file:
-      - .env  # Inclui ODOO_SERVICE_LOGIN, ODOO_SERVICE_PASSWORD e outras variáveis
+      - .env
     depends_on:
       - db
       - redis
@@ -51,10 +45,6 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
-      - ./.env:/app/.env
     ports:
       - "5173:5173"
     env_file:
