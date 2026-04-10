@@ -121,7 +121,7 @@ export const ProductionViewUI: React.FC<ProductionViewUIProps> = ({
             {/* Header com busca de Fabricação */}
             <div className="flex flex-col sm:flex-row items-center justify-between gap-6">
                 <div>
-                    <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Solicitar Identificação</h1>
+                    <h1 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">Solicitar Identificação</h1>
                     <p className="text-slate-500 mt-1">Produção de Quadros Elétricos</p>
                 </div>
                 <form onSubmit={onSearch} className="w-full relative">
