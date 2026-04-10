@@ -1,6 +1,7 @@
 import React from "react";
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
+import { Loader2 } from "lucide-react";
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -10,10 +11,11 @@ export function cn(...inputs: ClassValue[]) {
 interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: "primary" | "secondary" | "tertiary" | "destructive" | "ghost";
   size?: "sm" | "md" | "lg" | "icon";
+  isLoading?: boolean;
 }
 
 export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant = "primary", size = "md", ...props }, ref) => {
+  ({ className, variant = "primary", size = "md", isLoading, children, ...props }, ref) => {
     const variants = {
       primary: "bg-blue-600 text-white hover:bg-blue-700 shadow-sm",
       secondary: "bg-slate-100 text-slate-900 hover:bg-slate-200 border border-slate-200",
@@ -33,13 +35,15 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
       <button
         ref={ref}
         className={cn(
-          "inline-flex items-center justify-center rounded-xl transition-all active:scale-95 disabled:opacity-50 disabled:pointer-events-none cursor-pointer",
+          "inline-flex items-center justify-center rounded-xl transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-blue-500",
           variants[variant],
           sizes[size],
           className
         )}
         {...props}
-      />
+      >
+        {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : children}
+      </button>
     );
   }
 );
@@ -63,7 +67,7 @@ export const Badge = ({ className, variant = "default", ...props }: BadgeProps) 
   return (
     <div
       className={cn(
-        "inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold uppercase tracking-wider",
+        "inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold uppercase tracking-wider",
         variants[variant],
         className
       )}
@@ -116,9 +120,9 @@ export const KPICard = ({ label, value, subtext, variant = "default", onClick }:
         onClick ? "cursor-pointer" : "cursor-default"
       )}
     >
-      <span className="text-[10px] font-bold uppercase tracking-widest opacity-70 mb-1">{label}</span>
+      <span className="text-xs font-bold uppercase tracking-widest opacity-70 mb-1">{label}</span>
       <span className="text-2xl font-extrabold tabular-nums">{value}</span>
-      {subtext && <span className="text-[10px] font-medium mt-1 opacity-80">{subtext}</span>}
+      {subtext && <span className="text-xs font-medium mt-1 opacity-80">{subtext}</span>}
     </button>
   );
 };
