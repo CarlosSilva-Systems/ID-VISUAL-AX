@@ -551,7 +551,43 @@ async def trigger_ota_batch(
     }
 
 
-# ── Endpoints legados (bind/unbind por MAC) — mantidos para compatibilidade ───
+# ── POST /devices/{device_id}/restart ────────────────────────────────────────
+
+@router.post("/{device_id}/restart", status_code=202)
+async def restart_device(
+    device_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(require_current_user),
+):
+    """Envia comando de restart remoto para o ESP32 via MQTT (andon/restart/{mac})."""
+    device = await _get_device_by_id(session, device_id)
+
+    if device.status == DeviceStatus.offline:
+        raise HTTPException(
+            status_code=409,
+            detail="Dispositivo offline. Não é possível enviar comando de restart.",
+        )
+
+    try:
+        await _publish_mqtt(f"andon/restart/{device.mac_address}", "RESTART")
+    except Exception:
+        raise HTTPException(status_code=503, detail="Falha ao publicar comando MQTT.")
+
+    # Registrar log do evento
+    log = ESPDeviceLog(
+        device_id=device.id,
+        event_type=EventType.status_change,
+        level=LogLevel.WARN,
+        message=f"Restart remoto solicitado por {current_user.username}",
+    )
+    session.add(log)
+    await session.commit()
+
+    logger.info(f"RESTART: Comando enviado para {device.mac_address} por {current_user.username}")
+    return {"message": f"Restart solicitado para {device.device_name}"}
+
+
+
 
 class BindRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
