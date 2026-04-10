@@ -1,5 +1,110 @@
 const API_URL = (import.meta as any).env.VITE_API_URL || 'http://localhost:8000/api/v1';
 
+// ── Andon OEE Dashboard — Tipos ──
+
+export interface DashboardParams {
+    from_date: string;   // "YYYY-MM-DD"
+    to_date: string;
+    workcenter_id?: number;
+}
+
+export interface DashboardSummary {
+    total_calls: number;
+    total_red: number;
+    total_yellow: number;
+    total_downtime_minutes: number;
+    avg_availability_percent: number;
+    avg_mttr_minutes: number | null;
+    pending_justifications: number;
+}
+
+export interface WorkcenterOverview {
+    workcenter_id: number;
+    workcenter_name: string;
+    availability_percent: number;
+    total_calls: number;
+    red_calls: number;
+    yellow_calls: number;
+    total_downtime_minutes: number;
+    mttr_minutes: number | null;
+    pending_justifications: number;
+    top_cause: string | null;
+}
+
+export interface OverviewResponse {
+    period: { from_date: string; to_date: string };
+    summary: DashboardSummary;
+    by_workcenter: WorkcenterOverview[];
+}
+
+export interface WorkcenterDetailMetrics {
+    workcenter_id: number;
+    workcenter_name: string;
+    availability_percent: number;
+    mttr_minutes: number | null;
+    mtbf_minutes: number | null;
+    total_downtime_minutes: number;
+    total_calls: number;
+    red_calls: number;
+    yellow_calls: number;
+    justified_calls: number;
+    pending_justification: number;
+}
+
+export interface DowntimeByDay {
+    date: string;  // "YYYY-MM-DD"
+    total_downtime_minutes: number;
+}
+
+export interface CallByRootCause {
+    category: string;
+    count: number;
+    total_downtime_minutes: number;
+}
+
+export interface RecentCall {
+    id: number;
+    color: string;
+    reason: string;
+    downtime_minutes: number | null;
+    root_cause_category: string | null;
+    justified_at: string | null;
+    created_at: string;
+    requires_justification: boolean;
+}
+
+export interface WorkcenterDetailResponse {
+    metrics: WorkcenterDetailMetrics;
+    downtime_by_day: DowntimeByDay[];
+    calls_by_root_cause: CallByRootCause[];
+    recent_calls: RecentCall[];
+}
+
+export interface TopCauseEntry {
+    category: string;
+    count: number;
+    total_downtime_minutes: number;
+    avg_downtime_minutes: number;
+    affected_workcenters: number;
+}
+
+export interface TimelineEntry {
+    date: string;  // "YYYY-MM-DD"
+    red_calls: number;
+    yellow_calls: number;
+    total_downtime_minutes: number;
+}
+
+/** Constrói query string para endpoints do dashboard */
+function buildDashboardQuery(params: DashboardParams & { limit?: number }): string {
+    const p = new URLSearchParams();
+    p.append('from_date', params.from_date);
+    p.append('to_date', params.to_date);
+    if (params.workcenter_id != null) p.append('workcenter_id', String(params.workcenter_id));
+    if (params.limit != null) p.append('limit', String(params.limit));
+    return p.toString();
+}
+
 
 const getHeaders = () => {
     const token = localStorage.getItem('id_visual_token');
@@ -347,6 +452,27 @@ export const api = {
 
     getJustificationStats: async () => {
         return api.get('/andon/calls/justification-stats');
+    },
+
+    // ── Andon OEE Dashboard ──
+    getAndonDashboardOverview: async (params: DashboardParams): Promise<OverviewResponse> => {
+        const query = buildDashboardQuery(params);
+        return api.get(`/andon/dashboard/overview?${query}`);
+    },
+
+    getAndonDashboardWorkcenter: async (wcId: number, params: DashboardParams): Promise<WorkcenterDetailResponse> => {
+        const query = buildDashboardQuery(params);
+        return api.get(`/andon/dashboard/workcenter/${wcId}?${query}`);
+    },
+
+    getAndonDashboardTopCauses: async (params: DashboardParams & { limit?: number }): Promise<TopCauseEntry[]> => {
+        const query = buildDashboardQuery(params);
+        return api.get(`/andon/dashboard/top-causes?${query}`);
+    },
+
+    getAndonDashboardTimeline: async (params: DashboardParams): Promise<TimelineEntry[]> => {
+        const query = buildDashboardQuery(params);
+        return api.get(`/andon/dashboard/timeline?${query}`);
     },
 
     // --- Métodos Legados ---
