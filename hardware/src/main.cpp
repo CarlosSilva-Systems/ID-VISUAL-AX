@@ -373,6 +373,11 @@ void updateMeshCapacity() {
 void onMeshNewConnection(uint32_t nodeId) {
     logSerial("MESH: novo nó " + String(nodeId));
     updateMeshCapacity();
+    // Raiz reenvia seu próprio discovery para atualizar mesh_node_count no backend
+    if (g_isRoot && mqttClient.connected()) {
+        String disc = createDiscoveryMessage();
+        mqttClient.publish("andon/discovery", disc.c_str(), false);
+    }
 }
 
 void onMeshDroppedConnection(uint32_t nodeId) {
@@ -387,7 +392,7 @@ void onMeshChangedConnections() {
 void onMeshNodeTimeAdjusted(int32_t) {}
 
 void onMeshMessage(uint32_t from, String& msg) {
-    StaticJsonDocument<128> doc;
+    StaticJsonDocument<384> doc;
     if (deserializeJson(doc, msg) != DeserializationError::Ok) return;
 
     const char* type = doc["type"] | "";
@@ -399,12 +404,97 @@ void onMeshMessage(uint32_t from, String& msg) {
         if (strlen(mac) > 0 && strlen(color) > 0) {
             String topic = "andon/button/" + String(mac) + "/" + color;
             mqttClient.publish(topic.c_str(), "PRESSED", false);
-            logSerial("MESH->MQTT: " + topic);
+            logSerial("MESH->MQTT button: " + topic);
+        }
+    }
+
+    // Nó raiz republica discovery de nós folha no MQTT
+    // Folhas enviam {type:"discovery", mac_address:"...", device_name:"...", ...}
+    else if (strcmp(type, "discovery") == 0 && g_isRoot && mqttClient.connected()) {
+        // Reserializa o payload original (sem o campo "type") e publica em andon/discovery
+        doc.remove("type");
+        String payload;
+        serializeJson(doc, payload);
+        mqttClient.publish("andon/discovery", payload.c_str(), false);
+        logSerial("MESH->MQTT discovery: " + String(doc["mac_address"] | "?"));
+    }
+
+    // Nó raiz republica heartbeat de nós folha no MQTT
+    // Folhas enviam {type:"heartbeat", mac:"...", heap:N, uptime:N, mesh_nodes:N}
+    else if (strcmp(type, "heartbeat") == 0 && g_isRoot && mqttClient.connected()) {
+        const char* mac = doc["mac"] | "";
+        if (strlen(mac) > 0) {
+            doc.remove("type");
+            doc.remove("mac");
+            String payload;
+            serializeJson(doc, payload);
+            String topic = "andon/status/" + String(mac);
+            mqttClient.publish(topic.c_str(), payload.c_str(), false);
+            logSerial("MESH->MQTT heartbeat: " + String(mac));
+        }
+    }
+
+    // Nó raiz republica logs de nós folha no MQTT
+    // Folhas enviam {type:"log", mac:"...", message:"..."}
+    else if (strcmp(type, "log") == 0 && g_isRoot && mqttClient.connected()) {
+        const char* mac = doc["mac"] | "";
+        const char* message = doc["message"] | "";
+        if (strlen(mac) > 0 && strlen(message) > 0) {
+            String topic = "andon/logs/" + String(mac);
+            mqttClient.publish(topic.c_str(), message, false);
         }
     }
 }
 
-void startMesh(bool asRoot) {
+// Folha envia seu próprio discovery via mesh para a raiz republicar no MQTT
+void sendMeshDiscovery() {
+    StaticJsonDocument<384> doc;
+    doc["type"]             = "discovery";
+    doc["mac_address"]      = macAddress;
+    doc["device_name"]      = deviceName;
+    doc["firmware_version"] = FIRMWARE_VERSION;
+    doc["is_root"]          = false;
+    doc["connection_type"]  = "mesh";
+    doc["mesh_node_id"]     = String(g_mesh.getNodeId());
+    doc["mesh_node_count"]  = (int)(g_mesh.getNodeList().size() + 1);
+    doc["mesh_children"]    = g_directChildren;
+    doc["rssi"]             = 0;  // Folha não tem WiFi — RSSI irrelevante
+    doc["ip_address"]       = "0.0.0.0";
+    String msg;
+    serializeJson(doc, msg);
+    g_mesh.sendBroadcast(msg);
+    logSerial("MESH-NODE: discovery enviado via mesh");
+}
+
+// Folha envia heartbeat via mesh para a raiz republicar no MQTT
+void sendMeshHeartbeat() {
+    StaticJsonDocument<128> doc;
+    doc["type"]         = "heartbeat";
+    doc["mac"]          = macAddress;
+    doc["heap"]         = ESP.getFreeHeap();
+    doc["uptime"]       = millis() / 1000;
+    doc["mesh_nodes"]   = (int)(g_mesh.getNodeList().size() + 1);
+    doc["is_root"]      = false;
+    String msg;
+    serializeJson(doc, msg);
+    g_mesh.sendBroadcast(msg);
+}
+
+// Folha envia log via mesh para a raiz republicar no MQTT
+void logMeshNode(const String& message) {
+    logSerial(message);
+    if (!g_isRoot && g_meshStarted) {
+        StaticJsonDocument<256> doc;
+        doc["type"]    = "log";
+        doc["mac"]     = macAddress;
+        doc["message"] = message;
+        String msg;
+        serializeJson(doc, msg);
+        g_mesh.sendBroadcast(msg);
+    }
+}
+
+
     if (g_meshStarted) return;
     g_meshStarted = true;
     g_isRoot = asRoot;
@@ -560,6 +650,11 @@ void handleWiFiConnecting() {
         currentState = MESH_NODE;
         playMeshConnectedAnimation();
         startMesh(false);
+        // Envia discovery imediatamente para o backend registrar a folha
+        // O timer de heartbeat enviará novamente periodicamente
+        // Aguarda 2s para a mesh estabilizar antes do primeiro broadcast
+        delay(2000);
+        sendMeshDiscovery();
     }
 }
 
@@ -798,9 +893,19 @@ void handleMeshNode() {
     if (redButton.pressed)    { publishButtonEvent("red");    redButton.pressed    = false; }
     if (pauseButton.pressed)  { publishButtonEvent("pause");  pauseButton.pressed  = false; }
 
-    if (checkTimer(&heartbeatTimer))
-        logSerial("MESH-NODE: heap=" + String(ESP.getFreeHeap()) +
+    // Heartbeat + discovery periódico via mesh para o backend ver a folha
+    if (checkTimer(&heartbeatTimer)) {
+        sendMeshHeartbeat();
+        sendMeshDiscovery();  // Reenvia discovery para manter o backend atualizado
+        logSerial("MESH-NODE: heartbeat+discovery enviados | heap=" + String(ESP.getFreeHeap()) +
                   " nos=" + String(g_mesh.getNodeList().size() + 1));
+    }
+
+    if (checkTimer(&heapMonitorTimer)) {
+        uint32_t heap = ESP.getFreeHeap();
+        if (heap < HEAP_WARN_THRESHOLD)
+            logMeshNode("AVISO: Heap baixo - " + String(heap) + " bytes");
+    }
 
     // Pisca vermelho a cada 1 minuto quando sem conexão WiFi
     if (checkTimer(&disconnectBlinkTimer)) {
