@@ -19,6 +19,7 @@ import { toast } from 'sonner';
 import { api } from '../../services/api';
 import { DatabaseSelector } from './DatabaseSelector';
 import { OTASettings } from './OTASettings';
+import { ConfirmModal } from './ConfirmModal';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -42,6 +43,15 @@ export function Configuracoes({ user }: ConfiguracoesProps) {
   const [isTestMode, setIsTestMode] = useState(user?.is_odoo_test_mode || false);
   const [testUrl, setTestUrl] = useState(user?.odoo_test_url || '');
   const [isUpdatingConfig, setIsUpdatingConfig] = useState(false);
+
+  // Modal: reset database
+  const [confirmReset, setConfirmReset] = useState(false);
+
+  // Modal: troca de aba com alterações não salvas
+  const [pendingTab, setPendingTab] = useState<Tab | null>(null);
+  const [confirmTabChange, setConfirmTabChange] = useState(false);
+
+  const hasUnsavedChanges = selectedRespId !== initialRespId;
 
   const tabs = [
     { id: 'odoo' as const, label: 'Integração Odoo', icon: Server },
@@ -92,13 +102,18 @@ export function Configuracoes({ user }: ConfiguracoesProps) {
     }
   };
 
+  const handleResetDatabase = async () => {
+    try {
+      await api.resetDatabase();
+      toast.success("Base de dados resetada com sucesso! Recarregando sistema...");
+      setTimeout(() => { window.location.href = '/'; }, 1500);
+    } catch (err: any) {
+      toast.error("Erro ao resetar: " + err.message);
+    }
+  };
+
   return (
     <div className="p-8 max-w-5xl mx-auto space-y-8 animate-in fade-in duration-500">
-      {/* Debug info */}
-      <div className="bg-yellow-100 border border-yellow-300 p-2 rounded text-xs">
-        <strong>Debug:</strong> Aba ativa = {activeTab} | Total de abas = {tabs.length}
-      </div>
-      
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-black text-slate-900 tracking-tight">Configurações do Sistema</h2>
@@ -116,33 +131,39 @@ export function Configuracoes({ user }: ConfiguracoesProps) {
 
       <div className="flex flex-col md:flex-row gap-8">
         {/* Sidebar com abas */}
-        <div className="w-full md:w-64 shrink-0 space-y-2 bg-slate-50 p-4 rounded-2xl">
-          {tabs.map((tab) => {
-            const Icon = tab.icon;
-            const isActive = activeTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                onClick={() => {
-                  console.log('Clicou na aba:', tab.id);
-                  setActiveTab(tab.id);
-                }}
-                className={cn(
-                  "w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold text-sm transition-all",
-                  isActive
-                    ? "bg-white text-blue-600 shadow-sm border border-slate-100 ring-1 ring-slate-100"
-                    : "text-slate-500 hover:bg-slate-100"
-                )}
-              >
-                <Icon size={20} />
-                {tab.label}
-                {isActive && <div className="ml-auto w-1.5 h-1.5 rounded-full bg-blue-600" />}
-              </button>
-            );
-          })}
+        <div className="w-full md:w-64 shrink-0 bg-slate-50 p-3 rounded-2xl">
+          <div className="flex md:flex-col gap-2 overflow-x-auto md:overflow-x-visible pb-1 md:pb-0">
+            {tabs.map((tab) => {
+              const Icon = tab.icon;
+              const isActive = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => {
+                    if (hasUnsavedChanges && tab.id !== activeTab) {
+                      setPendingTab(tab.id);
+                      setConfirmTabChange(true);
+                    } else {
+                      setActiveTab(tab.id);
+                    }
+                  }}
+                  className={cn(
+                    "w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold text-sm transition-all",
+                    isActive
+                      ? "bg-white text-blue-600 shadow-sm border border-slate-100 ring-1 ring-slate-100"
+                      : "text-slate-500 hover:bg-slate-100"
+                  )}
+                >
+                  <Icon size={20} />
+                  {tab.label}
+                  {isActive && <div className="ml-auto w-1.5 h-1.5 rounded-full bg-blue-600" />}
+                </button>
+              );
+            })}
+          </div>
         </div>
 
-        <div className="flex-1 bg-white rounded-[2rem] border border-slate-100 shadow-sm overflow-hidden p-8">
+        <div className="flex-1 bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden p-8">
           {activeTab === 'odoo' && (
             <div className="space-y-8 animate-in fade-in slide-in-from-right-4 duration-300">
               <section className="space-y-6">
@@ -310,19 +331,7 @@ export function Configuracoes({ user }: ConfiguracoesProps) {
                     </p>
                   </div>
                   <button
-                    onClick={async () => {
-                      if (window.confirm("ATENÇÃO: Isso apagará TODOS os dados locais. Deseja continuar?")) {
-                        try {
-                          await api.resetDatabase();
-                          toast.success("Base de dados resetada com sucesso! Recarregando sistema...");
-                          setTimeout(() => {
-                            window.location.href = '/';
-                          }, 1500);
-                        } catch (err: any) {
-                          toast.error("Erro ao resetar: " + err.message);
-                        }
-                      }
-                    }}
+                    onClick={() => setConfirmReset(true)}
                     className="px-6 py-3 bg-white border-2 border-red-100 text-red-600 rounded-xl font-black text-xs uppercase tracking-widest hover:bg-red-600 hover:text-white hover:border-red-600 transition-all active:scale-95 whitespace-nowrap"
                   >
                     Resetar Agora
@@ -339,6 +348,31 @@ export function Configuracoes({ user }: ConfiguracoesProps) {
           )}
         </div>
       </div>
+
+      <ConfirmModal
+        isOpen={confirmReset}
+        title="Limpar Base de Dados Local"
+        description="Isso apagará TODAS as fabricações, solicitações e configurações salvas localmente. Esta ação não pode ser desfeita."
+        confirmLabel="Resetar Agora"
+        variant="destructive"
+        onConfirm={() => { setConfirmReset(false); handleResetDatabase(); }}
+        onCancel={() => setConfirmReset(false)}
+      />
+
+      <ConfirmModal
+        isOpen={confirmTabChange}
+        title="Alterações não salvas"
+        description="Você tem alterações não salvas. Deseja descartá-las e trocar de aba?"
+        confirmLabel="Descartar e trocar"
+        cancelLabel="Continuar editando"
+        variant="warning"
+        onConfirm={() => {
+          if (pendingTab) setActiveTab(pendingTab);
+          setPendingTab(null);
+          setConfirmTabChange(false);
+        }}
+        onCancel={() => { setPendingTab(null); setConfirmTabChange(false); }}
+      />
     </div>
   );
 }
