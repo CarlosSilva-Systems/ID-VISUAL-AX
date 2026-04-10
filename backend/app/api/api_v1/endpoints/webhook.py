@@ -29,12 +29,12 @@ async def odoo_workorder_webhook(
     Recebe atualizações de estado do Odoo via Webhook.
     Implementa idempotência via timestamp e autorresolução de chamados.
     """
-    # 0. Replay protection
+    # 0. Replay protection — rejeita timestamps expirados OU no futuro
     now = time.time()
-    if abs(now - payload.timestamp) > 300:
+    if payload.timestamp > now or abs(now - payload.timestamp) > 300:
         raise HTTPException(
             status_code=400,
-            detail="Webhook timestamp expired or too far in the future"
+            detail="Webhook timestamp inválido ou expirado"
         )
         
     # 1. Buscar a WO para identificar o workcenter
