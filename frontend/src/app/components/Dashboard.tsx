@@ -24,6 +24,8 @@ import { ModalPacote } from './ModalPacote';
 import { DocumentPreviewModal } from './DocumentPreviewModal';
 import { EmptyState } from './EmptyState';
 import { SkeletonKPICard, SkeletonListItem } from './SkeletonLoader';
+import { FilterBar, type FilterOption } from '@/app/components/FilterBar';
+import { useBreakpoint } from '@/hooks/useBreakpoint';
 import { clsx, type ClassValue } from 'clsx';
 import { formatObraDisplayName } from '../../lib/utils';
 import { twMerge } from 'tailwind-merge';
@@ -86,16 +88,125 @@ function StatCard({ label, value, icon: Icon, color }: { label: string, value: s
   );
 }
 
-function DashboardRow({ item, isSelected, onToggle, onViewDocs }: {
+function DashboardRow({ item, isSelected, onToggle, onViewDocs, isMobile }: {
   item: Fabrication;
   isSelected: boolean;
   onToggle: () => void;
   onViewDocs: () => void;
+  isMobile: boolean;
 }) {
+  const [expanded, setExpanded] = useState(false);
+
+  // Card compacto para mobile (< md / 768px)
+  if (isMobile) {
+    return (
+      <div
+        className={cn(
+          "p-3 transition-all active:bg-blue-50/40",
+          isSelected && "bg-blue-50/60 ring-1 ring-inset ring-blue-500/30"
+        )}
+      >
+        {/* Linha principal: status + MO + checkbox */}
+        <div className="flex items-start justify-between gap-2 mb-1.5">
+          <div className="flex items-center gap-2 flex-wrap min-w-0">
+            <StatusChip status={item.status} />
+            <span className="font-bold text-slate-900 text-sm">{item.mo_number}</span>
+            {item.source === 'producao' ? (
+              <span className="px-1.5 py-0.5 bg-purple-600 text-white rounded text-[9px] font-black tracking-widest">
+                PROD
+              </span>
+            ) : (
+              <span className="px-1.5 py-0.5 bg-blue-600 text-white rounded text-[9px] font-black tracking-widest">
+                ODOO
+              </span>
+            )}
+            <PriorityChip priority={item.priority} />
+          </div>
+          {/* Checkbox com área de toque 44×44px */}
+          <button
+            onClick={onToggle}
+            className={cn(
+              "min-w-[44px] min-h-[44px] flex items-center justify-center rounded flex-shrink-0",
+              isSelected ? "text-blue-600" : "text-slate-300"
+            )}
+            aria-label={isSelected ? 'Desselecionar' : 'Selecionar'}
+          >
+            <div className={cn(
+              "w-6 h-6 rounded border-2 flex items-center justify-center transition-all",
+              isSelected
+                ? "bg-blue-600 border-blue-600 text-white shadow-sm"
+                : "bg-white border-gray-300"
+            )}>
+              {isSelected && <CheckCircle2 size={16} />}
+            </div>
+          </button>
+        </div>
+
+        {/* Obra */}
+        <div className="text-sm text-slate-700 truncate mb-1">
+          {formatObraDisplayName(item.obra)}
+        </div>
+
+        {/* Data prevista + SLA */}
+        <div className="flex items-center gap-3 text-xs text-slate-500 mb-2">
+          <span className="flex items-center gap-1 font-medium text-slate-600">
+            <Calendar size={11} /> {item.date_start}
+          </span>
+          {item.sla === 'Vencida' && item.status !== 'Concluída' && (
+            <span className="flex items-center gap-1 font-black text-rose-600 animate-pulse">
+              <Clock size={11} /> ATRASADA
+            </span>
+          )}
+          {item.sla === 'Vence Hoje' && item.status !== 'Concluída' && (
+            <span className="flex items-center gap-1 font-black text-amber-600">
+              <Clock size={11} /> VENCE HOJE
+            </span>
+          )}
+        </div>
+
+        {/* Campos secundários colapsáveis */}
+        {expanded && (
+          <div className="text-xs text-slate-500 space-y-1 mb-2 pl-1 border-l-2 border-slate-100">
+            <div className="flex items-center gap-1">
+              <Package size={11} /> Qtd: {item.product_qty}
+            </div>
+            {item.packageType && (
+              <div>
+                <span className="px-1.5 py-0.5 bg-indigo-100 text-indigo-700 rounded text-[10px] font-bold">
+                  {item.packageType}
+                </span>
+              </div>
+            )}
+            {item.source === 'producao' && item.production_requester && (
+              <div>Solicitante: {item.production_requester}</div>
+            )}
+          </div>
+        )}
+
+        {/* Ações */}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={(e) => { e.stopPropagation(); onViewDocs(); }}
+            className="flex items-center gap-1.5 px-3 min-h-[44px] text-xs font-bold text-blue-600 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 active:bg-blue-200 transition-colors"
+          >
+            <FileText size={13} /> Docs
+          </button>
+          <button
+            onClick={() => setExpanded(v => !v)}
+            className="flex items-center gap-1 px-3 min-h-[44px] text-xs font-medium text-slate-500 bg-slate-50 border border-slate-200 rounded-lg hover:bg-slate-100 active:bg-slate-200 transition-colors"
+          >
+            {expanded ? 'ver menos' : 'ver mais'}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Layout desktop (>= md)
   return (
     <div
       className={cn(
-        "p-4 hover:bg-blue-50/30 transition-all flex items-center gap-4 cursor-default",
+        "p-4 hover:bg-blue-50/30 active:bg-blue-50/40 transition-all flex items-center gap-4 cursor-default",
         isSelected && "bg-blue-50/60 ring-1 ring-inset ring-blue-500/30"
       )}
     >
@@ -151,7 +262,7 @@ function DashboardRow({ item, isSelected, onToggle, onViewDocs }: {
         <div className="flex items-center gap-3">
           <button
             onClick={(e) => { e.stopPropagation(); onViewDocs(); }}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-blue-600 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-blue-600 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 active:bg-blue-200 transition-colors"
             title="Ver documentos"
           >
             <FileText size={14} />
@@ -177,6 +288,8 @@ function DashboardRow({ item, isSelected, onToggle, onViewDocs }: {
 export function Dashboard({ onCreateBatch }: DashboardProps) {
   const { odooMOs, loadingMOs, refreshMOs, syncStatus } = useData();
   const [loadingBatches, setLoadingBatches] = useState(true);
+  const breakpoint = useBreakpoint();
+  const isMobile = breakpoint === 'mobile' || breakpoint === 'sm';
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [filter, setFilter] = useState<'Todas' | 'Hoje' | 'Esta Semana' | 'Atrasadas' | 'Bloqueadas'>('Todas');
@@ -303,7 +416,7 @@ export function Dashboard({ onCreateBatch }: DashboardProps) {
   if (loadingMOs && odooMOs.length === 0) {
     return (
       <div className="p-3 sm:p-4 md:p-6 lg:p-8 max-w-7xl mx-auto space-y-6">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-4 auto-rows-fr gap-4">
           {[...Array(4)].map((_, i) => <SkeletonKPICard key={i} />)}
         </div>
         <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
@@ -321,7 +434,7 @@ export function Dashboard({ onCreateBatch }: DashboardProps) {
   return (
     <div className="p-3 sm:p-4 md:p-6 lg:p-8 max-w-7xl mx-auto space-y-6">
       {/* Stats Section */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-4 auto-rows-fr gap-4">
         <StatCard label="Total Filas" value={odooMOs.length.toString()} icon={Package} color="blue" />
         <StatCard label="Selecionados" value={selectedIds.size.toString()} icon={CheckCircle2} color="amber" />
         <StatCard
@@ -349,7 +462,7 @@ export function Dashboard({ onCreateBatch }: DashboardProps) {
             </div>
           </div>
           <div className="p-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {activeBatches.map((batch) => (
                 <div key={batch.batch_id} className="p-5 border border-slate-200 rounded-xl hover:border-blue-300 hover:shadow-md transition-all group bg-white">
                   <div className="flex items-start justify-between mb-3">
@@ -389,7 +502,7 @@ export function Dashboard({ onCreateBatch }: DashboardProps) {
             <h2 className="text-xl font-bold text-slate-800">Fila de Produção</h2>
             <p className="text-sm text-slate-500">Selecione as MOs para iniciar o lote de trabalho.</p>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
             <div className="px-4 py-2 bg-slate-100 rounded-lg text-sm font-medium text-slate-600">
               Selecionadas: <span className="text-blue-600 font-bold">{selectedIds.size}</span>
             </div>
@@ -397,8 +510,8 @@ export function Dashboard({ onCreateBatch }: DashboardProps) {
               onClick={handleCreateBatch}
               disabled={selectedIds.size === 0 || isCreatingBatch}
               className={cn(
-                "px-6 py-2 rounded-lg font-bold flex items-center gap-2 transition-all shadow-md",
-                selectedIds.size > 0 && !isCreatingBatch ? "bg-blue-600 text-white hover:bg-blue-700" : "bg-slate-200 text-slate-400"
+                "w-full sm:w-auto min-h-[44px] px-6 py-2 rounded-lg font-bold flex items-center justify-center gap-2 transition-all shadow-md",
+                selectedIds.size > 0 && !isCreatingBatch ? "bg-blue-600 text-white hover:bg-blue-700 active:bg-blue-800" : "bg-slate-200 text-slate-400"
               )}
             >
               Criar Lote <ChevronRight size={18} />
@@ -408,11 +521,18 @@ export function Dashboard({ onCreateBatch }: DashboardProps) {
 
         {/* Filters & Search */}
         <div className="px-6 py-4 border-b border-gray-100 bg-slate-50 flex flex-col md:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-2 overflow-x-auto w-full md:w-auto">
-            {(['Todas', 'Hoje', 'Esta Semana', 'Atrasadas', 'Bloqueadas'] as const).map((f) => (
-              <button key={f} onClick={() => setFilter(f)} className={cn("px-4 py-1.5 rounded-full text-xs font-bold transition-all border", filter === f ? "bg-slate-800 text-white border-slate-800" : "bg-white text-slate-600 border-gray-200")}>{f}</button>
-            ))}
-          </div>
+          <FilterBar<'Todas' | 'Hoje' | 'Esta Semana' | 'Atrasadas' | 'Bloqueadas'>
+            options={[
+              { value: 'Todas', label: 'Todas' },
+              { value: 'Hoje', label: 'Hoje' },
+              { value: 'Esta Semana', label: 'Esta Semana' },
+              { value: 'Atrasadas', label: 'Atrasadas' },
+              { value: 'Bloqueadas', label: 'Bloqueadas' },
+            ]}
+            value={filter}
+            onChange={setFilter}
+            className="w-full md:w-auto"
+          />
           <div className="relative w-full md:w-80">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
             <input type="text" placeholder="Buscar por MO / Obra..." value={search} onChange={(e) => setSearch(e.target.value)} className="w-full pl-10 pr-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-blue-500/20 text-sm" />
@@ -430,7 +550,7 @@ export function Dashboard({ onCreateBatch }: DashboardProps) {
             </div>
             <div className="divide-y divide-gray-100">
               {filteredItems.filter(i => i.source !== 'producao').map(item => (
-                <DashboardRow key={item.id} item={item} isSelected={selectedIds.has(item.id)} onToggle={() => toggleSelect(item.id)} onViewDocs={() => { setDocModalMoId(item.id); setDocModalMoNumber(item.mo_number); }} />
+                <DashboardRow key={item.id} item={item} isSelected={selectedIds.has(item.id)} onToggle={() => toggleSelect(item.id)} onViewDocs={() => { setDocModalMoId(item.id); setDocModalMoNumber(item.mo_number); }} isMobile={isMobile} />
               ))}
               {filteredItems.filter(i => i.source !== 'producao').length === 0 && (
                 <EmptyState
@@ -451,7 +571,7 @@ export function Dashboard({ onCreateBatch }: DashboardProps) {
             </div>
             <div className="divide-y divide-gray-100">
               {filteredItems.filter(i => i.source === 'producao').map(item => (
-                <DashboardRow key={item.id} item={item} isSelected={selectedIds.has(item.id)} onToggle={() => toggleSelect(item.id)} onViewDocs={() => { setDocModalMoId(item.id); setDocModalMoNumber(item.mo_number); }} />
+                <DashboardRow key={item.id} item={item} isSelected={selectedIds.has(item.id)} onToggle={() => toggleSelect(item.id)} onViewDocs={() => { setDocModalMoId(item.id); setDocModalMoNumber(item.mo_number); }} isMobile={isMobile} />
               ))}
               {filteredItems.filter(i => i.source === 'producao').length === 0 && (
                 <EmptyState
