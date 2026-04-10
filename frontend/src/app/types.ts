@@ -243,3 +243,15 @@ export interface FirmwareVersion {
   created_at: string;
   created_by: string;
 }
+
+// ── Notificações em tempo real ──
+
+export interface AppNotification {
+  id: string;
+  type: 'andon_call' | 'justification_required' | 'device_offline' | 'batch_complete';
+  title: string;
+  description: string;
+  href: string;
+  isRead: boolean;
+  createdAt: string;
+}
