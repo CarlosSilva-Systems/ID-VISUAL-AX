@@ -8,6 +8,7 @@ backend/.env
 backend/.env.*
 !backend/.env.example
 backend/storage/
+storage/
 frontend/.env
 frontend/.env.*
 !frontend/.env.example
