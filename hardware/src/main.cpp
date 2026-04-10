@@ -495,6 +495,7 @@ void logMeshNode(const String& message) {
 }
 
 
+void startMesh(bool asRoot) {
     if (g_meshStarted) return;
     g_meshStarted = true;
     g_isRoot = asRoot;
