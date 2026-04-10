@@ -21,6 +21,9 @@ import { ESPDeviceEnriched, FirmwareVersion } from '../types';
 import { DeviceDrawer } from './DeviceDrawer';
 import { ConfirmModal } from './ConfirmModal';
 import { SkeletonTableRow } from './SkeletonLoader';
+import { ActionMenu, ActionMenuItem } from '@/app/components/ActionMenu';
+import { BottomSheet } from '@/app/components/BottomSheet';
+import { useBreakpoint } from '@/hooks/useBreakpoint';
 
 interface ConfirmState<T> {
   isOpen: boolean;
@@ -126,6 +129,102 @@ const FirmwareBadge: React.FC<{ device: ESPDeviceEnriched }> = ({ device }) => {
   );
 };
 
+// ── Device Card (mobile/tablet) ───────────────────────────────────────────────
+
+interface DeviceCardProps {
+  device: ESPDeviceEnriched;
+  syncing: string | null;
+  deleting: string | null;
+  restarting: string | null;
+  onEdit: () => void;
+  onLogs: () => void;
+  onSync: () => void;
+  onRestart: () => void;
+  onDelete: () => void;
+}
+
+const DeviceCard: React.FC<DeviceCardProps> = ({
+  device,
+  syncing,
+  deleting,
+  restarting,
+  onEdit,
+  onLogs,
+  onSync,
+  onRestart,
+  onDelete,
+}) => {
+  const menuItems: ActionMenuItem[] = [
+    {
+      label: 'Editar',
+      icon: Edit3,
+      onClick: onEdit,
+    },
+    {
+      label: 'Ver Logs',
+      icon: ClipboardList,
+      onClick: onLogs,
+    },
+    {
+      label: syncing === device.id ? 'Sincronizando…' : 'Sincronizar',
+      icon: RotateCcw,
+      onClick: onSync,
+      disabled: syncing === device.id,
+    },
+    {
+      label: restarting === device.id ? 'Reiniciando…' : 'Reiniciar',
+      icon: Power,
+      onClick: onRestart,
+      disabled: device.status === 'offline' || restarting === device.id,
+    },
+    {
+      label: deleting === device.id ? 'Removendo…' : 'Remover',
+      icon: Trash2,
+      onClick: onDelete,
+      variant: 'destructive',
+      disabled: device.status === 'online' || deleting === device.id,
+    },
+  ];
+
+  return (
+    <div className="bg-white rounded-2xl border border-slate-200 p-4 flex flex-col gap-3 shadow-sm">
+      {/* Header: nome + ActionMenu */}
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${device.status === 'online' ? 'bg-emerald-100' : 'bg-slate-100'}`}>
+            <Cpu className={`w-5 h-5 ${device.status === 'online' ? 'text-emerald-600' : 'text-slate-400'}`} />
+          </div>
+          <div className="min-w-0">
+            <p className="font-bold text-slate-900 text-sm truncate">{device.device_name}</p>
+            <p className="text-xs text-slate-400 font-mono truncate">{device.mac_address}</p>
+          </div>
+        </div>
+        <ActionMenu items={menuItems} align="end" triggerLabel="Ações do dispositivo" />
+      </div>
+
+      {/* Info grid */}
+      <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
+        <div>
+          <p className="text-slate-400 font-medium mb-0.5">Status</p>
+          <StatusBadge device={device} />
+        </div>
+        <div>
+          <p className="text-slate-400 font-medium mb-0.5">Firmware</p>
+          <FirmwareBadge device={device} />
+        </div>
+        <div className="col-span-2">
+          <p className="text-slate-400 font-medium mb-0.5">Workcenter</p>
+          {device.workcenter_name ? (
+            <span className="text-slate-700 font-medium">{device.workcenter_name}</span>
+          ) : (
+            <span className="text-slate-400 italic">Sem vínculo</span>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // ── Main Component ────────────────────────────────────────────────────────────
 
 export const DevicesPage: React.FC = () => {
@@ -140,6 +239,10 @@ export const DevicesPage: React.FC = () => {
   const [confirmRestart, setConfirmRestart] = useState<ConfirmState<ESPDeviceEnriched>>({ isOpen: false, payload: null });
   const [confirmDelete, setConfirmDelete] = useState<ConfirmState<ESPDeviceEnriched>>({ isOpen: false, payload: null });
   const wsRef = useRef<WebSocket | null>(null);
+
+  const bp = useBreakpoint();
+  const isBelowLg = bp === 'mobile' || bp === 'sm' || bp === 'md';
+  const isBelowMd = bp === 'mobile' || bp === 'sm';
 
   const loadDevices = useCallback(async () => {
     try {
@@ -232,10 +335,24 @@ export const DevicesPage: React.FC = () => {
     setDrawerTab(tab);
   };
 
+  // Conteúdo do DeviceDrawer — reutilizado em ambos os modos (lateral e bottom sheet)
+  const drawerContent = drawerDevice ? (
+    <DeviceDrawer
+      device={drawerDevice}
+      initialTab={drawerTab}
+      firmwareVersions={firmwareVersions}
+      onClose={() => setDrawerDevice(null)}
+      onUpdated={() => {
+        loadDevices();
+        loadFirmwareVersions();
+      }}
+    />
+  ) : null;
+
   return (
     <div className="max-w-7xl mx-auto">
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
         <div>
           <h1 className="text-2xl font-black text-slate-900 flex items-center gap-2">
             <Cpu className="w-6 h-6 text-blue-600" />
@@ -245,7 +362,7 @@ export const DevicesPage: React.FC = () => {
         </div>
         <button
           onClick={() => { setLoading(true); loadDevices(); }}
-          className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors"
+          className="flex items-center justify-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors w-full sm:w-auto"
         >
           <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           Atualizar
@@ -255,9 +372,10 @@ export const DevicesPage: React.FC = () => {
       {/* Summary Cards */}
       <SummaryCards devices={devices} />
 
-      {/* Table */}
-      <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
-        {loading ? (
+      {/* Content: Card View (< lg) ou Table (>= lg) */}
+      {loading ? (
+        /* Skeleton — tabela sempre para o skeleton */
+        <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
@@ -276,13 +394,34 @@ export const DevicesPage: React.FC = () => {
               </tbody>
             </table>
           </div>
-        ) : devices.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-20 text-slate-400">
-            <WifiOff className="w-10 h-10 mb-3 opacity-30" />
-            <p className="font-medium">Nenhum dispositivo cadastrado</p>
-            <p className="text-sm mt-1">Aguardando descoberta via MQTT</p>
-          </div>
-        ) : (
+        </div>
+      ) : devices.length === 0 ? (
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col items-center justify-center py-20 text-slate-400">
+          <WifiOff className="w-10 h-10 mb-3 opacity-30" />
+          <p className="font-medium">Nenhum dispositivo cadastrado</p>
+          <p className="text-sm mt-1">Aguardando descoberta via MQTT</p>
+        </div>
+      ) : isBelowLg ? (
+        /* ── Card View (mobile / tablet < lg) ── */
+        <div className="flex flex-col gap-3">
+          {devices.map(device => (
+            <DeviceCard
+              key={device.id}
+              device={device}
+              syncing={syncing}
+              deleting={deleting}
+              restarting={restarting}
+              onEdit={() => openDrawer(device, 'info')}
+              onLogs={() => openDrawer(device, 'logs')}
+              onSync={() => handleSync(device)}
+              onRestart={() => setConfirmRestart({ isOpen: true, payload: device })}
+              onDelete={() => setConfirmDelete({ isOpen: true, payload: device })}
+            />
+          ))}
+        </div>
+      ) : (
+        /* ── Table View (desktop >= lg) ── */
+        <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
@@ -326,7 +465,6 @@ export const DevicesPage: React.FC = () => {
                     {/* Sinal */}
                     <td className="px-4 py-4">
                       <div className="flex flex-col gap-1">
-                        {/* Badge de tipo de conexão */}
                         {device.connection_type === 'wifi' ? (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-700 w-fit">
                             <Wifi className="w-2.5 h-2.5" />WiFi
@@ -336,7 +474,6 @@ export const DevicesPage: React.FC = () => {
                             <Network className="w-2.5 h-2.5" />Mesh
                           </span>
                         ) : null}
-                        {/* Qualidade do sinal */}
                         {device.rssi_quality ? (
                           <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold ${rssiColor(device.rssi_quality)}`}>
                             <Wifi className="w-3 h-3" />
@@ -361,7 +498,6 @@ export const DevicesPage: React.FC = () => {
                     {/* Ações */}
                     <td className="px-5 py-4">
                       <div className="flex items-center justify-end gap-1">
-                        {/* Editar */}
                         <button
                           onClick={() => openDrawer(device, 'info')}
                           title="Editar"
@@ -369,7 +505,6 @@ export const DevicesPage: React.FC = () => {
                         >
                           <Edit3 className="w-4 h-4" />
                         </button>
-                        {/* Ver Logs */}
                         <button
                           onClick={() => openDrawer(device, 'logs')}
                           title="Ver Logs"
@@ -377,7 +512,6 @@ export const DevicesPage: React.FC = () => {
                         >
                           <ClipboardList className="w-4 h-4" />
                         </button>
-                        {/* Sincronizar */}
                         <button
                           onClick={() => handleSync(device)}
                           title="Sincronizar"
@@ -386,7 +520,6 @@ export const DevicesPage: React.FC = () => {
                         >
                           <RotateCcw className={`w-4 h-4 ${syncing === device.id ? 'animate-spin' : ''}`} />
                         </button>
-                        {/* Reiniciar — só online */}
                         <button
                           onClick={() => setConfirmRestart({ isOpen: true, payload: device })}
                           title={device.status === 'offline' ? 'Dispositivo offline — não pode reiniciar' : 'Reiniciar ESP32'}
@@ -399,7 +532,6 @@ export const DevicesPage: React.FC = () => {
                             <Power className="w-4 h-4" />
                           )}
                         </button>
-                        {/* Remover — só offline */}
                         <button
                           onClick={() => setConfirmDelete({ isOpen: true, payload: device })}
                           title={device.status === 'online' ? 'Dispositivo online — não pode remover' : 'Remover'}
@@ -419,21 +551,21 @@ export const DevicesPage: React.FC = () => {
               </tbody>
             </table>
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
-      {/* Device Drawer */}
-      {drawerDevice && (
-        <DeviceDrawer
-          device={drawerDevice}
-          initialTab={drawerTab}
-          firmwareVersions={firmwareVersions}
+      {/* Device Drawer — 4.6: BottomSheet em < md, drawer lateral em >= md */}
+      {isBelowMd ? (
+        <BottomSheet
+          isOpen={drawerDevice !== null}
           onClose={() => setDrawerDevice(null)}
-          onUpdated={() => {
-            loadDevices();
-            loadFirmwareVersions();
-          }}
-        />
+          maxHeight="90vh"
+          level={1}
+        >
+          {drawerContent}
+        </BottomSheet>
+      ) : (
+        drawerContent
       )}
 
       <ConfirmModal
