@@ -22,6 +22,8 @@ import { cn, Button, Badge, Card, Input } from "./ui";
 import { formatObraDisplayName } from "../../lib/utils";
 import { motion, AnimatePresence } from "motion/react";
 import { DocumentPreviewModal } from "./DocumentPreviewModal";
+import { BottomSheet } from "./BottomSheet";
+import { useBreakpoint } from "@/hooks/useBreakpoint";
 
 interface MOResult {
     odoo_mo_id: number;
@@ -111,6 +113,9 @@ export const ProductionViewUI: React.FC<ProductionViewUIProps> = ({
     // Docs modal state
     const [docsMO, setDocsMO] = useState<{ id: number; number: string } | null>(null);
 
+    const bp = useBreakpoint();
+    const isMobile = bp === 'mobile';
+
     return (
         <div className="max-w-4xl mx-auto space-y-8 animate-in fade-in duration-500">
             {/* Header com busca de Fabricação */}
@@ -119,7 +124,7 @@ export const ProductionViewUI: React.FC<ProductionViewUIProps> = ({
                     <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Solicitar Identificação</h1>
                     <p className="text-slate-500 mt-1">Produção de Quadros Elétricos</p>
                 </div>
-                <form onSubmit={onSearch} className="w-full sm:w-80 relative">
+                <form onSubmit={onSearch} className="w-full relative">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                     <Input
                         value={searchTerm}
@@ -294,146 +299,179 @@ export const ProductionViewUI: React.FC<ProductionViewUIProps> = ({
                 </section>
             </div>
 
-            {/* Modal de Solicitação - Fusão Baseline UI + Funcionalidade */}
-            <AnimatePresence>
-                {selectedMO && (
-                    <>
-                        <motion.div
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 1 }}
-                            exit={{ opacity: 0 }}
-                            className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[100]"
-                            onClick={() => setSelectedMO(null)}
-                        />
-                        <motion.div
-                            initial={{ scale: 0.95, opacity: 0, y: 20 }}
-                            animate={{ scale: 1, opacity: 1, y: 0 }}
-                            exit={{ scale: 0.95, opacity: 0, y: 20 }}
-                            className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-lg bg-white rounded-[2.5rem] shadow-2xl z-[101] overflow-hidden flex flex-col max-h-[90vh]"
-                        >
-                            <div className="p-8 space-y-6 overflow-y-auto">
-                                <div className="flex items-center justify-between mb-2">
-                                    <div>
-                                        <h2 className="text-2xl font-black text-slate-900">Nova Solicitação</h2>
-                                        <p className="text-sm text-slate-500 font-bold">Fabricação #{selectedMO.mo_number} — {formatObraDisplayName(selectedMO.obra) || 'Sem obra'}</p>
-                                    </div>
-                                    <Button variant="ghost" size="icon" className="p-2 hover:bg-slate-100 rounded-full" onClick={() => setSelectedMO(null)}>
-                                        <X className="w-6 h-6 text-slate-400" />
-                                    </Button>
-                                </div>
+            {/* Modal de Solicitação — BottomSheet em mobile, modal centralizado em >= sm */}
+            {isMobile ? (
+                <BottomSheet
+                    isOpen={!!selectedMO}
+                    onClose={() => setSelectedMO(null)}
+                    title="Nova Solicitação"
+                    maxHeight="95vh"
+                >
+                    <div className="p-6 space-y-6">
+                        {selectedMO && (
+                            <p className="text-sm text-slate-500 font-bold">
+                                Fabricação #{selectedMO.mo_number} — {formatObraDisplayName(selectedMO.obra) || 'Sem obra'}
+                            </p>
+                        )}
 
-                                {!selectedMO.has_id_activity && (
-                                    <div className="flex items-start gap-3 p-4 bg-amber-50 rounded-2xl border border-amber-100">
-                                        <Info size={20} className="text-amber-500 shrink-0 mt-0.5" />
-                                        <div>
-                                            <p className="text-sm font-bold text-amber-800">Fora da fila padrão</p>
-                                            <p className="text-xs text-amber-600 mt-0.5">Essa MO não tem atividade "Identificação" ativa no Odoo.</p>
+                        {selectedMO && !selectedMO.has_id_activity && (
+                            <div className="flex items-start gap-3 p-4 bg-amber-50 rounded-2xl border border-amber-100">
+                                <Info size={20} className="text-amber-500 shrink-0 mt-0.5" />
+                                <div>
+                                    <p className="text-sm font-bold text-amber-800">Fora da fila padrão</p>
+                                    <p className="text-xs text-amber-600 mt-0.5">Essa MO não tem atividade "Identificação" ativa no Odoo.</p>
+                                </div>
+                            </div>
+                        )}
+
+                        <div className="space-y-2">
+                            <label className="text-xs font-black text-slate-400 uppercase tracking-widest">Quem está solicitando? *</label>
+                            <Input placeholder="Seu nome completo" value={requesterName} onChange={(e) => setRequesterName(e.target.value)} className="h-12 font-bold px-4" />
+                        </div>
+
+                        <div className="space-y-3">
+                            <label className="text-xs font-black text-slate-400 uppercase tracking-widest">Tipo do Quadro *</label>
+                            <div className="grid grid-cols-2 gap-3">
+                                {Object.entries(PANEL_LABELS).map(([key, label]) => (
+                                    <button key={key} onClick={() => handleSelectPanel(key)}
+                                        className={cn("p-4 min-h-[44px] rounded-2xl border-2 text-left font-bold transition-all flex items-center justify-between",
+                                            panelType === key ? "border-blue-500 bg-blue-50 text-blue-700 ring-2 ring-blue-100" : "border-slate-100 text-slate-700 hover:border-blue-200 hover:bg-slate-50")}>
+                                        <div className="flex items-center gap-2"><Wrench size={16} className={panelType === key ? 'text-blue-500' : 'text-slate-400'} />{label}</div>
+                                        <div className={cn("w-5 h-5 rounded-full border-2 flex items-center justify-center", panelType === key ? "bg-blue-600 border-blue-600" : "border-slate-200")}>
+                                            {panelType === key && <div className="w-2 h-2 bg-white rounded-full" />}
                                         </div>
-                                    </div>
-                                )}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
 
-                                <div className="space-y-2">
-                                    <label className="text-xs font-black text-slate-400 uppercase tracking-widest">Quem está solicitando? *</label>
-                                    <Input
-                                        placeholder="Seu nome completo"
-                                        value={requesterName}
-                                        onChange={(e) => setRequesterName(e.target.value)}
-                                        className="h-12 font-bold px-4"
-                                    />
+                        {panelType && currentTasks.length > 0 && (
+                            <div className="space-y-3">
+                                <label className="text-xs font-black text-slate-400 uppercase tracking-widest">Itens Necessários ({selectedTypes.size})</label>
+                                <div className="grid grid-cols-2 gap-2">
+                                    {currentTasks.map((task) => (
+                                        <button key={task.code} onClick={() => toggleType(task.code)}
+                                            className={cn("px-4 py-3 min-h-[44px] text-xs font-bold rounded-xl border transition-all text-left flex items-center justify-between",
+                                                selectedTypes.has(task.code) ? "bg-blue-600 border-blue-600 text-white shadow-lg shadow-blue-500/20" : "bg-slate-50 border-slate-200 text-slate-600 hover:border-blue-300")}>
+                                            {task.label}{selectedTypes.has(task.code) && <CheckCircle2 size={14} />}
+                                        </button>
+                                    ))}
                                 </div>
+                            </div>
+                        )}
 
-                                <div className="space-y-3">
-                                    <label className="text-xs font-black text-slate-400 uppercase tracking-widest">Tipo do Quadro *</label>
-                                    <div className="grid grid-cols-2 gap-3">
-                                        {Object.entries(PANEL_LABELS).map(([key, label]) => (
-                                            <button
-                                                key={key}
-                                                onClick={() => handleSelectPanel(key)}
-                                                className={cn(
-                                                    "p-4 rounded-2xl border-2 text-left font-bold transition-all flex items-center justify-between group",
-                                                    panelType === key
-                                                        ? "border-blue-500 bg-blue-50 text-blue-700 ring-2 ring-blue-100"
-                                                        : "border-slate-100 text-slate-700 hover:border-blue-200 hover:bg-slate-50"
-                                                )}
-                                            >
-                                                <div className="flex items-center gap-2">
-                                                    <Wrench size={16} className={panelType === key ? 'text-blue-500' : 'text-slate-400'} />
-                                                    {label}
-                                                </div>
-                                                <div className={cn(
-                                                    "w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all",
-                                                    panelType === key ? "bg-blue-600 border-blue-600" : "border-slate-200"
-                                                )}>
-                                                    {panelType === key && <div className="w-2 h-2 bg-white rounded-full" />}
-                                                </div>
-                                            </button>
-                                        ))}
+                        <div className="space-y-2">
+                            <label className="text-xs font-black text-slate-400 uppercase tracking-widest">Observação Adicional</label>
+                            <Input placeholder="Ex: Urgente, cliente na fábrica..." value={notes} onChange={(e) => setNotes(e.target.value)} className="h-12" />
+                        </div>
+
+                        <div className="p-4 bg-rose-50 rounded-2xl border border-rose-100 flex items-center gap-3">
+                            <div className="p-2 bg-rose-100 rounded-xl"><Zap className="w-5 h-5 text-rose-600" /></div>
+                            <div>
+                                <p className="text-sm font-black text-rose-900">Entrega Express</p>
+                                <p className="text-[10px] text-rose-600 font-bold uppercase tracking-widest">Prioridade Máxima em Fila</p>
+                            </div>
+                        </div>
+
+                        {/* CTA sticky dentro do scroll container */}
+                        <div className="sticky bottom-0 bg-white pt-2 pb-2">
+                            <Button className="w-full h-14 rounded-[1.5rem] text-xl font-black uppercase tracking-tight gap-3 shadow-2xl shadow-blue-500/30"
+                                onClick={handleSubmit} disabled={!canSubmit || submitting}>
+                                {submitting ? (<><Loader2 className="animate-spin" size={24} /> Enviando...</>) : (<>Solicitar AGORA <Send className="w-6 h-6" /></>)}
+                            </Button>
+                        </div>
+                    </div>
+                </BottomSheet>
+            ) : (
+                <AnimatePresence>
+                    {selectedMO && (
+                        <>
+                            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                                className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[100]" onClick={() => setSelectedMO(null)} />
+                            <motion.div initial={{ scale: 0.95, opacity: 0, y: 20 }} animate={{ scale: 1, opacity: 1, y: 0 }} exit={{ scale: 0.95, opacity: 0, y: 20 }}
+                                className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-lg bg-white rounded-[2.5rem] shadow-2xl z-[101] overflow-hidden flex flex-col max-h-[90vh]">
+                                <div className="p-8 space-y-6 overflow-y-auto">
+                                    <div className="flex items-center justify-between mb-2">
+                                        <div>
+                                            <h2 className="text-2xl font-black text-slate-900">Nova Solicitação</h2>
+                                            <p className="text-sm text-slate-500 font-bold">Fabricação #{selectedMO.mo_number} — {formatObraDisplayName(selectedMO.obra) || 'Sem obra'}</p>
+                                        </div>
+                                        <Button variant="ghost" size="icon" className="p-2 hover:bg-slate-100 rounded-full" onClick={() => setSelectedMO(null)}>
+                                            <X className="w-6 h-6 text-slate-400" />
+                                        </Button>
                                     </div>
-                                </div>
 
-                                {panelType && currentTasks.length > 0 && (
-                                    <div className="space-y-3 animate-in slide-in-from-top-2">
-                                        <label className="text-xs font-black text-slate-400 uppercase tracking-widest">
-                                            Itens Necessários ({selectedTypes.size})
-                                        </label>
-                                        <div className="grid grid-cols-2 gap-2">
-                                            {currentTasks.map((task) => (
-                                                <button
-                                                    key={task.code}
-                                                    onClick={() => toggleType(task.code)}
-                                                    className={cn(
-                                                        "px-4 py-3 text-xs font-bold rounded-xl border transition-all text-left flex items-center justify-between",
-                                                        selectedTypes.has(task.code)
-                                                            ? "bg-blue-600 border-blue-600 text-white shadow-lg shadow-blue-500/20"
-                                                            : "bg-slate-50 border-slate-200 text-slate-600 hover:border-blue-300"
-                                                    )}
-                                                >
-                                                    {task.label}
-                                                    {selectedTypes.has(task.code) && <CheckCircle2 size={14} />}
+                                    {!selectedMO.has_id_activity && (
+                                        <div className="flex items-start gap-3 p-4 bg-amber-50 rounded-2xl border border-amber-100">
+                                            <Info size={20} className="text-amber-500 shrink-0 mt-0.5" />
+                                            <div>
+                                                <p className="text-sm font-bold text-amber-800">Fora da fila padrão</p>
+                                                <p className="text-xs text-amber-600 mt-0.5">Essa MO não tem atividade "Identificação" ativa no Odoo.</p>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    <div className="space-y-2">
+                                        <label className="text-xs font-black text-slate-400 uppercase tracking-widest">Quem está solicitando? *</label>
+                                        <Input placeholder="Seu nome completo" value={requesterName} onChange={(e) => setRequesterName(e.target.value)} className="h-12 font-bold px-4" />
+                                    </div>
+
+                                    <div className="space-y-3">
+                                        <label className="text-xs font-black text-slate-400 uppercase tracking-widest">Tipo do Quadro *</label>
+                                        <div className="grid grid-cols-2 gap-3">
+                                            {Object.entries(PANEL_LABELS).map(([key, label]) => (
+                                                <button key={key} onClick={() => handleSelectPanel(key)}
+                                                    className={cn("p-4 min-h-[44px] rounded-2xl border-2 text-left font-bold transition-all flex items-center justify-between group",
+                                                        panelType === key ? "border-blue-500 bg-blue-50 text-blue-700 ring-2 ring-blue-100" : "border-slate-100 text-slate-700 hover:border-blue-200 hover:bg-slate-50")}>
+                                                    <div className="flex items-center gap-2"><Wrench size={16} className={panelType === key ? 'text-blue-500' : 'text-slate-400'} />{label}</div>
+                                                    <div className={cn("w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all", panelType === key ? "bg-blue-600 border-blue-600" : "border-slate-200")}>
+                                                        {panelType === key && <div className="w-2 h-2 bg-white rounded-full" />}
+                                                    </div>
                                                 </button>
                                             ))}
                                         </div>
                                     </div>
-                                )}
 
-                                <div className="space-y-2">
-                                    <label className="text-xs font-black text-slate-400 uppercase tracking-widest">Observação Adicional</label>
-                                    <Input
-                                        placeholder="Ex: Urgente, cliente na fábrica..."
-                                        value={notes}
-                                        onChange={(e) => setNotes(e.target.value)}
-                                        className="h-12"
-                                    />
-                                </div>
-
-                                <div className="p-4 bg-rose-50 rounded-2xl border border-rose-100 flex items-center gap-3">
-                                    <div className="p-2 bg-rose-100 rounded-xl">
-                                        <Zap className="w-5 h-5 text-rose-600" />
-                                    </div>
-                                    <div>
-                                        <p className="text-sm font-black text-rose-900">Entrega Express</p>
-                                        <p className="text-[10px] text-rose-600 font-bold uppercase tracking-widest">Prioridade Máxima em Fila</p>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="p-8 pt-4">
-                                <Button
-                                    className="w-full h-16 rounded-[1.5rem] text-xl font-black uppercase tracking-tight gap-3 shadow-2xl shadow-blue-500/30"
-                                    onClick={handleSubmit}
-                                    disabled={!canSubmit || submitting}
-                                >
-                                    {submitting ? (
-                                        <><Loader2 className="animate-spin" size={24} /> Enviando...</>
-                                    ) : (
-                                        <>Solicitar AGORA <Send className="w-6 h-6" /></>
+                                    {panelType && currentTasks.length > 0 && (
+                                        <div className="space-y-3 animate-in slide-in-from-top-2">
+                                            <label className="text-xs font-black text-slate-400 uppercase tracking-widest">Itens Necessários ({selectedTypes.size})</label>
+                                            <div className="grid grid-cols-2 gap-2">
+                                                {currentTasks.map((task) => (
+                                                    <button key={task.code} onClick={() => toggleType(task.code)}
+                                                        className={cn("px-4 py-3 min-h-[44px] text-xs font-bold rounded-xl border transition-all text-left flex items-center justify-between",
+                                                            selectedTypes.has(task.code) ? "bg-blue-600 border-blue-600 text-white shadow-lg shadow-blue-500/20" : "bg-slate-50 border-slate-200 text-slate-600 hover:border-blue-300")}>
+                                                        {task.label}{selectedTypes.has(task.code) && <CheckCircle2 size={14} />}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
                                     )}
-                                </Button>
-                            </div>
-                        </motion.div>
-                    </>
-                )}
-            </AnimatePresence>
+
+                                    <div className="space-y-2">
+                                        <label className="text-xs font-black text-slate-400 uppercase tracking-widest">Observação Adicional</label>
+                                        <Input placeholder="Ex: Urgente, cliente na fábrica..." value={notes} onChange={(e) => setNotes(e.target.value)} className="h-12" />
+                                    </div>
+
+                                    <div className="p-4 bg-rose-50 rounded-2xl border border-rose-100 flex items-center gap-3">
+                                        <div className="p-2 bg-rose-100 rounded-xl"><Zap className="w-5 h-5 text-rose-600" /></div>
+                                        <div>
+                                            <p className="text-sm font-black text-rose-900">Entrega Express</p>
+                                            <p className="text-[10px] text-rose-600 font-bold uppercase tracking-widest">Prioridade Máxima em Fila</p>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="p-8 pt-4 sticky bottom-0 bg-white">
+                                    <Button className="w-full h-14 rounded-[1.5rem] text-xl font-black uppercase tracking-tight gap-3 shadow-2xl shadow-blue-500/30"
+                                        onClick={handleSubmit} disabled={!canSubmit || submitting}>
+                                        {submitting ? (<><Loader2 className="animate-spin" size={24} /> Enviando...</>) : (<>Solicitar AGORA <Send className="w-6 h-6" /></>)}
+                                    </Button>
+                                </div>
+                            </motion.div>
+                        </>
+                    )}
+                </AnimatePresence>
+            )}
 
             {/* Modal de Documentos do Produto */}
             {docsMO && (
