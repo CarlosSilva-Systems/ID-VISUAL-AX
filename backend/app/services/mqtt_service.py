@@ -208,30 +208,49 @@ async def _handle_status(mac: str, payload_raw: bytes):
                 hb = json.loads(raw)
                 status_str = hb.get("status", "").lower()
                 rssi_val = hb.get("rssi")
-                uptime_val = hb.get("uptime_seconds")
+                uptime_val = hb.get("uptime_seconds") or hb.get("uptime")
+                heap_val = hb.get("heap")
+                is_root_val = hb.get("is_root")
+                mesh_nodes_val = hb.get("mesh_nodes")
             except Exception:
                 status_str = raw.lower()
                 rssi_val = None
                 uptime_val = None
+                heap_val = None
+                is_root_val = None
+                mesh_nodes_val = None
         else:
             status_str = raw.lower()
             rssi_val = None
             uptime_val = None
+            heap_val = None
+            is_root_val = None
+            mesh_nodes_val = None
 
-        if status_str == "heartbeat":
-            # Atualizar last_seen_at e campos de diagnóstico sem mudar status
-            if rssi_val is not None or uptime_val is not None:
-                async with async_session_factory() as session:
-                    stmt = select(ESPDevice).where(ESPDevice.mac_address == mac)
-                    result = await session.execute(stmt)
-                    device = result.scalars().first()
-                    if device:
-                        device.last_seen_at = datetime.now(timezone.utc).replace(tzinfo=None)
-                        if rssi_val is not None:
-                            device.rssi = int(rssi_val)
-                        if uptime_val is not None:
-                            device.uptime_seconds = int(uptime_val)
-                        await session.commit()
+        if status_str == "heartbeat" or (raw.startswith("{") and not status_str):
+            # Heartbeat de raiz ou folha (via mesh) — atualiza last_seen_at e diagnóstico
+            async with async_session_factory() as session:
+                stmt = select(ESPDevice).where(ESPDevice.mac_address == mac)
+                result = await session.execute(stmt)
+                device = result.scalars().first()
+                if device:
+                    device.last_seen_at = datetime.now(timezone.utc).replace(tzinfo=None)
+                    device.status = DeviceStatus.online  # Heartbeat = device online
+                    if rssi_val is not None:
+                        device.rssi = int(rssi_val)
+                    if uptime_val is not None:
+                        device.uptime_seconds = int(uptime_val)
+                    if is_root_val is not None:
+                        device.is_root = bool(is_root_val)
+                    if mesh_nodes_val is not None:
+                        device.mesh_node_count = int(mesh_nodes_val)
+                    # Folha sem WiFi — heap baixo é sinal de alerta
+                    if heap_val is not None and int(heap_val) < 10240:
+                        await _add_log(
+                            session, device.id, EventType.error,
+                            f"⚠️ Heap baixo no heartbeat: {heap_val} bytes", LogLevel.WARN
+                        )
+                    await session.commit()
             return
         if status_str not in ("online", "offline"):
             logger.warning(f"MQTT status: valor inválido '{status_str}' para {mac}")
