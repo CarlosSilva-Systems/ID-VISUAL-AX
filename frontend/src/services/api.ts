@@ -433,6 +433,10 @@ export const api = {
         return api.post(`/devices/${encodeURIComponent(deviceId)}/sync`, {});
     },
 
+    restartDevice: async (deviceId: string) => {
+        return api.post(`/devices/${encodeURIComponent(deviceId)}/restart`, {});
+    },
+
     deleteDevice: async (deviceId: string) => {
         return api.delete(`/devices/${encodeURIComponent(deviceId)}`);
     },

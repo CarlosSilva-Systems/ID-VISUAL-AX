@@ -15,6 +15,7 @@ import {
   MapPin,
   Tag,
   StickyNote,
+  Power,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../../services/api';
@@ -80,7 +81,8 @@ const InfoTab: React.FC<{
   firmwareVersions: FirmwareVersion[];
   onUpdated: () => void;
   onOTAStart: (targetVersion: string) => void;
-}> = ({ device, firmwareVersions, onUpdated, onOTAStart }) => {
+  onRestart: () => void;
+}> = ({ device, firmwareVersions, onUpdated, onOTAStart, onRestart }) => {
   const [name, setName] = useState(device.device_name);
   const [location, setLocation] = useState(device.location);
   const [notes, setNotes] = useState(device.notes ?? '');
@@ -199,6 +201,22 @@ const InfoTab: React.FC<{
         />
         {device.ip_address && <ReadonlyField label="IP Local" value={device.ip_address} mono />}
         <ReadonlyField label="Último contato" value={formatLastSeen(device.last_seen_at)} />
+      </div>
+
+      {/* Restart Section */}
+      <div className="border-t border-slate-100" />
+      <div>
+        <p className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1 mb-3">
+          <Power className="w-3 h-3" />Controle do Dispositivo
+        </p>
+        <button
+          onClick={onRestart}
+          disabled={device.status === 'offline'}
+          className="w-full flex items-center justify-center gap-2 py-2 bg-orange-50 text-orange-600 border border-orange-200 rounded-xl text-sm font-bold hover:bg-orange-100 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          <Power className="w-4 h-4" />
+          {device.status === 'offline' ? 'Offline — restart indisponível' : 'Reiniciar ESP32'}
+        </button>
       </div>
 
       {/* OTA Section */}
@@ -366,6 +384,7 @@ export const DeviceDrawer: React.FC<DeviceDrawerProps> = ({
   const [activeTab, setActiveTab] = useState<'info' | 'logs'>(initialTab);
   const [otaTarget, setOtaTarget] = useState<string | null>(null);
   const [hasLogErrors, setHasLogErrors] = useState(false);
+  const [restarting, setRestarting] = useState(false);
 
   // Detectar erros nos logs para badge
   useEffect(() => {
@@ -373,6 +392,20 @@ export const DeviceDrawer: React.FC<DeviceDrawerProps> = ({
       .then((data: DeviceLog[]) => setHasLogErrors(data.length > 0))
       .catch(() => {});
   }, [device.id]);
+
+  const handleRestart = async () => {
+    if (!confirm(`Reiniciar ${device.device_name}?\n\nO dispositivo ficará offline por alguns segundos.`)) return;
+    setRestarting(true);
+    try {
+      await api.restartDevice(device.id);
+      toast.success(`Restart enviado para ${device.device_name}`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Erro ao reiniciar';
+      toast.error(msg);
+    } finally {
+      setRestarting(false);
+    }
+  };
 
   return (
     <>
@@ -440,6 +473,7 @@ export const DeviceDrawer: React.FC<DeviceDrawerProps> = ({
               firmwareVersions={firmwareVersions}
               onUpdated={onUpdated}
               onOTAStart={(version) => setOtaTarget(version)}
+              onRestart={handleRestart}
             />
           ) : (
             <LogsTab device={device} />

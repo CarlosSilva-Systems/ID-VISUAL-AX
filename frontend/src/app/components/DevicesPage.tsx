@@ -6,6 +6,7 @@ import {
   Edit3,
   ClipboardList,
   RotateCcw,
+  Power,
   Wifi,
   WifiOff,
   AlertTriangle,
@@ -124,6 +125,7 @@ export const DevicesPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [restarting, setRestarting] = useState<string | null>(null);
   const [drawerDevice, setDrawerDevice] = useState<ESPDeviceEnriched | null>(null);
   const [drawerTab, setDrawerTab] = useState<'info' | 'logs'>('info');
   const [firmwareVersions, setFirmwareVersions] = useState<FirmwareVersion[]>([]);
@@ -185,6 +187,20 @@ export const DevicesPage: React.FC = () => {
       toast.error('Falha ao solicitar sync');
     } finally {
       setSyncing(null);
+    }
+  };
+
+  const handleRestart = async (device: ESPDeviceEnriched) => {
+    if (!confirm(`Reiniciar ${device.device_name}?\n\nO dispositivo ficará offline por alguns segundos durante o restart.`)) return;
+    setRestarting(device.id);
+    try {
+      await api.restartDevice(device.id);
+      toast.success(`Restart enviado para ${device.device_name}`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Erro ao reiniciar dispositivo';
+      toast.error(msg);
+    } finally {
+      setRestarting(null);
     }
   };
 
@@ -334,6 +350,19 @@ export const DevicesPage: React.FC = () => {
                           className="p-2 rounded-lg text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 transition-colors disabled:opacity-40"
                         >
                           <RotateCcw className={`w-4 h-4 ${syncing === device.id ? 'animate-spin' : ''}`} />
+                        </button>
+                        {/* Reiniciar — só online */}
+                        <button
+                          onClick={() => handleRestart(device)}
+                          title={device.status === 'offline' ? 'Dispositivo offline — não pode reiniciar' : 'Reiniciar ESP32'}
+                          disabled={device.status === 'offline' || restarting === device.id}
+                          className="p-2 rounded-lg text-slate-400 hover:text-orange-600 hover:bg-orange-50 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                        >
+                          {restarting === device.id ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <Power className="w-4 h-4" />
+                          )}
                         </button>
                         {/* Remover — só offline */}
                         <button
