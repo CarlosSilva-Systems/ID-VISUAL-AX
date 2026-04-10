@@ -177,34 +177,42 @@ export const AndonGrid: React.FC<AndonGridProps> = ({ username }) => {
 
     return (
         <div className="space-y-6">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            {/* Header — flex-col em mobile, flex-row em sm+ */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
-                    <h1 className="text-2xl font-black tracking-tight text-slate-900 flex items-center gap-2">
-                        <Activity className="w-7 h-7 text-blue-600" />
+                    <h1 className="text-xl sm:text-2xl lg:text-3xl font-black tracking-tight text-slate-900 flex items-center gap-2">
+                        <Activity className="w-6 h-6 sm:w-7 sm:h-7 text-blue-600" />
                         Painel Andon
                     </h1>
                     <p className="text-slate-500 text-sm mt-1">Status e produção em tempo real</p>
                 </div>
 
-                <div className="flex items-center gap-3">
-                    <button
-                        onClick={() => window.open('/andon-tv', '_blank')}
-                        className="flex items-center gap-2 px-4 py-2 bg-white border-2 border-slate-200 text-slate-700 rounded-xl hover:bg-slate-50 transition-all shadow-sm text-sm font-bold active:scale-95"
-                    >
-                        <MonitorPlay className="w-4 h-4" />
-                        Abrir TV
-                    </button>
-                </div>
+                <button
+                    onClick={() => window.open('/andon-tv', '_blank')}
+                    className="flex items-center justify-center gap-2 px-4 min-h-[44px] bg-white border-2 border-slate-200 text-slate-700 rounded-xl hover:bg-slate-50 active:bg-slate-100 transition-all shadow-sm text-sm font-bold w-full sm:w-auto"
+                >
+                    <MonitorPlay className="w-4 h-4" />
+                    Abrir TV
+                </button>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                {workcenters.map((wc) => (
+                {workcenters.map((wc) => {
+                  const boundDevice = getBoundDevice(wc.id);
+                  const iotStatusLabel = boundDevice
+                    ? `ESP32: ${boundDevice.device_name} (${boundDevice.status})`
+                    : 'Sem dispositivo vinculado';
+
+                  return (
                     <div
                         key={wc.id}
                         role="region"
                         aria-label={wc.name}
                         className={cn(
-                            "relative flex flex-col rounded-3xl border-2 p-5 transition-all shadow-sm hover:shadow-md hover:-translate-y-1 overflow-hidden",
+                            // hover:-translate-y-1 apenas em dispositivos com mouse real (@media hover:hover)
+                            "relative flex flex-col rounded-3xl border-2 p-5 transition-all shadow-sm",
+                            "hover:shadow-md [@media(hover:hover)]:hover:-translate-y-1",
+                            "active:scale-[0.98]",
                             getStatusColor(wc.status)
                         )}
                     >
@@ -212,28 +220,34 @@ export const AndonGrid: React.FC<AndonGridProps> = ({ username }) => {
                         <div className="flex items-center justify-between mb-4">
                             <h3 className="font-black text-lg text-slate-900 truncate pr-2">{wc.name}</h3>
                             <div className="flex items-center gap-2">
-                                {/* Ícone IoT */}
+                                {/* Ícone IoT — tooltip em desktop, label inline em mobile */}
                                 <TooltipProvider>
                                     <Tooltip delayDuration={200}>
                                         <TooltipTrigger asChild>
                                             <button
                                                 onClick={(e) => { e.stopPropagation(); setIotWc(wc); }}
-                                                className="p-1 rounded-lg hover:bg-white/60 transition-colors"
+                                                className="flex items-center gap-1 p-1 rounded-lg hover:bg-white/60 active:bg-white/80 transition-colors min-w-[44px] min-h-[44px] justify-center"
+                                                aria-label={iotStatusLabel}
                                             >
                                                 <KeyRound
                                                     className={cn(
                                                         "w-4 h-4",
-                                                        getBoundDevice(wc.id)?.status === 'online'
+                                                        boundDevice?.status === 'online'
                                                             ? 'text-emerald-500'
                                                             : 'text-red-400'
                                                     )}
                                                 />
+                                                {/* Label inline visível em mobile (< lg) */}
+                                                <span className={cn(
+                                                    "text-[10px] font-bold lg:hidden",
+                                                    boundDevice?.status === 'online' ? 'text-emerald-600' : 'text-red-400'
+                                                )}>
+                                                    {boundDevice?.status === 'online' ? 'ON' : 'OFF'}
+                                                </span>
                                             </button>
                                         </TooltipTrigger>
-                                        <TooltipContent side="top" className="bg-slate-900 text-white border-slate-800 text-[10px] font-bold py-1.5 px-3 rounded-lg shadow-xl">
-                                            {getBoundDevice(wc.id)
-                                                ? `ESP32: ${getBoundDevice(wc.id)!.device_name} (${getBoundDevice(wc.id)!.status})`
-                                                : 'Sem dispositivo vinculado'}
+                                        <TooltipContent side="top" className="bg-slate-900 text-white border-slate-800 text-[10px] font-bold py-1.5 px-3 rounded-lg shadow-xl hidden lg:block">
+                                            {iotStatusLabel}
                                         </TooltipContent>
                                     </Tooltip>
                                 </TooltipProvider>
@@ -241,12 +255,12 @@ export const AndonGrid: React.FC<AndonGridProps> = ({ username }) => {
                                     <Tooltip delayDuration={300}>
                                         <TooltipTrigger asChild>
                                             <div className={cn(
-                                                "w-3 h-3 rounded-full flex-shrink-0 cursor-help transition-transform hover:scale-125", 
+                                                "w-3 h-3 rounded-full flex-shrink-0 cursor-help transition-transform hover:scale-125",
                                                 getStatusBadge(wc.status)
                                             )} />
                                         </TooltipTrigger>
-                                        <TooltipContent 
-                                            side="top" 
+                                        <TooltipContent
+                                            side="top"
                                             className="bg-slate-900 text-white border-slate-800 text-[10px] font-bold py-1.5 px-3 rounded-lg shadow-xl"
                                         >
                                             <p>{wc.status_reason || 'Operação Normal'}</p>
@@ -294,7 +308,7 @@ export const AndonGrid: React.FC<AndonGridProps> = ({ username }) => {
                         <div className="mt-6 flex items-center gap-2">
                             <button
                                 onClick={() => setSelectedWorkcenter(wc)}
-                                className="flex-1 py-2.5 bg-slate-900 text-white rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-slate-800 transition-all active:scale-95"
+                                className="flex-1 min-h-[44px] py-2.5 bg-slate-900 text-white rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-slate-800 active:bg-slate-700 transition-all"
                             >
                                 Acionar Andon
                             </button>
@@ -303,14 +317,16 @@ export const AndonGrid: React.FC<AndonGridProps> = ({ username }) => {
                                     e.stopPropagation();
                                     setPlanningWc(wc);
                                 }}
-                                className="p-2.5 bg-white border-2 border-slate-100 text-slate-600 rounded-xl hover:border-blue-200 hover:text-blue-600 transition-all active:scale-95 shadow-sm"
+                                className="min-w-[44px] min-h-[44px] p-2.5 bg-white border-2 border-slate-100 text-slate-600 rounded-xl hover:border-blue-200 hover:text-blue-600 active:bg-blue-50 transition-all shadow-sm flex items-center justify-center"
                                 title="Ver Planejamento"
+                                aria-label="Ver Planejamento"
                             >
                                 <Calendar size={18} />
                             </button>
                         </div>
                     </div>
-                ))}
+                  );
+                })}
             </div>
 
             {planningWc && (
