@@ -6,7 +6,7 @@ describe('MPRKPICards', () => {
     it('shows loading skeletons when isLoading is true', () => {
         const { container } = render(<MPRKPICards data={null} config={null} isLoading={true} />);
         const skeletons = container.querySelectorAll('.animate-pulse');
-        expect(skelettons.length).toBe(6);
+        expect(skeletons.length).toBe(6);
     });
 
     it('renders data correctly and detects SLA breach', () => {

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Plus, FileText, Trash2, Eye, Calendar, Clock, Sparkles, Loader2, Search } from 'lucide-react';
 import { Button, cn, Badge, Card } from '../../components/ui';
+import { ConfirmModal } from '../../components/ConfirmModal';
 import { api } from '../../../services/api';
 import { toast } from 'sonner';
 
@@ -11,6 +12,7 @@ export const MyReports = () => {
     const [isLoading, setIsLoading] = useState(true);
     const [isGenerating, setIsGenerating] = useState(false);
     const [prompt, setPrompt] = useState('');
+    const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
     const fetchReports = async () => {
         try {
@@ -47,10 +49,15 @@ export const MyReports = () => {
     };
 
     const handleDelete = async (id: string) => {
-        if (!confirm("Deseja realmente excluir este relatório?")) return;
+        setConfirmDeleteId(id);
+    };
+
+    const handleConfirmDelete = async () => {
+        if (!confirmDeleteId) return;
         try {
-            await api.deleteCustomReport(id);
+            await api.deleteCustomReport(confirmDeleteId);
             toast.success("Relatório excluído");
+            setConfirmDeleteId(null);
             fetchReports();
         } catch (e) {
             toast.error("Erro ao excluir");
@@ -58,6 +65,7 @@ export const MyReports = () => {
     };
 
     return (
+        <>
         <div className="max-w-6xl mx-auto">
             <header className="mb-8">
                 <div className="flex items-center gap-3 mb-2">
@@ -163,5 +171,16 @@ export const MyReports = () => {
                 )}
             </div>
         </div>
+
+        <ConfirmModal
+            isOpen={confirmDeleteId !== null}
+            title="Excluir Relatório"
+            description="Deseja realmente excluir este relatório? Esta ação não pode ser desfeita."
+            confirmLabel="Excluir"
+            variant="destructive"
+            onConfirm={handleConfirmDelete}
+            onCancel={() => setConfirmDeleteId(null)}
+        />
+        </>
     );
 };

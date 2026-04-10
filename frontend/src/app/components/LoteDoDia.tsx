@@ -195,15 +195,6 @@ export function LoteDoDia({ initialFabrications, onBack }: LoteDoDiaProps) {
 
         const taskCode = currentTask.taskCode || labelToCode[currentTask.label] || '';
 
-        console.log('DEBUG UPDATE PAYLOAD ->', {
-          batchId,
-          fabId,
-          taskId,
-          taskCode,
-          newStatus: backendStatus,
-          version: currentTask.version || 1
-        });
-
         const response = await api.updateBatchTask(batchId, {
           request_id: fabId,
           task_code: taskCode,
