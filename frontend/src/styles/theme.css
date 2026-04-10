@@ -216,3 +216,57 @@
     animation: shimmer 1.5s infinite;
   }
 }
+
+/* ============================================================
+   Utilitários Mobile-First
+   ============================================================ */
+
+/* Ocultar scrollbar mantendo funcionalidade de scroll */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+/* Safe-area para dispositivos com notch (iPhone X+) */
+.page-container {
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+}
+
+/* Fallback para backdrop-filter: usa blur apenas quando suportado */
+.overlay-backdrop {
+  background-color: rgb(15 23 42 / 0.6); /* fallback sem blur */
+}
+@supports (backdrop-filter: blur(4px)) {
+  .overlay-backdrop {
+    background-color: rgb(15 23 42 / 0.5);
+    backdrop-filter: blur(4px);
+  }
+}
+
+/* Desabilitar animações quando o usuário preferir movimento reduzido */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Hover "grudado" em iOS: aplicar background apenas via active em touch devices */
+@media (hover: none) {
+  .hover-bg-touch:hover {
+    background-color: transparent !important;
+  }
+}
+
+/* Scroll suave em iOS para listas com overflow-x */
+.scroll-touch {
+  -webkit-overflow-scrolling: touch;
+}
