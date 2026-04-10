@@ -1,9 +1,12 @@
 import json
+import logging
 import uuid
 from typing import List, Literal, Optional, Dict, Any
 from pydantic import BaseModel, Field
 from openai import AsyncOpenAI
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 # --- Structured Output Schemas ---
 
@@ -215,8 +218,6 @@ async def generate_report_layout(user_prompt: str, current_layout: Optional[Dict
 
         return DashboardLayout(**data)
     except Exception as e:
-        import traceback
-        print(f"DEBUG IA CONTENT: {content}")
-        traceback.print_exc()
-        raise ValueError(f"Falha na geração estruturada: {str(e)}")
+        logger.exception(f"Falha na geração estruturada de relatório: {e}")
+        raise ValueError(f"Falha na geração estruturada: {e}")
 
