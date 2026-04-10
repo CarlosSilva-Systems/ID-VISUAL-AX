@@ -101,6 +101,7 @@ class DeviceEnrichedOut(BaseModel):
     last_seen_at: Optional[datetime]
     offline_minutes: Optional[int]
     notes: Optional[str]
+    connection_type: Optional[str]
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
@@ -223,6 +224,7 @@ async def list_devices(session: AsyncSession = Depends(get_session)):
             last_seen_at=d.last_seen_at,
             offline_minutes=_calc_offline_minutes(d.status, d.last_seen_at),
             notes=d.notes,
+            connection_type=d.connection_type,
             created_at=d.created_at,
         ))
     return out
@@ -301,6 +303,7 @@ async def update_device(
         last_seen_at=device.last_seen_at,
         offline_minutes=_calc_offline_minutes(device.status, device.last_seen_at),
         notes=device.notes,
+        connection_type=device.connection_type,
         created_at=device.created_at,
     )
 

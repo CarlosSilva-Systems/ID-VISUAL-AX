@@ -44,6 +44,8 @@ class ESPDevice(SQLModel, table=True):
     ip_address: Optional[str] = Field(default=None, nullable=True)
     uptime_seconds: Optional[int] = Field(default=None, nullable=True)
     notes: Optional[str] = Field(default=None, nullable=True)
+    # Tipo de conexão: "wifi" = raiz com WiFi direto, "mesh" = nó folha via mesh
+    connection_type: Optional[str] = Field(default=None, nullable=True)
 
 
 class ESPDeviceLog(SQLModel, table=True):

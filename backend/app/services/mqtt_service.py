@@ -183,7 +183,13 @@ async def _handle_discovery(payload_raw: bytes):
             device.ip_address = str(payload["ip_address"])
         if "uptime_seconds" in payload and payload["uptime_seconds"] is not None:
             device.uptime_seconds = int(payload["uptime_seconds"])
-        await _add_log(session, device.id, EventType.discovery, f"🚀 Dispositivo descoberto: {name or mac} | fw={payload.get('firmware_version','?')} rssi={payload.get('rssi','?')}dBm ip={payload.get('ip_address','?')}", LogLevel.INFO)
+        if "connection_type" in payload and payload["connection_type"]:
+            device.connection_type = str(payload["connection_type"])
+        conn_type = payload.get("connection_type", "wifi" if payload.get("is_root") else "mesh")
+        conn_icon = "📶" if conn_type == "wifi" else "🕸️"
+        await _add_log(session, device.id, EventType.discovery,
+            f"🚀 {conn_icon} Dispositivo descoberto via {conn_type.upper()}: {name or mac} | fw={payload.get('firmware_version','?')} rssi={payload.get('rssi','?')}dBm ip={payload.get('ip_address','?')}",
+            LogLevel.INFO)
         await session.commit()
         await session.refresh(device)
 
