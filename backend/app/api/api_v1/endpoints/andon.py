@@ -12,7 +12,7 @@ from pydantic import BaseModel, ConfigDict
 
 from app.api.deps import get_session, get_odoo_client
 from app.core.config import settings
-from app.models.andon import AndonStatus, AndonEvent, AndonMaterialRequest, AndonCall, SyncQueue
+from app.models.andon import AndonStatus, AndonCall, SyncQueue
 from app.models.id_request import IDRequest, IDRequestStatus
 from app.models.manufacturing import ManufacturingOrder
 from app.services.odoo_utils import normalize_label
@@ -26,7 +26,6 @@ from app.services.justification_service import (
 from app.services.websocket_manager import ws_manager
 
 import logging
-import traceback
 import json
 logger = logging.getLogger(__name__)
 
@@ -290,8 +289,7 @@ async def get_workcenters_status(
 
     except Exception as e:
         request_id = str(uuid.uuid4())[:8]
-        error_msg = traceback.format_exc()
-        logger.error(f"Error in get_workcenters_status [ref:{request_id}]: {error_msg}")
+        logger.exception(f"Error in get_workcenters_status [ref:{request_id}]: {e}")
         raise HTTPException(status_code=500, detail=f"Erro interno no servidor [ref: {request_id}]")
 
 @router.get("/workcenters/{wc_id}/current_order")
@@ -548,7 +546,7 @@ async def create_andon_call(
         req_id = str(uuid.uuid4())[:8]
         logger.exception(f"Error in create_andon_call [ref:{req_id}]: {e}")
         await session.rollback()
-        raise HTTPException(status_code=500, detail=f"Erro ao criar chamado: {str(e)} [ref:{req_id}]")
+        raise HTTPException(status_code=500, detail=f"Erro ao criar chamado [ref:{req_id}]")
 
 @router.get("/calls", response_model=List[AndonCall])
 async def list_andon_calls(
