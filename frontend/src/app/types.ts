@@ -222,6 +222,7 @@ export interface ESPDeviceEnriched {
   last_seen_at: string | null;
   offline_minutes: number | null;
   notes: string | null;
+  connection_type: 'wifi' | 'mesh' | null;
   created_at: string;
 }
 

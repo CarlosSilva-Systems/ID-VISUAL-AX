@@ -183,6 +183,10 @@ const InfoTab: React.FC<{
       <div className="space-y-2.5">
         <ReadonlyField label="MAC Address" value={device.mac_address} mono />
         <ReadonlyField
+          label="Conexão"
+          value={device.connection_type === 'wifi' ? '📶 WiFi Direto' : device.connection_type === 'mesh' ? '🕸️ Mesh (sem WiFi)' : '—'}
+        />
+        <ReadonlyField
           label="Firmware"
           value={device.firmware_version ?? '—'}
           badge={device.firmware_outdated ? (
