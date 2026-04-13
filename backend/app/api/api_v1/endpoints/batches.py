@@ -338,7 +338,7 @@ async def update_batch_task(
         # 7. Apply Update
         task.status = payload.new_status.value
         task.version = current_version + 1
-        task.updated_at = datetime.now(timezone.utc)
+        task.updated_at = datetime.utcnow()
         if payload.blocked_reason:
             task.blocked_reason = payload.blocked_reason
             
@@ -678,7 +678,7 @@ async def finalize_batch(
         )
     
     # B) FINALIZE LOCALLY
-    now = datetime.now(timezone.utc)
+    now = datetime.utcnow()
     batch.status = BatchStatus.FINALIZED
     batch.finalized_at = now
     session.add(batch)
@@ -767,7 +767,7 @@ async def cancel_batch(
         )
 
     batch.status = BatchStatus.CANCELED
-    batch.updated_at = datetime.now(timezone.utc)
+    batch.updated_at = datetime.utcnow()
     session.add(batch)
     await session.commit()
     
