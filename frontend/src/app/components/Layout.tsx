@@ -214,6 +214,7 @@ export const Layout = ({ children, user }: LayoutProps) => {
           path: "/andon/pendencias",
           badge: pendingJustificationCount > 0 ? (pendingJustificationCount > 99 ? '99+' : pendingJustificationCount) : null
         },
+        { id: "andon-oee", label: "Dashboard OEE", icon: BarChart3, path: "/andon/dashboard" },
         { id: "andon-devices", label: "Dispositivos IoT", icon: Cpu, path: "/andon/devices" },
       ]
     },

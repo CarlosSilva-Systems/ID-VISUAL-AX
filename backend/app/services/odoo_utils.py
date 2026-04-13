@@ -49,9 +49,9 @@ async def get_active_odoo_db(session: AsyncSession) -> str:
                 logger.info(f"✓ Active Odoo DB from system_setting: {db_name}")
                 return db_name
         
-        # Fallback 1: Padrão hardcoded para desenvolvimento
-        logger.warning("⚠️ No active_odoo_db in system_setting, using default: id-visual-3")
-        return "id-visual-3"
+        # Fallback 1: Usar configuração do .env
+        logger.warning(f"⚠️ No active_odoo_db in system_setting, using ODOO_DB from .env: {settings.ODOO_DB}")
+        return settings.ODOO_DB
         
     except Exception as e:
         # Fallback 2: Usar configuração do .env em caso de erro de banco
