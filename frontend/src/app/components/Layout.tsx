@@ -199,6 +199,7 @@ export const Layout = ({ children, user }: LayoutProps) => {
         { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, path: "/id-visual/dashboard" },
         { id: "requests", label: "Solicitações (ID)", icon: ClipboardList, path: "/id-visual/solicitacoes", badge: manualCount > 0 ? (manualCount > 99 ? '99+' : manualCount) : null },
         { id: "production", label: "Visão Produção", icon: Zap, path: "/id-visual/producao" },
+        { id: "analytics", label: "Analytics", icon: BarChart3, path: "/id-visual/analytics" },
       ]
     },
     {
@@ -218,8 +219,6 @@ export const Layout = ({ children, user }: LayoutProps) => {
         { id: "andon-devices", label: "Dispositivos IoT", icon: Cpu, path: "/andon/devices" },
       ]
     },
-    { id: "relatorios", label: "Relatórios MPR", icon: BarChart3, path: "/relatorios" },
-    { id: "meus-relatorios", label: "Meus Relatórios (IA)", icon: FileText, path: "/relatorios/meus" },
     { id: "templates", label: "Padrões (5S)", icon: LayoutTemplate, path: "/templates" },
 
     { id: "config", label: "Configurações", icon: Settings, path: "/admin" },

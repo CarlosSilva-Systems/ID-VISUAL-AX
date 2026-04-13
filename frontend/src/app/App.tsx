@@ -4,13 +4,11 @@ import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-route
 import { Layout } from './components/Layout';
 import { Dashboard } from './components/Dashboard';
 import { Solicitacoes } from './components/Solicitacoes';
-import { MPRAnalyticsDashboard } from './pages/mpr/MPRAnalyticsDashboard';
+import { IDVisualAnalytics } from './components/IDVisualAnalytics';
 import { VisaoProducao } from './components/VisaoProducao';
 import { Configuracoes } from './components/Configuracoes';
 import { Padroes5S } from './components/Padroes5S';
 import { ActiveBatch } from '../components/ActiveBatch';
-import { MyReports } from './pages/reports/MyReports';
-import { DynamicDashboard } from './pages/reports/DynamicDashboard';
 import { Login } from './components/Login';
 import { OTAProgressDashboard } from './components/OTAProgressDashboard';
 
@@ -122,14 +120,12 @@ function AppContent() {
               <Route path="/id-visual/dashboard" element={<Dashboard onCreateBatch={handleCreateBatch} />} />
               <Route path="/id-visual/solicitacoes" element={<Solicitacoes onCreateBatch={handleCreateBatch} />} />
               <Route path="/id-visual/producao" element={<VisaoProducao />} />
+              <Route path="/id-visual/analytics" element={<IDVisualAnalytics />} />
               <Route path="/andon/painel" element={<AndonGrid username={currentUser?.username || ''} />} />
               <Route path="/andon/pendencias" element={<AndonPendenciasPage currentUser={currentUser?.username || ''} />} />
               <Route path="/andon/dashboard" element={<AndonOEEDashboard />} />
               <Route path="/andon/dashboard/:wcId" element={<AndonWorkcenterDetail currentUser={currentUser?.username || ''} />} />
               <Route path="/andon/devices" element={<DevicesPage />} />
-              <Route path="/relatorios" element={<MPRAnalyticsDashboard />} />
-              <Route path="/relatorios/meus" element={<MyReports />} />
-              <Route path="/relatorios/visualizar/:reportId" element={<DynamicDashboard />} />
               <Route path="/templates" element={<Padroes5S />} />
 
               <Route path="/admin" element={<Configuracoes user={currentUser} />} />

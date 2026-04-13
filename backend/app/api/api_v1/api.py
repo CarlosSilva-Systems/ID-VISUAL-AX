@@ -1,7 +1,7 @@
 from fastapi import APIRouter
 from app.api.api_v1.endpoints import (
     health, batches, odoo, production, id_requests, documents, auth, andon, andon_dashboard, sync, webhook, settings as system_settings,
-    mpr_analytics, agent, custom_reports, user_config, devices, ota
+    mpr_analytics, agent, custom_reports, user_config, devices, ota, id_visual_analytics
 )
 
 api_router = APIRouter()
@@ -23,4 +23,5 @@ api_router.include_router(agent.router, prefix="/agent", tags=["agent"])
 api_router.include_router(custom_reports.router, prefix="/reports", tags=["custom_reports"])
 api_router.include_router(devices.router, prefix="/devices", tags=["iot_devices"])
 api_router.include_router(ota.router, tags=["ota"])
+api_router.include_router(id_visual_analytics.router, prefix="/id-visual/analytics", tags=["id_visual_analytics"])
 
