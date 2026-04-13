@@ -179,7 +179,7 @@ export const IDVisualAnalytics: React.FC = () => {
             <div className="w-8 h-8 bg-blue-600 rounded-xl flex items-center justify-center">
               <BarChart2 className="w-4 h-4 text-white" />
             </div>
-            Analytics ID Visual
+            Indicadores · ID Visual
           </h1>
           <p className="text-sm text-slate-500 mt-1">
             Métricas operacionais do fluxo de produção de identificações

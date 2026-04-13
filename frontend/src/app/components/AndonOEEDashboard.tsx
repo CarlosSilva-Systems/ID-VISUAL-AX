@@ -201,10 +201,10 @@ export const AndonOEEDashboard: React.FC = () => {
             <div className="w-8 h-8 bg-blue-600 rounded-xl flex items-center justify-center">
               <BarChart2 className="w-4 h-4 text-white" />
             </div>
-            Dashboard OEE
+            Indicadores · Andon
           </h1>
           <p className="text-sm text-slate-500 mt-1">
-            Eficiência e disponibilidade dos centros de trabalho
+            Disponibilidade e eficiência dos centros de trabalho
           </p>
         </div>
         <button

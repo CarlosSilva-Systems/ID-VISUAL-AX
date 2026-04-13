@@ -199,7 +199,7 @@ export const Layout = ({ children, user }: LayoutProps) => {
         { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, path: "/id-visual/dashboard" },
         { id: "requests", label: "Solicitações (ID)", icon: ClipboardList, path: "/id-visual/solicitacoes", badge: manualCount > 0 ? (manualCount > 99 ? '99+' : manualCount) : null },
         { id: "production", label: "Visão Produção", icon: Zap, path: "/id-visual/producao" },
-        { id: "analytics", label: "Analytics", icon: BarChart3, path: "/id-visual/analytics" },
+        { id: "analytics", label: "Indicadores", icon: BarChart3, path: "/id-visual/analytics" },
       ]
     },
     {
@@ -215,7 +215,7 @@ export const Layout = ({ children, user }: LayoutProps) => {
           path: "/andon/pendencias",
           badge: pendingJustificationCount > 0 ? (pendingJustificationCount > 99 ? '99+' : pendingJustificationCount) : null
         },
-        { id: "andon-oee", label: "Dashboard OEE", icon: BarChart3, path: "/andon/dashboard" },
+        { id: "andon-oee", label: "Indicadores", icon: BarChart3, path: "/andon/dashboard" },
         { id: "andon-devices", label: "Dispositivos IoT", icon: Cpu, path: "/andon/devices" },
       ]
     },
