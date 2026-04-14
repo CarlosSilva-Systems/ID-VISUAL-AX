@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Wifi, WifiOff, Link, Unlink, X, Cpu } from 'lucide-react';
+import { WifiOff, Link, Unlink, X, Cpu } from 'lucide-react';
 import { api } from '../../services/api';
 import { toast } from 'sonner';
 
@@ -30,7 +30,6 @@ export const IoTDeviceModal: React.FC<Props> = ({
 }) => {
   const [availableDevices, setAvailableDevices] = useState<ESPDevice[]>([]);
   const [loading, setLoading] = useState(false);
-  const [ws, setWs] = useState<WebSocket | null>(null);
 
   // Carregar dispositivos disponíveis
   useEffect(() => {
@@ -47,51 +46,30 @@ export const IoTDeviceModal: React.FC<Props> = ({
 
   // Conectar ao WebSocket para atualizações em tempo real
   useEffect(() => {
-    const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
+    const apiUrl = (import.meta as unknown as { env: { VITE_API_URL?: string } }).env.VITE_API_URL || 'http://localhost:8000/api/v1';
     const wsUrl = apiUrl.replace(/^http/, 'ws') + '/devices/ws';
-    
     const websocket = new WebSocket(wsUrl);
-    
-    websocket.onopen = () => {
-      console.log('WebSocket conectado para IoT devices');
-    };
-    
+
     websocket.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
-        
-        // Atualizar status de dispositivo vinculado
+
         if (data.event === 'device_status' && boundDevice && data.mac_address === boundDevice.mac_address) {
-          onChanged(); // Recarregar dados
+          onChanged();
         }
-        
-        // Atualizar lista de dispositivos disponíveis quando novo dispositivo é descoberto
         if (data.event === 'device_discovery' && !boundDevice) {
           api.getDevices().then((devices: ESPDevice[]) => {
             setAvailableDevices(devices.filter((d) => d.workcenter_id === null));
           });
         }
-        
-        // Atualizar quando dispositivo é vinculado/desvinculado
-        if (data.event === 'device_bound' || data.event === 'device_unbound') {
-          onChanged(); // Recarregar dados
+        if (data.event === 'device_updated') {
+          onChanged();
         }
-      } catch (error) {
-        console.error('Erro ao processar mensagem WebSocket:', error);
+      } catch {
+        // ignora erros de parse silenciosamente
       }
     };
-    
-    websocket.onerror = (error) => {
-      console.error('Erro no WebSocket:', error);
-    };
-    
-    websocket.onclose = () => {
-      console.log('WebSocket desconectado');
-    };
-    
-    setWs(websocket);
-    
-    // Cleanup ao desmontar
+
     return () => {
       if (websocket.readyState === WebSocket.OPEN) {
         websocket.close();
@@ -99,9 +77,10 @@ export const IoTDeviceModal: React.FC<Props> = ({
     };
   }, [boundDevice, onChanged]);
 
-  const handleBind = async (mac: string) => {
+  // Vincula usando PATCH /devices/{id} (endpoint moderno por UUID)
+  const handleBind = async (device: ESPDevice) => {
     try {
-      await api.bindDevice(mac, workcenterId);
+      await api.patch(`/devices/${device.id}`, { workcenter_id: workcenterId });
       toast.success('Dispositivo vinculado com sucesso!');
       onChanged();
       onClose();
@@ -110,10 +89,11 @@ export const IoTDeviceModal: React.FC<Props> = ({
     }
   };
 
+  // Desvincula usando PATCH /devices/{id} com workcenter_id: null
   const handleUnbind = async () => {
     if (!boundDevice) return;
     try {
-      await api.unbindDevice(boundDevice.mac_address);
+      await api.patch(`/devices/${boundDevice.id}`, { workcenter_id: null });
       toast.success('Dispositivo desvinculado');
       onChanged();
       onClose();
@@ -198,7 +178,7 @@ export const IoTDeviceModal: React.FC<Props> = ({
                     <p className="text-xs text-slate-400 font-mono">{device.mac_address}</p>
                   </div>
                   <button
-                    onClick={() => handleBind(device.mac_address)}
+                    onClick={() => handleBind(device)}
                     className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700 transition-colors flex-shrink-0"
                   >
                     <Link className="w-3 h-3" />

@@ -604,15 +604,6 @@ export const api = {
         return api.post('/devices/ota/batch', payload);
     },
 
-    // Legado — mantido para compatibilidade com IoTDeviceModal
-    bindDevice: async (macAddress: string, workcenterId: number) => {
-        return api.post(`/devices/${encodeURIComponent(macAddress)}/bind`, { workcenter_id: workcenterId });
-    },
-
-    unbindDevice: async (macAddress: string) => {
-        return api.delete(`/devices/${encodeURIComponent(macAddress)}/bind`);
-    },
-
     // ── OTA Management ──
     getFirmwareReleases: async () => {
         return api.get('/ota/firmware/releases');
