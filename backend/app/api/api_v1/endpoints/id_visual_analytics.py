@@ -4,7 +4,7 @@ Métricas operacionais do fluxo de produção de identificações.
 """
 import uuid
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
@@ -254,7 +254,7 @@ async def get_fila_atual(
         .order_by(IDRequest.created_at.asc())
     )
     rows = (await session.execute(stmt)).all()
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
 
     result = []
     for r, mo_name in rows:

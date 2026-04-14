@@ -346,7 +346,6 @@ async def select_odoo_database(
         classify_database
     )
     from app.models.system_setting import SystemSetting
-    from datetime import datetime
     
     database_name = payload.get("database", "").strip()
     
@@ -417,7 +416,7 @@ async def select_odoo_database(
         
         if setting:
             setting.value = normalized_name
-            setting.updated_at = datetime.utcnow()
+            setting.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
         else:
             setting = SystemSetting(
                 key="active_odoo_db",

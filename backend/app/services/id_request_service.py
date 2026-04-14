@@ -24,7 +24,7 @@ def update_id_request_status(req: IDRequest, new_status: IDRequestStatus | str) 
         return req
         
     req.status = new_status
-    now_utc = datetime.utcnow()
+    now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
 
     # Injeção automática de timestamps (SLA/MPR Analytics) baseada no novo status
     if new_status == IDRequestStatus.EM_PROGRESSO or new_status == IDRequestStatus.EM_LOTE:

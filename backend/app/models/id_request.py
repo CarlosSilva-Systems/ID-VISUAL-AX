@@ -1,6 +1,6 @@
 from __future__ import annotations
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, List
 from sqlmodel import Field, SQLModel, JSON, Column
 from enum import Enum
@@ -66,20 +66,25 @@ class IDRequest(SQLModel, table=True):
     version: int = Field(default=1) # Optimistic locking
     
     created_by: Optional[uuid.UUID] = Field(default=None, foreign_key="user.id")
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow, sa_column_kwargs={"onupdate": datetime.utcnow})
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=None)
+    )
+    updated_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=None),
+        sa_column_kwargs={"onupdate": lambda: datetime.now(timezone.utc).replace(tzinfo=None)},
+    )
 
 class IDRequestTask(SQLModel, table=True):
     __tablename__ = "id_request_task"
     
     id: Optional[uuid.UUID] = Field(default_factory=uuid.uuid4, primary_key=True)
     request_id: uuid.UUID = Field(foreign_key="id_request.id", index=True)
-    task_code: str = Field(index=True) # References TaskBlueprint.code logically
-    
-    # TODO: Revert to TaskStatusV2 Enum once SQLAlchemy LookupError is resolved.
-    # Currently using str to bypass "enum not found" error during fetch.
-    status: str = Field(default="nao_iniciado") 
-    # status: TaskStatusV2 = Field(default=TaskStatusV2.NAO_INICIADO) # Updated to V2
+    task_code: str = Field(index=True)  # Referencia TaskBlueprint.code logicamente
+
+    # Usando str em vez de Enum para evitar LookupError intermitente do SQLAlchemy
+    # com SQLite em modo async. Valores válidos: nao_iniciado, montado, impresso,
+    # bloqueado, nao_aplicavel. Validação feita na camada de serviço/endpoint.
+    status: str = Field(default="nao_iniciado")
     blocked_reason: Optional[str] = None
     blocked_note: Optional[str] = None
     
@@ -88,10 +93,13 @@ class IDRequestTask(SQLModel, table=True):
     started_at: Optional[datetime] = None
     finished_at: Optional[datetime] = None
     
-    version: int = Field(default=1) # Optimistic locking
-    
+    version: int = Field(default=1)  # Optimistic locking
+
     updated_by: Optional[uuid.UUID] = Field(default=None, foreign_key="user.id")
-    updated_at: datetime = Field(default_factory=datetime.utcnow, sa_column_kwargs={"onupdate": datetime.utcnow})
+    updated_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=None),
+        sa_column_kwargs={"onupdate": lambda: datetime.now(timezone.utc).replace(tzinfo=None)},
+    )
 
 class TaskBlueprint(SQLModel, table=True):
     __tablename__ = "task_blueprint"

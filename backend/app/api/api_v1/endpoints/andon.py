@@ -86,7 +86,7 @@ async def update_or_create_status(
         session.add(record)
     else:
         record.status = status
-        record.updated_at = datetime.utcnow()
+        record.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
         record.updated_by = user
     
     await session.commit()
@@ -339,7 +339,7 @@ async def trigger_andon_basic(
         active_calls = result.scalars().all()
         resolved_calls = []
         for call in active_calls:
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc).replace(tzinfo=None)
             call.status = "RESOLVED"
             call.resolved_note = f"Resolvido por {req.triggered_by} via Produção Normal"
             call.updated_at = now
@@ -416,7 +416,7 @@ async def create_andon_call(
         for prev_call in prev_calls:
             prev_call.status = "RESOLVED"
             prev_call.resolved_note = f"Substituído por novo acionamento {req.color} via app ({req.triggered_by})"
-            prev_call.updated_at = datetime.utcnow()
+            prev_call.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
             session.add(prev_call)
 
         call = AndonCall(
@@ -461,7 +461,7 @@ async def create_andon_call(
                         revisao = RevisaoIDVisual(
                             id_visual_id=id_request.id,
                             motivo=mapped_motivo,
-                            revisao_solicitada_em=datetime.utcnow()
+                            revisao_solicitada_em=datetime.now(timezone.utc).replace(tzinfo=None)
                         )
                         session.add(revisao)
                         await session.commit()
@@ -772,7 +772,7 @@ async def get_justification_stats(session: AsyncSession = Depends(get_session)):
         if call.color in by_color:
             by_color[call.color] += 1
         if call.updated_at:
-            minutes = int((datetime.utcnow() - call.updated_at).total_seconds() // 60)
+            minutes = int((datetime.now(timezone.utc).replace(tzinfo=None) - call.updated_at).total_seconds() // 60)
             if oldest_pending_minutes is None or minutes > oldest_pending_minutes:
                 oldest_pending_minutes = minutes
 
@@ -819,7 +819,7 @@ async def justify_call(
     call.root_cause_detail = req.root_cause_detail
     call.action_taken = req.action_taken
     call.justified_by = req.justified_by
-    call.justified_at = datetime.utcnow()
+    call.justified_at = datetime.now(timezone.utc).replace(tzinfo=None)
 
     session.add(call)
     await session.commit()
@@ -848,7 +848,7 @@ async def update_call_status(
         raise HTTPException(status_code=404, detail="Chamado não encontrado")
     
     call.status = req.status
-    call.updated_at = datetime.utcnow()
+    call.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
     
     if req.status == "RESOLVED":
         call.resolved_note = req.resolved_note
@@ -926,7 +926,7 @@ async def get_tv_data(
             })
             
         # 4. Construir recent_events
-        recent_date = datetime.utcnow() - timedelta(hours=24)
+        recent_date = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=24)
         stmt_calls = select(AndonCall).where(AndonCall.created_at >= recent_date)
         recent_calls = (await session.execute(stmt_calls)).scalars().all()
         
@@ -1075,7 +1075,7 @@ async def get_andon_history(
     days: int = 7
 ):
     """Retorna o histórico de chamados Andon para o Dashboard BI."""
-    cutoff = datetime.utcnow() - timedelta(days=days)
+    cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=days)
     stmt = select(AndonCall).where(AndonCall.created_at >= cutoff)
     result = await session.execute(stmt)
     calls = result.scalars().all()

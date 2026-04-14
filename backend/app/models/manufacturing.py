@@ -1,8 +1,11 @@
 from __future__ import annotations
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 from sqlmodel import Field, SQLModel
+
+_now = lambda: datetime.now(timezone.utc).replace(tzinfo=None)
+
 
 class ManufacturingOrderBase(SQLModel):
     odoo_id: int = Field(unique=True, index=True)
@@ -13,10 +16,11 @@ class ManufacturingOrderBase(SQLModel):
     state: str = Field(index=True)
     company_id: Optional[int] = None
 
+
 class ManufacturingOrder(ManufacturingOrderBase, table=True):
     __tablename__ = "manufacturing_order"
-    
+
     id: Optional[uuid.UUID] = Field(default_factory=uuid.uuid4, primary_key=True)
-    last_sync_at: datetime = Field(default_factory=datetime.utcnow)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow, sa_column_kwargs={"onupdate": datetime.utcnow})
+    last_sync_at: datetime = Field(default_factory=_now)
+    created_at: datetime = Field(default_factory=_now)
+    updated_at: datetime = Field(default_factory=_now, sa_column_kwargs={"onupdate": _now})

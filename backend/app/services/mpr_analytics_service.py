@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import logging
 from sqlmodel import select as sm_select, func
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -133,7 +133,7 @@ class MPRAnalyticsService:
             return []
 
         result_list = []
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
         for row in results:
             r, mo_name = row
             try:
