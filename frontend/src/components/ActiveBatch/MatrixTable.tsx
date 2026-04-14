@@ -6,7 +6,9 @@ import {
     TaskStatusEnum
 } from '../../types/matrix';
 import { StatusCell } from './StatusCell';
-import { MoreHorizontal, AlertOctagon, Clock, Box } from 'lucide-react';
+import { MoreHorizontal, AlertOctagon, Clock, Box, FileText, Loader2 } from 'lucide-react';
+import { api } from '../../services/api';
+import { toast } from 'sonner';
 
 interface MatrixTableProps {
     columns: MatrixColumn[];
@@ -32,6 +34,35 @@ export const MatrixTable: React.FC<MatrixTableProps> = ({
         currentCell: MatrixCellType;
         nextStatus: TaskStatusEnum;
     } | null>(null);
+
+    const [docsLoadingId, setDocsLoadingId] = useState<string | null>(null);
+
+    const handleOpenDocs = async (row: MatrixRow) => {
+        if (!row.odoo_mo_id) {
+            toast.error('MO sem ID Odoo — não é possível abrir documentos.');
+            return;
+        }
+        setDocsLoadingId(row.request_id);
+        try {
+            const res = await api.getMODocuments(row.odoo_mo_id);
+            if (!res.documents || res.documents.length === 0) {
+                toast.warning('Nenhum documento encontrado para esta MO.');
+                return;
+            }
+            const doc = res.documents.find((d: any) => d.is_previewable) ?? res.documents[0];
+            const token = localStorage.getItem('access_token');
+            const apiUrl = (import.meta as any).env.VITE_API_URL || 'http://localhost:8000/api/v1';
+            let origin = '';
+            try { origin = new URL(apiUrl).origin; } catch { origin = window.location.origin; }
+            const tokenParam = token ? `${doc.view_url.includes('?') ? '&' : '?'}token=${token}` : '';
+            const fullUrl = `${origin}${doc.view_url.startsWith('/') ? '' : '/'}${doc.view_url}${tokenParam}`;
+            window.open(fullUrl, '_blank', 'noopener,noreferrer');
+        } catch (err: any) {
+            toast.error('Erro ao buscar documentos: ' + (err.message || 'Erro desconhecido'));
+        } finally {
+            setDocsLoadingId(null);
+        }
+    };
 
     // Helper to determine next status (Lean Cycle)
     const getNextStatus = (current: TaskStatusEnum, isDocs: boolean): TaskStatusEnum | null => {
@@ -92,6 +123,18 @@ export const MatrixTable: React.FC<MatrixTableProps> = ({
                                         <div className="flex items-center gap-2">
                                             <span className="font-mono text-xs font-bold text-slate-400">#{row.request_id.slice(0, 4)}</span>
                                             <h3 className="font-black text-slate-800 text-lg">{row.mo_number}</h3>
+                                            <button
+                                                onClick={() => handleOpenDocs(row)}
+                                                disabled={docsLoadingId === row.request_id}
+                                                title="Abrir documentos da MO"
+                                                className="flex items-center gap-1 px-2 py-0.5 text-[11px] font-bold text-blue-600 bg-blue-50 border border-blue-200 rounded hover:bg-blue-100 transition-colors disabled:opacity-60 shrink-0"
+                                            >
+                                                {docsLoadingId === row.request_id
+                                                    ? <Loader2 size={11} className="animate-spin" />
+                                                    : <FileText size={11} />
+                                                }
+                                                Docs
+                                            </button>
                                         </div>
                                         <p className="text-sm font-medium text-slate-600 truncate max-w-[200px]">{row.obra_nome}</p>
 
