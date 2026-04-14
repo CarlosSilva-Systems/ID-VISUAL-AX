@@ -11,6 +11,7 @@ import { BatchKPIs } from './BatchKPIs';
 import { MatrixTable } from './MatrixTable';
 import { QADrawer } from './QADrawer';
 import { ConfirmModal } from '../../app/components/ConfirmModal';
+import { AddFabricationsModal } from './AddFabricationsModal';
 import { toast } from 'sonner';
 import { Loader2, AlertTriangle, RefreshCw, Box, X, ShieldAlert } from 'lucide-react';
 
@@ -39,6 +40,7 @@ export const ActiveBatch: React.FC<ActiveBatchProps> = ({ onBack, onNavigateFina
     const [activeFilter, setActiveFilter] = useState<string | null>(null);
     const [finalizing, setFinalizing] = useState(false);
     const [confirmFinalize, setConfirmFinalize] = useState(false);
+    const [showAddModal, setShowAddModal] = useState(false);
 
     // Pendencies Modal
     const [pendencies, setPendencies] = useState<Pendency[]>([]);
@@ -212,14 +214,26 @@ export const ActiveBatch: React.FC<ActiveBatchProps> = ({ onBack, onNavigateFina
                     batchId={data.batch_id}
                     status={data.batch_status}
                     onBack={onBack}
-                    onAddFabrications={() => { }}
+                    onAddFabrications={() => setShowAddModal(true)}
                     onFinishBatch={() => { }}
                 />
                 <div className="flex-1 flex flex-col items-center justify-center text-slate-400">
                     <Box size={64} className="mb-4 opacity-50" />
                     <p className="font-bold text-lg">Nenhuma fabricação neste lote</p>
-                    <button className="mt-4 text-blue-600 font-bold hover:underline">Adicionar Fabricações</button>
+                    <button
+                        onClick={() => setShowAddModal(true)}
+                        className="mt-4 text-blue-600 font-bold hover:underline"
+                    >
+                        Adicionar Fabricações
+                    </button>
                 </div>
+                {showAddModal && (
+                    <AddFabricationsModal
+                        batchId={effectiveBatchId}
+                        onClose={() => setShowAddModal(false)}
+                        onAdded={fetchMatrix}
+                    />
+                )}
             </div>
         )
     }
@@ -231,7 +245,7 @@ export const ActiveBatch: React.FC<ActiveBatchProps> = ({ onBack, onNavigateFina
                 batchId={data.batch_id}
                 status={data.batch_status}
                 onBack={onBack}
-                onAddFabrications={() => toast.info('Funcionalidade em desenvolvimento')}
+                onAddFabrications={() => setShowAddModal(true)}
                 onFinishBatch={() => setConfirmFinalize(true)}
                 isFinishing={finalizing}
             />
@@ -272,6 +286,14 @@ export const ActiveBatch: React.FC<ActiveBatchProps> = ({ onBack, onNavigateFina
                     }
                 }}
             />
+
+            {showAddModal && (
+                <AddFabricationsModal
+                    batchId={effectiveBatchId}
+                    onClose={() => setShowAddModal(false)}
+                    onAdded={fetchMatrix}
+                />
+            )}
 
             <ConfirmModal
                 isOpen={confirmFinalize}

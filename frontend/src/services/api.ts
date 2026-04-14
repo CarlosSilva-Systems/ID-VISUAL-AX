@@ -287,6 +287,19 @@ export const api = {
         }
     },
 
+    addItemsToBatch: async (batchId: string, moIds: number[]) => {
+        const response = await fetch(`${API_URL}/batches/${batchId}/add-items`, {
+            method: 'POST',
+            headers: getHeaders(),
+            body: JSON.stringify({ mo_ids: moIds }),
+        });
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.detail || `API Error: ${response.statusText}`);
+        }
+        return await response.json();
+    },
+
     finalizeBatch: async (batchId: string) => {
         const response = await fetch(`${API_URL}/batches/${batchId}/finalize`, {
             method: 'PATCH',

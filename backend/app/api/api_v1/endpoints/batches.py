@@ -779,3 +779,136 @@ async def cancel_batch(
         "batch_status": batch.status.value,
     }
 
+
+class AddItemsRequest(BaseModel):
+    mo_ids: List[int]  # Odoo IDs das MOs a adicionar
+
+
+@router.post("/{batch_id}/add-items", response_model=Dict[str, Any])
+async def add_items_to_batch(
+    batch_id: UUID,
+    payload: AddItemsRequest,
+    session: AsyncSession = Depends(deps.get_session),
+) -> Any:
+    """
+    Adiciona novas MOs a um lote ativo existente.
+    Reutiliza IDRequests ativos já existentes para as MOs informadas.
+    """
+    from app.services.odoo_client import OdooClient
+    from app.core.config import settings
+
+    if not payload.mo_ids:
+        raise HTTPException(status_code=400, detail="Nenhuma MO informada")
+
+    batch = await session.get(Batch, batch_id)
+    if not batch:
+        raise HTTPException(status_code=404, detail="Lote não encontrado")
+    if batch.status != BatchStatus.ACTIVE:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Só é possível adicionar itens a lotes ativos. Status atual: {batch.status.value}",
+        )
+
+    # Buscar MOs no Odoo
+    try:
+        client = OdooClient(
+            url=settings.ODOO_URL,
+            db=settings.ODOO_DB,
+            auth_type="jsonrpc_password",
+            login=settings.ODOO_SERVICE_LOGIN,
+            secret=settings.ODOO_SERVICE_PASSWORD,
+        )
+        mos_data = await client.search_read(
+            "mrp.production",
+            domain=[["id", "in", payload.mo_ids]],
+            fields=["id", "name", "product_qty", "date_start", "state", "x_studio_nome_da_obra"],
+        )
+        await client.close()
+    except Exception as e:
+        req_id = str(uuid.uuid4())[:8]
+        logger.error(f"add-items: Odoo fetch error [ref:{req_id}]: {e}")
+        raise HTTPException(status_code=500, detail=f"Erro ao buscar MOs no Odoo [ref: {req_id}]")
+
+    if not mos_data:
+        raise HTTPException(status_code=404, detail="Nenhuma MO encontrada no Odoo para os IDs informados")
+
+    added_count = 0
+    skipped_count = 0
+
+    for mo_data in mos_data:
+        # Garantir ManufacturingOrder local
+        stmt_mo = select(ManufacturingOrder).where(ManufacturingOrder.odoo_id == mo_data["id"])
+        local_mo = (await session.execute(stmt_mo)).scalars().first()
+
+        if not local_mo:
+            raw_obra = mo_data.get("x_studio_nome_da_obra")
+            obra_name = raw_obra[1] if isinstance(raw_obra, list) and len(raw_obra) > 1 else raw_obra
+
+            date_start = None
+            if mo_data.get("date_start"):
+                try:
+                    date_start = datetime.strptime(mo_data["date_start"], "%Y-%m-%d %H:%M:%S")
+                except ValueError:
+                    try:
+                        date_start = datetime.fromisoformat(mo_data["date_start"])
+                    except Exception:
+                        date_start = datetime.now(timezone.utc).replace(tzinfo=None)
+
+            local_mo = ManufacturingOrder(
+                odoo_id=mo_data["id"],
+                name=mo_data["name"],
+                x_studio_nome_da_obra=obra_name,
+                product_qty=mo_data["product_qty"],
+                date_start=date_start or datetime.now(timezone.utc).replace(tzinfo=None),
+                state=mo_data["state"],
+            )
+            session.add(local_mo)
+            await session.commit()
+            await session.refresh(local_mo)
+
+        # Verificar se já existe IDRequest ativo para esta MO neste lote
+        stmt_existing = select(IDRequest).where(
+            IDRequest.mo_id == local_mo.id,
+            IDRequest.batch_id == batch_id,
+            col(IDRequest.status).not_in(["concluida", "cancelada"]),
+        )
+        existing = (await session.execute(stmt_existing)).scalars().first()
+
+        if existing:
+            skipped_count += 1
+            continue
+
+        # Verificar se existe IDRequest ativo em outro lote — reassociar
+        stmt_other = select(IDRequest).where(
+            IDRequest.mo_id == local_mo.id,
+            col(IDRequest.status).not_in(["concluida", "cancelada"]),
+        )
+        other_req = (await session.execute(stmt_other)).scalars().first()
+
+        if other_req:
+            other_req.batch_id = batch_id
+            other_req.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
+            session.add(other_req)
+            await session.commit()
+            await initialize_request_tasks(other_req.id, session)
+            added_count += 1
+            continue
+
+        # Criar novo IDRequest
+        new_req = IDRequest(mo_id=local_mo.id, batch_id=batch_id, status="nova")
+        session.add(new_req)
+        await session.commit()
+        await session.refresh(new_req)
+        await initialize_request_tasks(new_req.id, session)
+        added_count += 1
+
+    await session.commit()
+    update_sync_version("odoo_version")
+
+    return {
+        "batch_id": str(batch_id),
+        "added_count": added_count,
+        "skipped_count": skipped_count,
+        "message": f"{added_count} fabricação(ões) adicionada(s), {skipped_count} já presente(s) no lote.",
+    }
+
