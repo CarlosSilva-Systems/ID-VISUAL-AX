@@ -81,7 +81,10 @@ export function Solicitacoes({ onCreateBatch }: SolicitacoesProps) {
       if (!matchesSearch) return false;
 
       if (filter === 'Tudo') return true;
-      if (filter === 'Nova' || filter === 'Triagem' || filter === 'Em Lote' || filter === 'Bloqueada' || filter === 'Concluída') {
+      if (
+        filter === 'Nova' || filter === 'Triagem' || filter === 'Em Lote' ||
+        filter === 'Em Progresso' || filter === 'Bloqueada' || filter === 'Concluída'
+      ) {
         return item.status === filter;
       }
       return true;
@@ -173,7 +176,7 @@ export function Solicitacoes({ onCreateBatch }: SolicitacoesProps) {
       {/* Filters Bar — empilhado verticalmente em mobile */}
       <div className="px-4 sm:px-8 py-3 sm:py-4 bg-slate-50 border-b border-gray-100 flex flex-col gap-3">
         <div className="flex items-center gap-2 overflow-x-auto scrollbar-hide">
-          {(['Tudo', 'Nova', 'Triagem', 'Em Lote'] as const).map((f) => (
+          {(['Tudo', 'Nova', 'Triagem', 'Em Lote', 'Em Progresso', 'Bloqueada', 'Concluída'] as const).map((f) => (
             <button
               key={f}
               onClick={() => setFilter(f as typeof filter)}
@@ -399,11 +402,16 @@ export function Solicitacoes({ onCreateBatch }: SolicitacoesProps) {
 
 function StatusBadge({ status }: { status: StatusID }) {
   const styles: Record<string, string> = {
-    Nova: 'bg-blue-100 text-blue-700',
-    Triagem: 'bg-amber-100 text-amber-700',
-    'Em Lote': 'bg-indigo-100 text-indigo-700',
-    Bloqueada: 'bg-rose-100 text-rose-700',
-    Concluída: 'bg-emerald-100 text-emerald-700',
+    Nova:              'bg-blue-100 text-blue-700',
+    Triagem:           'bg-amber-100 text-amber-700',
+    'Em Lote':         'bg-indigo-100 text-indigo-700',
+    'Em Progresso':    'bg-cyan-100 text-cyan-700',
+    Bloqueada:         'bg-rose-100 text-rose-700',
+    'Concluída':       'bg-emerald-100 text-emerald-700',
+    Entregue:          'bg-green-100 text-green-700',
+    Cancelada:         'bg-slate-100 text-slate-500',
+    'Sem Solicitação': 'bg-slate-100 text-slate-400',
+    Rascunho:          'bg-slate-100 text-slate-400',
   };
   return (
     <span className={cn(

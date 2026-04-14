@@ -52,17 +52,34 @@ function PriorityChip({ priority }: { priority: string }) {
 
 function StatusChip({ status }: { status: string }) {
   const styles: Record<string, string> = {
-    Nova: 'text-blue-500',
-    Triagem: 'text-amber-500',
-    'Em Lote': 'text-indigo-500',
-    Bloqueada: 'text-rose-500',
-    'Concluída': 'text-emerald-500',
+    Nova:              'text-blue-500',
+    Triagem:           'text-amber-500',
+    'Em Lote':         'text-indigo-500',
+    'Em Progresso':    'text-cyan-600',
+    Bloqueada:         'text-rose-500',
+    'Concluída':       'text-emerald-500',
+    Entregue:          'text-green-600',
+    Cancelada:         'text-slate-400',
     'Sem Solicitação': 'text-slate-400',
+    Rascunho:          'text-slate-400',
   };
-  const currentStyle = styles[status] || 'text-slate-400';
+  const dotColors: Record<string, string> = {
+    Nova:              'bg-blue-500 animate-pulse',
+    Triagem:           'bg-amber-500',
+    'Em Lote':         'bg-indigo-500',
+    'Em Progresso':    'bg-cyan-600',
+    Bloqueada:         'bg-rose-500',
+    'Concluída':       'bg-emerald-500',
+    Entregue:          'bg-green-600',
+    Cancelada:         'bg-slate-400',
+    'Sem Solicitação': 'bg-slate-300',
+    Rascunho:          'bg-slate-300',
+  };
+  const textStyle = styles[status] || 'text-slate-400';
+  const dotStyle = dotColors[status] || 'bg-slate-300';
   return (
-    <span className={cn("flex items-center gap-1.5 text-xs font-bold", currentStyle)}>
-      <div className={cn("w-1.5 h-1.5 rounded-full", status === 'Nova' ? 'bg-blue-500 animate-pulse' : currentStyle.replace('text-', 'bg-'))} />
+    <span className={cn("flex items-center gap-1.5 text-xs font-bold", textStyle)}>
+      <div className={cn("w-1.5 h-1.5 rounded-full", dotStyle)} />
       {status}
     </span>
   );

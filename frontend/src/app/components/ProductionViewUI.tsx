@@ -53,10 +53,12 @@ const PANEL_LABELS: Record<string, string> = {
 };
 
 const STATE_LABELS: Record<string, string> = {
-    draft: 'Rascunho',
+    draft:     'Rascunho',
     confirmed: 'Confirmado',
-    progress: 'Em Produção',
-    to_close: 'A Fechar',
+    progress:  'Em Produção',
+    to_close:  'A Encerrar',
+    done:      'Concluído',
+    cancel:    'Cancelado',
 };
 
 interface ProductionViewUIProps {
@@ -162,7 +164,14 @@ export const ProductionViewUI: React.FC<ProductionViewUIProps> = ({
                                     <div>
                                         <div className="flex items-center gap-2 mb-0.5">
                                             <span className="font-bold text-slate-900">{mo.mo_number}</span>
-                                            <Badge variant={mo.state === 'progress' ? 'info' : mo.state === 'confirmed' ? 'warning' : 'neutral'}>
+                                            <Badge variant={
+                                                mo.state === 'confirmed' ? 'info' :
+                                                mo.state === 'progress'  ? 'warning' :
+                                                mo.state === 'to_close'  ? 'warning' :
+                                                mo.state === 'done'      ? 'success' :
+                                                mo.state === 'cancel'    ? 'destructive' :
+                                                'neutral'
+                                            }>
                                                 {STATE_LABELS[mo.state] || mo.state}
                                             </Badge>
                                             {mo.has_id_activity ? (
