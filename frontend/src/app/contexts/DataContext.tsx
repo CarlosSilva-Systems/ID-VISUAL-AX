@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { api } from '../../services/api';
-import { Fabrication } from '../types';
+import { Fabrication, ODOO_STATE_TO_MRP, BACKEND_STATUS_TO_ID, StatusID, MRPState } from '../types';
 
 interface SyncStatus {
     odoo_version: string;
@@ -71,17 +71,37 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     }
                 }
 
+                // Mapeia o estado bruto do Odoo para o StatusID do sistema.
+                // MOs vindas do Odoo com atividade "Imprimir ID Visual" ainda não têm
+                // IDRequest criada — exibimos "Sem Solicitação" como estado neutro.
+                // Quando o estado é "confirmed" ou "progress", a MO está aguardando
+                // processamento, então mapeamos para "Nova".
+                const rawState: string = mo.state || 'unknown';
+                let statusID: StatusID;
+                if (rawState === 'confirmed' || rawState === 'progress' || rawState === 'to_close') {
+                    statusID = 'Nova';
+                } else if (rawState === 'done') {
+                    statusID = 'Concluída';
+                } else if (rawState === 'cancel') {
+                    statusID = 'Cancelada';
+                } else {
+                    statusID = 'Sem Solicitação';
+                }
+
+                // Estado da MO no Odoo para exibição informativa (badge secundário)
+                const mrpState: MRPState = ODOO_STATE_TO_MRP[rawState] ?? 'Desconhecido';
+
                 return {
                     id: String(mo.odoo_mo_id),
                     mo_number: mo.mo_number,
                     obra: mo.obra,
-                    status: mo.state === 'confirmed' ? 'Nova' : mo.state,
+                    status: statusID,
                     priority: 'Normal',
                     date_start: formatDate(mo.date_start),
                     product_qty: mo.product_qty,
                     sla: slaStatus,
                     deadline_date: formatDate(mo.activity_date_deadline),
-                    mrp_state: 'Em Produção',
+                    mrp_state: mrpState,
                     tasks: [],
                     docs: { diagrama: false, legenda: false },
                     from_production: mo.from_production,
@@ -101,23 +121,36 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setLoadingRequests(true);
         try {
             const data = await api.getManualRequests();
-            const mapped = data.map((req: any): Fabrication => ({
-                id: req.request_id,
-                mo_number: req.mo_number,
-                obra: req.obra_nome,
-                product_qty: req.product_qty,
-                date_start: formatDate(req.date_start),
-                sla: 'Urgente',
-                priority: req.priority,
-                status: req.status.charAt(0).toUpperCase() + req.status.slice(1),
-                mrp_state: 'Em Produção',
-                tasks: [],
-                docs: { diagrama: true, legenda: true },
-                requester_name: req.requester_name,
-                notes: req.notes,
-                request_id: req.request_id,
-                source: 'producao'
-            }));
+            const mapped = data.map((req: any): Fabrication => {
+                // Mapeia o status snake_case do backend para o StatusID tipado do frontend
+                const rawStatus: string = req.status ?? 'nova';
+                const statusID: StatusID = BACKEND_STATUS_TO_ID[rawStatus] ?? 'Nova';
+
+                // Estado da MO no Odoo para exibição informativa
+                const rawMoState: string = req.mo_state ?? 'unknown';
+                const mrpState: MRPState = ODOO_STATE_TO_MRP[rawMoState] ?? 'Desconhecido';
+
+                // SLA: usa o label retornado pelo backend se disponível
+                const sla: string = req.mo_state_label ?? 'Sem Prazo';
+
+                return {
+                    id: req.request_id,
+                    mo_number: req.mo_number,
+                    obra: req.obra_nome,
+                    product_qty: req.product_qty,
+                    date_start: formatDate(req.date_start),
+                    sla,
+                    priority: req.priority ?? 'Normal',
+                    status: statusID,
+                    mrp_state: mrpState,
+                    tasks: [],
+                    docs: { diagrama: true, legenda: true },
+                    requester_name: req.requester_name,
+                    notes: req.notes,
+                    request_id: req.request_id,
+                    source: 'producao'
+                };
+            });
             setManualRequests(mapped);
         } catch (e) {
             console.error('Failed to fetch Manual Requests', e);

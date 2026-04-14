@@ -10,12 +10,53 @@ export interface User {
   odoo_test_url: string | null;
 }
 
-export type StatusID = "Nova" | "Triagem" | "Em Lote" | "Bloqueada" | "Concluída" | "Sem Solicitação";
+// Status interno da IDRequest no sistema ID Visual
+export type StatusID =
+  | "Nova"
+  | "Triagem"
+  | "Em Lote"
+  | "Em Progresso"
+  | "Bloqueada"
+  | "Concluída"
+  | "Entregue"
+  | "Cancelada"
+  | "Sem Solicitação";
+
 export type Priority = "Normal" | "Alta" | "Urgente";
 
 export type PackageType = "COMANDO" | "DISTRIBUIÇÃO" | "APTO" | "PERSONALIZADO";
 
-export type MRPState = "Confirmado" | "Em Produção" | "Pronto" | "Concluído" | "Cancelado";
+// Estado da Ordem de Manufatura no Odoo (mrp.production.state)
+export type MRPState =
+  | "Rascunho"
+  | "Confirmado"
+  | "Em Produção"
+  | "A Encerrar"
+  | "Concluído"
+  | "Cancelado"
+  | "Desconhecido";
+
+// Mapeamento canônico: estado bruto do Odoo → label exibido no frontend
+export const ODOO_STATE_TO_MRP: Record<string, MRPState> = {
+  draft:     "Rascunho",
+  confirmed: "Confirmado",
+  progress:  "Em Produção",
+  to_close:  "A Encerrar",
+  done:      "Concluído",
+  cancel:    "Cancelado",
+};
+
+// Mapeamento canônico: status bruto do backend (snake_case) → StatusID do frontend
+export const BACKEND_STATUS_TO_ID: Record<string, StatusID> = {
+  nova:         "Nova",
+  triagem:      "Triagem",
+  em_lote:      "Em Lote",
+  em_progresso: "Em Progresso",
+  bloqueada:    "Bloqueada",
+  concluida:    "Concluída",
+  entregue:     "Entregue",
+  cancelada:    "Cancelada",
+};
 
 export interface HistoryLog {
   id: string;
