@@ -536,6 +536,7 @@ async def _handle_pause(mac: str, payload_raw: bytes):
 
     # ── 2. Interagir com Odoo (pause/resume do timer) ─────────────────────────
     wo_id = None
+    odoo_ok = True
     try:
         from app.services.odoo_client import OdooClient
 
@@ -555,15 +556,20 @@ async def _handle_pause(mac: str, payload_raw: bytes):
                 if action == "paused":
                     res_odoo = await odoo.pause_workorder(wo_id)
                     logger.info(f"MQTT pause: Odoo pause WO {wo_id} — {res_odoo}")
+                    if not res_odoo.get("ok"):
+                        odoo_ok = False
                 else:
                     res_odoo = await odoo.resume_workorder(wo_id)
                     logger.info(f"MQTT pause: Odoo resume WO {wo_id} — {res_odoo}")
+                    if not res_odoo.get("ok"):
+                        odoo_ok = False
             else:
                 logger.warning(f"MQTT pause: nenhuma WO ativa para workcenter {wc_id}, apenas atualizando status local.")
         finally:
             await odoo.close()
     except Exception as e:
-        logger.error(f"MQTT pause: erro Odoo — {e}. Continuando com atualização local.")
+        odoo_ok = False
+        logger.error(f"[MQTT Pause] Falha na integração Odoo para workcenter {wc_id}: {e}")
 
     # ── 3. Atualizar estado local e LEDs ─────────────────────────────────────
     async with async_session_factory() as session:
@@ -625,6 +631,10 @@ async def _handle_pause(mac: str, payload_raw: bytes):
                 "wo_id": wo_id, "restored_status": prev_status,
             })
             logger.info(f"MQTT pause: workcenter {wc_id} RETOMADO — status restaurado: '{prev_status}' → MQTT: {mqtt_state}")
+
+    # Notifica o ESP32 se a integração Odoo falhou
+    if not odoo_ok:
+        await notify_odoo_error(mac)
 
 
 async def _handle_ota_progress(mac: str, payload_raw: bytes):
@@ -781,6 +791,26 @@ async def _send_andon_state(mac: str, state: str):
             logger.info(f"MQTT: Estado {state} enviado para {mac}")
     except Exception as e:
         logger.error(f"MQTT: Erro ao enviar estado para {mac} — {e}")
+
+
+async def notify_odoo_error(mac: str):
+    """
+    Notifica o ESP32 que a integração com o Odoo falhou.
+    O firmware exibe um blink de erro nos LEDs para alertar o operador
+    que o acionamento foi registrado localmente mas NÃO chegou ao Odoo.
+    """
+    try:
+        import aiomqtt
+
+        host = getattr(settings, "MQTT_BROKER_HOST", "localhost")
+        port = int(getattr(settings, "MQTT_BROKER_PORT", 1883))
+        topic = f"andon/odoo_error/{mac}"
+
+        async with aiomqtt.Client(hostname=host, port=port) as client:
+            await client.publish(topic, "ODOO_ERROR", qos=1)
+            logger.warning(f"[Odoo Error] Notificação de falha Odoo enviada para ESP32 {mac}")
+    except Exception as e:
+        logger.error(f"[Odoo Error] Falha ao notificar ESP32 {mac} — {e}")
 
 
 async def _send_andon_state_via_client(mac: str, state: str, client):

@@ -77,6 +77,12 @@ String deviceName;
 String g_andonStatus = "UNKNOWN";  // GREEN, YELLOW, RED, GRAY, UNKNOWN
 unsigned long g_lastAndonUpdate = 0;
 
+// Erro de integração Odoo: pisca todos os LEDs em vermelho rápido por 5s
+bool g_odooErrorActive = false;
+unsigned long g_odooErrorStartMs = 0;
+#define ODOO_ERROR_DURATION_MS  5000UL   // 5s de blink
+#define ODOO_ERROR_BLINK_MS     150UL    // 150ms on/off — blink rápido e urgente
+
 // Papel na mesh
 bool g_isRoot            = false;
 bool g_meshStarted       = false;
@@ -125,6 +131,7 @@ void resetBackoff(ReconnectionState* state);
 bool checkTimer(Timer* timer);
 void updateLEDState(LEDState* led, bool state);
 void updateAndonLEDs();
+void updateOdooErrorBlink();
 void playBootAnimation();
 void playWiFiConnectedAnimation();
 void playMeshConnectedAnimation();
@@ -217,10 +224,33 @@ void updateAndonLEDs() {
     // UNKNOWN mantém o estado atual
 }
 
+// Blink não-bloqueante para erro de integração Odoo.
+// Todos os LEDs piscam em vermelho rápido (150ms) por 5s.
+// Após o período, restaura o estado Andon anterior.
+void updateOdooErrorBlink() {
+    if (!g_odooErrorActive) return;
+
+    unsigned long now = millis();
+    unsigned long elapsed = now - g_odooErrorStartMs;
+
+    if (elapsed >= ODOO_ERROR_DURATION_MS) {
+        // Fim do blink — restaura estado Andon
+        g_odooErrorActive = false;
+        updateAndonLEDs();
+        logSerial("ODOO ERROR: blink encerrado, estado Andon restaurado -> " + g_andonStatus);
+        return;
+    }
+
+    // Blink rápido: todos os LEDs piscam juntos em vermelho
+    bool blinkOn = ((now / ODOO_ERROR_BLINK_MS) % 2 == 0);
+    digitalWrite(LED_VERMELHO_PIN, blinkOn ? HIGH : LOW);
+    digitalWrite(LED_AMARELO_PIN,  LOW);
+    digitalWrite(LED_VERDE_PIN,    LOW);
+}
+
 // Blink não-bloqueante para estado GRAY (pausado).
 // 70 BPM ≈ 857ms por ciclo: 428ms ligado, 428ms desligado.
-#define PAUSE_BLINK_HALF_MS 428UL
-void updatePauseBlink() {
+#define PAUSE_BLINK_HALF_MS 428ULvoid updatePauseBlink() {
     static unsigned long lastToggle = 0;
     static bool blinkOn = false;
     unsigned long now = millis();
@@ -693,8 +723,9 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
     String payloadStr;
     for (unsigned int i = 0; i < length; i++) payloadStr += (char)payload[i];
 
-    String stateTopic   = "andon/state/"   + macAddress;
-    String restartTopic = "andon/restart/" + macAddress;
+    String stateTopic    = "andon/state/"     + macAddress;
+    String restartTopic  = "andon/restart/"   + macAddress;
+    String odooErrTopic  = "andon/odoo_error/" + macAddress;
 
     if (String(topic) == stateTopic) {
         payloadStr.trim();
@@ -706,6 +737,14 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
             g_lastAndonUpdate = millis();
             updateAndonLEDs();
             logSerial("ANDON STATE: " + payloadStr);
+        }
+    } else if (String(topic) == odooErrTopic) {
+        // Integração Odoo falhou — acionamento registrado localmente mas não chegou ao Odoo
+        // Pisca vermelho rápido por 5s para alertar o operador
+        if (!g_odooErrorActive) {
+            g_odooErrorActive   = true;
+            g_odooErrorStartMs  = millis();
+            logMQTT("ODOO ERROR: falha na integracao Odoo — acionamento local OK, Odoo NAO atualizado");
         }
     } else if (String(topic) == restartTopic) {
         payloadStr.trim();
@@ -749,12 +788,14 @@ void handleMQTTConnecting() {
         if (!disc.isEmpty())
             mqttClient.publish("andon/discovery", disc.c_str(), false);
 
-        String ledTopic     = "andon/led/"     + macAddress + "/command";
-        String stateTopic   = "andon/state/"   + macAddress;
-        String restartTopic = "andon/restart/" + macAddress;
+        String ledTopic      = "andon/led/"       + macAddress + "/command";
+        String stateTopic    = "andon/state/"     + macAddress;
+        String restartTopic  = "andon/restart/"   + macAddress;
+        String odooErrTopic  = "andon/odoo_error/" + macAddress;
         mqttClient.subscribe(ledTopic.c_str(),     1);
         mqttClient.subscribe(stateTopic.c_str(),   1);
         mqttClient.subscribe(restartTopic.c_str(), 1);
+        mqttClient.subscribe(odooErrTopic.c_str(), 1);
         mqttClient.subscribe("andon/ota/trigger",  1);
 
         String reqTopic = "andon/state/request/" + macAddress;
@@ -1110,6 +1151,11 @@ void loop() {
     // Blink de não-vinculado: amarelo pisca rápido quando UNASSIGNED
     if (currentState == OPERATIONAL && g_andonStatus == "UNASSIGNED") {
         updateUnassignedBlink();
+    }
+    // Blink de erro Odoo: vermelho rápido por 5s — integração Odoo falhou
+    // Tem prioridade sobre o estado Andon atual; ao terminar restaura o estado
+    if (g_odooErrorActive) {
+        updateOdooErrorBlink();
     }
     // Blink de nó folha: amarelo lento (1s) indica sem WiFi direto, operando via mesh
     if (currentState == MESH_NODE) {

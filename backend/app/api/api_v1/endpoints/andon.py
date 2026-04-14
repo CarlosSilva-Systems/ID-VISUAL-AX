@@ -469,14 +469,16 @@ async def create_andon_call(
                 logger.warning(f"ID Visual integration skipped: {idv_err}")
 
         # ── Integração Odoo em background ──
-        async def _odoo_integration(call_id: int):
+        async def _odoo_integration(call_id: int, triggered_by_mac: str | None):
             from app.db.session import async_session_factory
             from app.services.odoo_client import OdooClient
+            from app.services.mqtt_service import notify_odoo_error
             local_odoo = OdooClient(
                 url=settings.ODOO_URL, db=settings.ODOO_DB,
                 auth_type=settings.ODOO_AUTH_TYPE,
                 login=settings.ODOO_SERVICE_LOGIN, secret=settings.ODOO_SERVICE_PASSWORD
             )
+            odoo_ok = True
             try:
                 async with async_session_factory() as s:
                     res_c = await s.execute(select(AndonCall).where(AndonCall.id == call_id))
@@ -491,8 +493,9 @@ async def create_andon_call(
                                 req.workcenter_id,
                                 settings.ANDON_WO_STATES or ["progress", "ready"]
                             )
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            logger.warning(f"[Andon Odoo] Falha ao buscar WO ativa para workcenter {req.workcenter_id}: {e}")
+                            odoo_ok = False
 
                     if req.color == "YELLOW":
                         if req.is_stop and wo:
@@ -505,8 +508,9 @@ async def create_andon_call(
                                     req.mo_id,
                                     f"🟡 <b>Andon Amarelo</b>{stop_label}: {req.reason} (Chamado #{call_id}, por {req.triggered_by})"
                                 )
-                            except Exception:
-                                pass
+                            except Exception as e:
+                                logger.warning(f"[Andon Odoo] Falha ao postar chatter (YELLOW) para MO {req.mo_id}: {e}")
+                                odoo_ok = False
 
                     elif req.color == "RED":
                         if wo:
@@ -523,16 +527,35 @@ async def create_andon_call(
                                     req.mo_id,
                                     f"🔴 <b>Andon Vermelho — PARADA CRÍTICA</b>: {req.reason} (Chamado #{call_id}, por {req.triggered_by})"
                                 )
-                            except Exception:
-                                pass
+                            except Exception as e:
+                                logger.warning(f"[Andon Odoo] Falha ao postar chatter (RED) para MO {req.mo_id}: {e}")
+                                odoo_ok = False
 
                     await s.commit()
             except Exception as e:
-                logger.exception(f"Odoo background integration failed for call {call_id}: {e}")
+                odoo_ok = False
+                logger.exception(f"[Andon Odoo] Falha na integração background para chamado {call_id}: {e}")
             finally:
                 await local_odoo.close()
 
-        background_tasks.add_task(_odoo_integration, call.id)
+            # Notifica o ESP32 via MQTT se a integração Odoo falhou
+            if not odoo_ok and triggered_by_mac:
+                await notify_odoo_error(triggered_by_mac)
+
+        # Resolver MAC do device que originou o chamado (se veio de ESP32)
+        device_mac: str | None = None
+        if req.triggered_by and req.triggered_by.startswith("ESP32"):
+            try:
+                from app.models.esp_device import ESPDevice
+                stmt_dev = select(ESPDevice).where(ESPDevice.workcenter_id == req.workcenter_id)
+                res_dev = await session.execute(stmt_dev)
+                dev = res_dev.scalars().first()
+                if dev:
+                    device_mac = dev.mac_address
+            except Exception:
+                pass
+
+        background_tasks.add_task(_odoo_integration, call.id, device_mac)
 
         await update_or_create_status(
             session, req.workcenter_id, req.workcenter_name,
