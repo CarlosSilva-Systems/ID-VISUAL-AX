@@ -250,7 +250,9 @@ void updateOdooErrorBlink() {
 
 // Blink não-bloqueante para estado GRAY (pausado).
 // 70 BPM ≈ 857ms por ciclo: 428ms ligado, 428ms desligado.
-#define PAUSE_BLINK_HALF_MS 428ULvoid updatePauseBlink() {
+#define PAUSE_BLINK_HALF_MS 428UL
+
+void updatePauseBlink() {
     static unsigned long lastToggle = 0;
     static bool blinkOn = false;
     unsigned long now = millis();
