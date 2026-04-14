@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { X, CheckCircle2, AlertTriangle, Play, ChevronRight, Info, ClipboardCheck, Ban } from 'lucide-react';
+import { X, CheckCircle2, AlertTriangle, Play, ChevronRight, Info, ClipboardCheck, Ban, FileText } from 'lucide-react';
 import { Fabrication, Caixinha } from '../types';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import { DocumentPreviewModal } from './DocumentPreviewModal';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -19,6 +20,7 @@ export function DrawerCaixinha({ fabrication, task, onClose, onUpdateStatus }: D
   const [checklist, setChecklist] = useState<Record<string, boolean>>({});
   const [isBlocking, setIsBlocking] = useState(false);
   const [blockReason, setBlockReason] = useState('');
+  const [showDocs, setShowDocs] = useState(false);
 
   const toggleCheck = (id: string) => {
     setChecklist(prev => ({ ...prev, [id]: !prev[id] }));
@@ -49,7 +51,8 @@ export function DrawerCaixinha({ fabrication, task, onClose, onUpdateStatus }: D
   ];
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end">
+    <>
+      <div className="fixed inset-0 z-50 flex justify-end">
       {/* Backdrop */}
       <div
         className="absolute inset-0 bg-slate-900/40 backdrop-blur-[2px] animate-in fade-in duration-300"
@@ -64,11 +67,21 @@ export function DrawerCaixinha({ fabrication, task, onClose, onUpdateStatus }: D
             <div className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">
               <span>{fabrication.mo_number}</span> <ChevronRight size={10} /> <span>{task.label}</span>
             </div>
-            <h3 className="text-xl font-bold text-slate-900 truncate">
-              {task.label}
-            </h3>
+            <div className="flex items-center gap-2">
+              <h3 className="text-xl font-bold text-slate-900 truncate">
+                {task.label}
+              </h3>
+              <button
+                onClick={() => setShowDocs(true)}
+                title="Ver documentos da MO"
+                className="flex items-center gap-1.5 px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-600 border border-blue-200 rounded-lg text-[11px] font-bold transition-colors shrink-0"
+              >
+                <FileText size={13} />
+                Docs
+              </button>
+            </div>
           </div>
-          <button onClick={onClose} className="p-2 hover:bg-white rounded-full transition-colors text-slate-400">
+          <button onClick={onClose} className="p-2 hover:bg-white rounded-full transition-colors text-slate-400 ml-2">
             <X size={24} />
           </button>
         </div>
@@ -244,5 +257,14 @@ export function DrawerCaixinha({ fabrication, task, onClose, onUpdateStatus }: D
         </div>
       </div>
     </div>
+
+    {showDocs && (
+      <DocumentPreviewModal
+        moId={fabrication.odoo_mo_id || fabrication.id}
+        moNumber={fabrication.mo_number}
+        onClose={() => setShowDocs(false)}
+      />
+    )}
+    </>
   );
 }
