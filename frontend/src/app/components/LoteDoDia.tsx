@@ -15,8 +15,9 @@ import {
   Check,
   Loader2
 } from 'lucide-react';
-import { Fabrication, PACKAGES_CONFIG, Caixinha, PackageType } from '../types';
+import { Fabrication, PACKAGES_CONFIG, TASK_CODE_TO_LABEL, taskCodeToType, Caixinha, PackageType } from '../types';
 import { DrawerCaixinha } from './DrawerCaixinha';
+import { DocumentPreviewModal } from './DocumentPreviewModal';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { toast } from 'sonner';
@@ -40,6 +41,10 @@ export function LoteDoDia({ initialFabrications, onBack }: LoteDoDiaProps) {
 
   // Loading state per fabrication for the docs button
   const [docsLoadingId, setDocsLoadingId] = useState<string | null>(null);
+
+  // Document preview modal state
+  const [docModalMoId, setDocModalMoId] = useState<string | null>(null);
+  const [docModalMoNumber, setDocModalMoNumber] = useState<string | null>(null);
 
   const handleOpenDocs = async (fab: Fabrication) => {
     const odooId = fab.odoo_mo_id ? Number(fab.odoo_mo_id) : null;
@@ -132,34 +137,25 @@ export function LoteDoDia({ initialFabrications, onBack }: LoteDoDiaProps) {
       // Fallback/Initial Logic for newly selected items (only used if batchId is 'new')
       const initializedItems = initialFabrications.map(fab => {
         const packageType = fab.packageType || 'COMANDO';
-        const taskLabels = PACKAGES_CONFIG[packageType];
-        
-        const labelToCodeInit: Record<string, string> = {
-          'Diagrama+Legenda': 'DOCS_Epson',
-          'Documentos Epson': 'DOCS_Epson',
-          '210-804': 'WAGO_210_804',
-          '210-805': 'WAGO_210_805',
-          'EFZ Tag Cabo': 'ELESYS_EFZ',
-          '2009-110': 'WAGO_2009_110',
-          '210-855': 'WAGO_210_855',
-          'QA Final': 'QA_FINAL'
-        };
+        // PACKAGES_CONFIG agora usa task_codes diretamente (alinhado com backend)
+        const taskCodes = PACKAGES_CONFIG[packageType];
 
-        const tasks: Caixinha[] = taskLabels.map(label => ({
-          id: `${fab.id}-${label}`,
-          taskCode: labelToCodeInit[label] || '',
-          label,
+        const tasks: Caixinha[] = taskCodes.map(code => ({
+          id: `${fab.id}-${code}`,
+          taskCode: code,
+          label: TASK_CODE_TO_LABEL[code] || code,
           status: 'Neutro',
-          type: label === 'Diagrama+Legenda' ? 'Epson' : label === 'QA Final' ? 'QA' : 'SmartScript'
+          type: taskCodeToType(code),
         }));
 
-        if (!tasks.find(t => t.label === 'QA Final')) {
+        // Garante QA_FINAL sempre presente (poka-yoke)
+        if (!tasks.find(t => t.taskCode === 'QA_FINAL')) {
           tasks.push({
-            id: `${fab.id}-QA`,
+            id: `${fab.id}-QA_FINAL`,
             taskCode: 'QA_FINAL',
-            label: 'QA Final',
+            label: TASK_CODE_TO_LABEL['QA_FINAL'],
             status: 'Neutro',
-            type: 'QA'
+            type: 'QA',
           });
         }
 
@@ -211,24 +207,8 @@ export function LoteDoDia({ initialFabrications, onBack }: LoteDoDiaProps) {
           status === 'Em Andamento' ? 'montado' :
             status === 'Bloqueado' ? 'bloqueado' : 'nao_iniciado';
 
-        // More robust mapping based on labels if code is label-based
-        const labelToCode: Record<string, string> = {
-          'Diagrama+Legenda': 'DOCS_Epson',
-          'Documentos Epson': 'DOCS_Epson',
-          'Componente 210-804': 'WAGO_210_804',
-          'Adesivo 210-805': 'WAGO_210_805',
-          'Tag EFZ': 'ELESYS_EFZ',
-          'Régua 2009-110': 'WAGO_2009_110',
-          'Adesivo 210-855': 'WAGO_210_855',
-          'QA Final': 'QA_FINAL',
-          '210-804': 'WAGO_210_804',
-          '210-805': 'WAGO_210_805',
-          'EFZ Tag Cabo': 'ELESYS_EFZ',
-          '2009-110': 'WAGO_2009_110',
-          '210-855': 'WAGO_210_855'
-        };
-
-        const taskCode = currentTask.taskCode || labelToCode[currentTask.label] || '';
+        // taskCode é sempre preenchido agora (via TASK_CODE_TO_LABEL no init)
+        const taskCode = currentTask.taskCode || '';
 
         const response = await api.updateBatchTask(batchId, {
           request_id: fabId,

@@ -106,11 +106,30 @@ export interface Fabrication {
 }
 
 export const PACKAGES_CONFIG: Record<PackageType, string[]> = {
-  "COMANDO": ["Diagrama+Legenda", "210-804", "210-805", "EFZ Tag Cabo", "2009-110", "210-855", "QA Final"],
-  "DISTRIBUIÇÃO": ["Diagrama+Legenda", "210-804", "210-805", "EFZ Tag Cabo", "QA Final"],
-  "APTO": ["Diagrama+Legenda", "EFZ Tag Cabo", "210-805", "QA Final"],
-  "PERSONALIZADO": ["Diagrama+Legenda", "QA Final"]
+  "COMANDO":     ["DOCS_Epson", "WAGO_210_804", "WAGO_210_805", "ELESYS_EFZ", "WAGO_2009_110", "WAGO_210_855", "QA_FINAL"],
+  "DISTRIBUIÇÃO":["DOCS_Epson", "WAGO_210_804", "WAGO_210_805", "ELESYS_EFZ", "QA_FINAL"],
+  "APTO":        ["DOCS_Epson", "ELESYS_EFZ", "WAGO_210_805", "QA_FINAL"],
+  "PERSONALIZADO":["DOCS_Epson", "QA_FINAL"],
 };
+
+// Mapeamento canônico: task_code → label exibido no frontend.
+// Fonte da verdade alinhada com TASK_LABELS do backend (production.py).
+export const TASK_CODE_TO_LABEL: Record<string, string> = {
+  DOCS_Epson:    "Diagrama e Layout",
+  WAGO_210_804:  "Carac. Técnica (210-804)",
+  WAGO_210_805:  "Adesivo Componente (210-805)",
+  ELESYS_EFZ:    "Tag Cabo EFZ",
+  WAGO_2009_110: "Régua Borne (2009-110)",
+  WAGO_210_855:  "Adesivo Porta (210-855)",
+  QA_FINAL:      "QA Final",
+};
+
+// Tipo de caixinha derivado do task_code
+export function taskCodeToType(code: string): Caixinha["type"] {
+  if (code === "DOCS_Epson") return "Epson";
+  if (code === "QA_FINAL") return "QA";
+  return "SmartScript";
+}
 
 export const MOCK_FABRICATIONS: Fabrication[] = [
   {
