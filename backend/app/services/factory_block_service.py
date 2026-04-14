@@ -3,11 +3,16 @@ import uuid
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 from typing import Optional
-from app.models.analytics import FabricacaoBlock
+from app.models.analytics import FabricacaoBlock, MotivoParada
 
 class FactoryBlockService:
     @staticmethod
-    async def bloquear_of(session: AsyncSession, mo_id: uuid.UUID | str, id_visual_id: Optional[uuid.UUID | str] = None) -> FabricacaoBlock:
+    async def bloquear_of(
+        session: AsyncSession,
+        mo_id: uuid.UUID | str,
+        id_visual_id: Optional[uuid.UUID | str] = None,
+        motivo: str = MotivoParada.AGUARDANDO_ID_VISUAL.value,
+    ) -> FabricacaoBlock:
         """
         Registra o bloqueio de uma Ordem de Fabricação por falta ou aguardo de ID Visual.
         Se já houver um bloqueio aberto, retorna ele em vez de duplicar.
@@ -30,7 +35,8 @@ class FactoryBlockService:
         new_block = FabricacaoBlock(
             mo_id=mo_id,
             id_visual_id=id_visual_id,
-            of_bloqueada_em=datetime.utcnow()
+            motivo=motivo,
+            of_bloqueada_em=datetime.now(timezone.utc).replace(tzinfo=None),
         )
         session.add(new_block)
         await session.commit()
@@ -55,10 +61,11 @@ class FactoryBlockService:
         if not active_block:
             return None
 
-        active_block.of_desbloqueada_em = datetime.utcnow()
-        delta = active_block.of_desbloqueada_em - active_block.of_bloqueada_em
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        active_block.of_desbloqueada_em = now
+        delta = now - active_block.of_bloqueada_em
         active_block.tempo_parado_minutos = round(delta.total_seconds() / 60.0, 2)
-        
+
         session.add(active_block)
         await session.commit()
         await session.refresh(active_block)
