@@ -21,6 +21,7 @@ import {
   Activity,
   AlertTriangle,
   Cpu,
+  Sparkles,
   X
 } from "lucide-react";
 import { useLocation, useNavigate, Link } from "react-router-dom";
@@ -220,7 +221,15 @@ export const Layout = ({ children, user }: LayoutProps) => {
       ]
     },
     { id: "templates", label: "Padrões (5S)", icon: LayoutTemplate, path: "/templates" },
-
+    {
+      id: "analytics-group",
+      label: "Analytics",
+      icon: BarChart3,
+      items: [
+        { id: "mpr-analytics", label: "MPR Analytics", icon: BarChart3, path: "/mpr/analytics" },
+        { id: "relatorios", label: "Relatórios IA", icon: Sparkles, path: "/relatorios" },
+      ]
+    },
     { id: "config", label: "Configurações", icon: Settings, path: "/admin" },
   ];
 

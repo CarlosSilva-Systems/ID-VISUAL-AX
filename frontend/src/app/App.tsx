@@ -18,6 +18,9 @@ import { AndonPendenciasPage } from './components/AndonPendenciasPage';
 import { AndonOEEDashboard } from './components/AndonOEEDashboard';
 import { AndonWorkcenterDetail } from './components/AndonWorkcenterDetail';
 import { DevicesPage } from './components/DevicesPage';
+import { MPRAnalyticsDashboard } from './pages/mpr/MPRAnalyticsDashboard';
+import { MyReports } from './pages/reports/MyReports';
+import { DynamicDashboard } from './pages/reports/DynamicDashboard';
 import { Fabrication, User } from './types';
 import { api } from '../services/api';
 import { pollingManager } from '../services/pollingManager';
@@ -127,6 +130,9 @@ function AppContent() {
               <Route path="/andon/dashboard/:wcId" element={<AndonWorkcenterDetail currentUser={currentUser?.username || ''} />} />
               <Route path="/andon/devices" element={<DevicesPage />} />
               <Route path="/templates" element={<Padroes5S />} />
+              <Route path="/mpr/analytics" element={<MPRAnalyticsDashboard />} />
+              <Route path="/relatorios" element={<MyReports />} />
+              <Route path="/relatorios/visualizar/:id" element={<DynamicDashboard />} />
 
               <Route path="/admin" element={<Configuracoes user={currentUser} />} />
               <Route path="/admin/ota-progress" element={
