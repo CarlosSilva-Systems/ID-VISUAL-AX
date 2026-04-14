@@ -21,9 +21,8 @@ import {
 } from 'lucide-react';
 import { Fabrication, PackageType } from '../types';
 import { ModalPacote } from './ModalPacote';
-import { DocumentPreviewModal } from './DocumentPreviewModal';
 import { EmptyState } from './EmptyState';
-import { SkeletonKPICard, SkeletonListItem } from './SkeletonLoader';
+import { useDocViewer } from '../../components/DocViewerModal';import { SkeletonKPICard, SkeletonListItem } from './SkeletonLoader';
 import { FilterBar, type FilterOption } from '@/app/components/FilterBar';
 import { useBreakpoint } from '@/hooks/useBreakpoint';
 import { clsx, type ClassValue } from 'clsx';
@@ -308,6 +307,8 @@ export function Dashboard({ onCreateBatch }: DashboardProps) {
   const breakpoint = useBreakpoint();
   const isMobile = breakpoint === 'mobile' || breakpoint === 'sm';
 
+  const { openDocs, DocViewer } = useDocViewer();
+
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [filter, setFilter] = useState<'Todas' | 'Hoje' | 'Esta Semana' | 'Atrasadas' | 'Bloqueadas'>('Todas');
   const [search, setSearch] = useState('');
@@ -315,10 +316,6 @@ export function Dashboard({ onCreateBatch }: DashboardProps) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [itemToConfigure, setItemToConfigure] = useState<Fabrication | null>(null);
   const [isCreatingBatch, setIsCreatingBatch] = useState(false);
-
-  // Document preview modal state
-  const [docModalMoId, setDocModalMoId] = useState<string | null>(null);
-  const [docModalMoNumber, setDocModalMoNumber] = useState<string | null>(null);
 
   // Active batches state
   interface ActiveBatch {
@@ -567,7 +564,7 @@ export function Dashboard({ onCreateBatch }: DashboardProps) {
             </div>
             <div className="divide-y divide-gray-100">
               {filteredItems.filter(i => i.source !== 'producao').map(item => (
-                <DashboardRow key={item.id} item={item} isSelected={selectedIds.has(item.id)} onToggle={() => toggleSelect(item.id)} onViewDocs={() => { setDocModalMoId(item.id); setDocModalMoNumber(item.mo_number); }} isMobile={isMobile} />
+                <DashboardRow key={item.id} item={item} isSelected={selectedIds.has(item.id)} onToggle={() => toggleSelect(item.id)} onViewDocs={() => openDocs(item.id, item.mo_number)} isMobile={isMobile} />
               ))}
               {filteredItems.filter(i => i.source !== 'producao').length === 0 && (
                 <EmptyState
@@ -588,7 +585,7 @@ export function Dashboard({ onCreateBatch }: DashboardProps) {
             </div>
             <div className="divide-y divide-gray-100">
               {filteredItems.filter(i => i.source === 'producao').map(item => (
-                <DashboardRow key={item.id} item={item} isSelected={selectedIds.has(item.id)} onToggle={() => toggleSelect(item.id)} onViewDocs={() => { setDocModalMoId(item.id); setDocModalMoNumber(item.mo_number); }} isMobile={isMobile} />
+                <DashboardRow key={item.id} item={item} isSelected={selectedIds.has(item.id)} onToggle={() => toggleSelect(item.id)} onViewDocs={() => openDocs(item.id, item.mo_number)} isMobile={isMobile} />
               ))}
               {filteredItems.filter(i => i.source === 'producao').length === 0 && (
                 <EmptyState
@@ -607,9 +604,7 @@ export function Dashboard({ onCreateBatch }: DashboardProps) {
         <ModalPacote fabrication={itemToConfigure} onClose={() => setIsModalOpen(false)} onSave={() => setIsModalOpen(false)} />
       )}
 
-      {docModalMoId && docModalMoNumber && (
-        <DocumentPreviewModal moId={docModalMoId} moNumber={docModalMoNumber} onClose={() => { setDocModalMoId(null); setDocModalMoNumber(null); }} />
-      )}
+      <DocViewer />
 
       {/* Confirmation Modal for Finalize / Delete Batch */}
       {confirmAction && (

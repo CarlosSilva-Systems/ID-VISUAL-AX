@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
-import { X, CheckCircle2, AlertTriangle, Play, ChevronRight, Info, ClipboardCheck, Ban, FileText } from 'lucide-react';
+import { X, CheckCircle2, AlertTriangle, Play, ChevronRight, Info, ClipboardCheck, Ban, FileText, Loader2 } from 'lucide-react';
 import { Fabrication, Caixinha } from '../types';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { DocumentPreviewModal } from './DocumentPreviewModal';
+import { useDocViewer } from '../../components/DocViewerModal';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -20,7 +20,7 @@ export function DrawerCaixinha({ fabrication, task, onClose, onUpdateStatus }: D
   const [checklist, setChecklist] = useState<Record<string, boolean>>({});
   const [isBlocking, setIsBlocking] = useState(false);
   const [blockReason, setBlockReason] = useState('');
-  const [showDocs, setShowDocs] = useState(false);
+  const { openDocs, isLoading: docsLoading, DocViewer } = useDocViewer();
 
   const toggleCheck = (id: string) => {
     setChecklist(prev => ({ ...prev, [id]: !prev[id] }));
@@ -72,11 +72,15 @@ export function DrawerCaixinha({ fabrication, task, onClose, onUpdateStatus }: D
                 {task.label}
               </h3>
               <button
-                onClick={() => setShowDocs(true)}
+                onClick={() => openDocs(fabrication.odoo_mo_id || fabrication.id, fabrication.mo_number)}
+                disabled={docsLoading(fabrication.odoo_mo_id || fabrication.id)}
                 title="Ver documentos da MO"
-                className="flex items-center gap-1.5 px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-600 border border-blue-200 rounded-lg text-[11px] font-bold transition-colors shrink-0"
+                className="flex items-center gap-1.5 px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-600 border border-blue-200 rounded-lg text-[11px] font-bold transition-colors shrink-0 disabled:opacity-60"
               >
-                <FileText size={13} />
+                {docsLoading(fabrication.odoo_mo_id || fabrication.id)
+                  ? <Loader2 size={13} className="animate-spin" />
+                  : <FileText size={13} />
+                }
                 Docs
               </button>
             </div>
@@ -258,13 +262,8 @@ export function DrawerCaixinha({ fabrication, task, onClose, onUpdateStatus }: D
       </div>
     </div>
 
-    {showDocs && (
-      <DocumentPreviewModal
-        moId={fabrication.odoo_mo_id || fabrication.id}
-        moNumber={fabrication.mo_number}
-        onClose={() => setShowDocs(false)}
-      />
-    )}
+    <DocViewer />
     </>
   );
+}  );
 }

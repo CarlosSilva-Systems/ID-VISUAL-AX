@@ -6,74 +6,8 @@ import {
     TaskStatusEnum
 } from '../../types/matrix';
 import { StatusCell } from './StatusCell';
-import { MoreHorizontal, Clock, Box, FileText, Loader2, X, Download, Maximize2, Minimize2, ExternalLink } from 'lucide-react';
-import { api } from '../../services/api';
-import { toast } from 'sonner';
-
-// ── Inline Doc Viewer Modal ───────────────────────────────────────────────────
-interface DocViewerProps {
-    url: string;
-    title: string;
-    downloadUrl: string;
-    onClose: () => void;
-}
-
-const DocViewer: React.FC<DocViewerProps> = ({ url, title, downloadUrl, onClose }) => {
-    const [fullscreen, setFullscreen] = useState(false);
-
-    return (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-            <div className={`bg-white rounded-2xl shadow-2xl flex flex-col overflow-hidden transition-all duration-300 ${fullscreen ? 'w-full h-full rounded-none' : 'w-[90vw] h-[90vh] max-w-5xl'}`}>
-                {/* Header */}
-                <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100 bg-slate-50 shrink-0">
-                    <div className="flex items-center gap-2 min-w-0">
-                        <FileText size={16} className="text-blue-600 shrink-0" />
-                        <span className="text-sm font-bold text-slate-800 truncate">{title}</span>
-                    </div>
-                    <div className="flex items-center gap-1 shrink-0 ml-4">
-                        <a
-                            href={url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-200 rounded-lg transition-colors"
-                            title="Abrir em nova aba"
-                        >
-                            <ExternalLink size={16} />
-                        </a>
-                        <a
-                            href={downloadUrl}
-                            download
-                            className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-200 rounded-lg transition-colors"
-                            title="Baixar"
-                        >
-                            <Download size={16} />
-                        </a>
-                        <button
-                            onClick={() => setFullscreen(f => !f)}
-                            className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-200 rounded-lg transition-colors"
-                            title={fullscreen ? 'Sair da tela cheia' : 'Tela cheia'}
-                        >
-                            {fullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
-                        </button>
-                        <button
-                            onClick={onClose}
-                            className="p-2 text-slate-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                            title="Fechar"
-                        >
-                            <X size={16} />
-                        </button>
-                    </div>
-                </div>
-                {/* iframe */}
-                <iframe
-                    src={url}
-                    className="flex-1 w-full border-0"
-                    title={title}
-                />
-            </div>
-        </div>
-    );
-};
+import { MoreHorizontal, Clock, Box, FileText, Loader2 } from 'lucide-react';
+import { useDocViewer } from '../DocViewerModal';
 
 interface MatrixTableProps {
     columns: MatrixColumn[];
@@ -100,42 +34,7 @@ export const MatrixTable: React.FC<MatrixTableProps> = ({
         nextStatus: TaskStatusEnum;
     } | null>(null);
 
-    const [docsLoadingId, setDocsLoadingId] = useState<string | null>(null);
-    const [docViewer, setDocViewer] = useState<{ url: string; title: string; downloadUrl: string } | null>(null);
-
-    const buildFullUrl = (path: string): string => {
-        const token = localStorage.getItem('access_token');
-        const tokenParam = token ? `${path.includes('?') ? '&' : '?'}token=${token}` : '';
-        const apiUrl = (import.meta as any).env.VITE_API_URL || 'http://localhost:8000/api/v1';
-        let origin = '';
-        try { origin = new URL(apiUrl).origin; } catch { origin = window.location.origin; }
-        return `${origin}${path.startsWith('/') ? '' : '/'}${path}${tokenParam}`;
-    };
-
-    const handleOpenDocs = async (row: MatrixRow) => {
-        if (!row.odoo_mo_id) {
-            toast.error('MO sem ID Odoo — não é possível abrir documentos.');
-            return;
-        }
-        setDocsLoadingId(row.request_id);
-        try {
-            const res = await api.getMODocuments(row.odoo_mo_id);
-            if (!res.documents || res.documents.length === 0) {
-                toast.warning('Nenhum documento encontrado para esta MO.');
-                return;
-            }
-            const doc = res.documents.find((d: any) => d.is_previewable) ?? res.documents[0];
-            setDocViewer({
-                url: buildFullUrl(doc.view_url),
-                downloadUrl: buildFullUrl(doc.download_url),
-                title: `${doc.name} — ${row.mo_number}`,
-            });
-        } catch (err: any) {
-            toast.error('Erro ao buscar documentos: ' + (err.message || 'Erro desconhecido'));
-        } finally {
-            setDocsLoadingId(null);
-        }
-    };
+    const { openDocs, isLoading: docsLoading, DocViewer } = useDocViewer();
 
     // Helper to determine next status (Lean Cycle)
     const getNextStatus = (current: TaskStatusEnum, isDocs: boolean): TaskStatusEnum | null => {
@@ -197,12 +96,12 @@ export const MatrixTable: React.FC<MatrixTableProps> = ({
                                             <span className="font-mono text-xs font-bold text-slate-400">#{row.request_id.slice(0, 4)}</span>
                                             <h3 className="font-black text-slate-800 text-lg">{row.mo_number}</h3>
                                             <button
-                                                onClick={() => handleOpenDocs(row)}
-                                                disabled={docsLoadingId === row.request_id}
+                                                onClick={() => row.odoo_mo_id && openDocs(row.odoo_mo_id, row.mo_number)}
+                                                disabled={docsLoading(row.odoo_mo_id ?? '')}
                                                 title="Abrir documentos da MO"
                                                 className="flex items-center gap-1 px-2 py-0.5 text-[11px] font-bold text-blue-600 bg-blue-50 border border-blue-200 rounded hover:bg-blue-100 transition-colors disabled:opacity-60 shrink-0"
                                             >
-                                                {docsLoadingId === row.request_id
+                                                {docsLoading(row.odoo_mo_id ?? '')
                                                     ? <Loader2 size={11} className="animate-spin" />
                                                     : <FileText size={11} />
                                                 }
@@ -265,14 +164,7 @@ export const MatrixTable: React.FC<MatrixTableProps> = ({
             </table>
 
             {/* Doc Viewer Modal */}
-            {docViewer && (
-                <DocViewer
-                    url={docViewer.url}
-                    title={docViewer.title}
-                    downloadUrl={docViewer.downloadUrl}
-                    onClose={() => setDocViewer(null)}
-                />
-            )}
+            <DocViewer />
 
             {/* Undo Confirmation Modal */}
             {undoConfirm && (

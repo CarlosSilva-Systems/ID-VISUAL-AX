@@ -21,9 +21,8 @@ import {
 import { cn, Button, Badge, Card, Input } from "./ui";
 import { formatObraDisplayName } from "../../lib/utils";
 import { motion, AnimatePresence } from "motion/react";
-import { DocumentPreviewModal } from "./DocumentPreviewModal";
 import { BottomSheet } from "./BottomSheet";
-import { useBreakpoint } from "@/hooks/useBreakpoint";
+import { useDocViewer } from "../../components/DocViewerModal";import { useBreakpoint } from "@/hooks/useBreakpoint";
 
 interface MOResult {
     odoo_mo_id: number;
@@ -112,8 +111,7 @@ export const ProductionViewUI: React.FC<ProductionViewUIProps> = ({
 
     const canSubmit = !!selectedMO && !!panelType && requesterName.trim().length >= 2 && selectedTypes.size > 0;
 
-    // Docs modal state
-    const [docsMO, setDocsMO] = useState<{ id: number; number: string } | null>(null);
+    const { openDocs, isLoading: docsLoading, DocViewer } = useDocViewer();
 
     const bp = useBreakpoint();
     const isMobile = bp === 'mobile';
@@ -189,9 +187,10 @@ export const ProductionViewUI: React.FC<ProductionViewUIProps> = ({
                                 </button>
                                 <div className="flex items-center gap-2 shrink-0 ml-4">
                                     <button
-                                        onClick={(e) => { e.stopPropagation(); setDocsMO({ id: mo.odoo_mo_id, number: mo.mo_number }); }}
+                                        onClick={(e) => { e.stopPropagation(); openDocs(mo.odoo_mo_id, mo.mo_number); }}
+                                        disabled={docsLoading(mo.odoo_mo_id)}
                                         title="Ver Documentos do Produto"
-                                        className="flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-blue-600 hover:text-white text-slate-500 text-xs font-bold rounded-xl transition-colors"
+                                        className="flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-blue-600 hover:text-white text-slate-500 text-xs font-bold rounded-xl transition-colors disabled:opacity-60"
                                     >
                                         <FileText size={14} />
                                         Docs
@@ -483,13 +482,7 @@ export const ProductionViewUI: React.FC<ProductionViewUIProps> = ({
             )}
 
             {/* Modal de Documentos do Produto */}
-            {docsMO && (
-                <DocumentPreviewModal
-                    moId={String(docsMO.id)}
-                    moNumber={docsMO.number}
-                    onClose={() => setDocsMO(null)}
-                />
-            )}
+            <DocViewer />
         </div>
     );
 };

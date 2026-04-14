@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 import { Fabrication, PACKAGES_CONFIG, TASK_CODE_TO_LABEL, taskCodeToType, Caixinha, PackageType } from '../types';
 import { DrawerCaixinha } from './DrawerCaixinha';
-import { DocumentPreviewModal } from './DocumentPreviewModal';
+import { useDocViewer } from '../../components/DocViewerModal';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { toast } from 'sonner';
@@ -38,49 +38,7 @@ export function LoteDoDia({ initialFabrications, onBack }: LoteDoDiaProps) {
   const [view, setView] = useState<'pre-inicio' | 'matriz'>('pre-inicio');
   const [items, setItems] = useState<Fabrication[]>([]);
   const [selectedTask, setSelectedTask] = useState<{ fabId: string; task: Caixinha } | null>(null);
-
-  // Loading state per fabrication for the docs button
-  const [docsLoadingId, setDocsLoadingId] = useState<string | null>(null);
-
-  // Document preview modal state
-  const [docModalMoId, setDocModalMoId] = useState<string | null>(null);
-  const [docModalMoNumber, setDocModalMoNumber] = useState<string | null>(null);
-
-  const handleOpenDocs = async (fab: Fabrication) => {
-    const odooId = fab.odoo_mo_id ? Number(fab.odoo_mo_id) : null;
-    if (!odooId) {
-      toast.error('MO sem ID Odoo — não é possível abrir documentos.');
-      return;
-    }
-
-    setDocsLoadingId(fab.id);
-    try {
-      const { api } = await import('../../services/api');
-      const res = await api.getMODocuments(odooId);
-
-      if (!res.documents || res.documents.length === 0) {
-        toast.warning('Nenhum documento encontrado para esta MO.');
-        return;
-      }
-
-      // Prefer first previewable doc; fallback to first doc
-      const doc = res.documents.find((d: any) => d.is_previewable) ?? res.documents[0];
-
-      const token = localStorage.getItem('access_token');
-      const apiUrl = (import.meta as any).env.VITE_API_URL || 'http://localhost:8000/api/v1';
-      let origin = '';
-      try { origin = new URL(apiUrl).origin; } catch { origin = window.location.origin; }
-
-      const tokenParam = token ? `${doc.view_url.includes('?') ? '&' : '?'}token=${token}` : '';
-      const fullUrl = `${origin}${doc.view_url.startsWith('/') ? '' : '/'}${doc.view_url}${tokenParam}`;
-
-      window.open(fullUrl, '_blank', 'noopener,noreferrer');
-    } catch (err: any) {
-      toast.error('Erro ao buscar documentos: ' + (err.message || 'Erro desconhecido'));
-    } finally {
-      setDocsLoadingId(null);
-    }
-  };
+  const { openDocs, isLoading: docsLoading, DocViewer } = useDocViewer();
 
   useEffect(() => {
     const initialize = async () => {
@@ -321,12 +279,12 @@ export function LoteDoDia({ initialFabrications, onBack }: LoteDoDiaProps) {
                 </div>
                 <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                   <button
-                    onClick={() => handleOpenDocs(item)}
-                    disabled={docsLoadingId === item.id}
+                    onClick={() => openDocs(item.odoo_mo_id || item.id, item.mo_number)}
+                    disabled={docsLoading(item.odoo_mo_id || item.id)}
                     className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-blue-600 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors disabled:opacity-60"
                     title="Abrir documentos"
                   >
-                    {docsLoadingId === item.id
+                    {docsLoading(item.odoo_mo_id || item.id)
                       ? <Loader2 size={14} className="animate-spin" />
                       : <FileText size={14} />
                     }
@@ -409,12 +367,12 @@ export function LoteDoDia({ initialFabrications, onBack }: LoteDoDiaProps) {
                           {fab.packageType}
                         </span>
                         <button
-                          onClick={() => handleOpenDocs(fab)}
-                          disabled={docsLoadingId === fab.id}
+                          onClick={() => openDocs(fab.odoo_mo_id || fab.id, fab.mo_number)}
+                          disabled={docsLoading(fab.odoo_mo_id || fab.id)}
                           className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-bold text-blue-600 bg-blue-50 border border-blue-200 rounded hover:bg-blue-100 transition-colors disabled:opacity-60"
                           title="Abrir documentos da MO"
                         >
-                          {docsLoadingId === fab.id
+                          {docsLoading(fab.odoo_mo_id || fab.id)
                             ? <Loader2 size={11} className="animate-spin" />
                             : <FileText size={11} />
                           }
@@ -485,13 +443,7 @@ export function LoteDoDia({ initialFabrications, onBack }: LoteDoDiaProps) {
         />
       )}
 
-      {docModalMoId && docModalMoNumber && (
-        <DocumentPreviewModal
-          moId={docModalMoId}
-          moNumber={docModalMoNumber}
-          onClose={() => { setDocModalMoId(null); setDocModalMoNumber(null); }}
-        />
-      )}
+      <DocViewer />
     </div>
   );
 }
