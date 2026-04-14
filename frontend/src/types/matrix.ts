@@ -22,6 +22,7 @@ export interface MatrixCell {
 
 export interface MatrixRow {
     request_id: string; // UUID
+    odoo_mo_id?: number; // Odoo MO ID for document fetching
     mo_number: string;
     obra_nome?: string;
     package_code?: string;
