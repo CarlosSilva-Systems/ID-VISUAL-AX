@@ -15,8 +15,8 @@ import { api } from './api';
  * Garante que apenas uma instância de cada polling está ativa por vez.
  */
 class PollingManager {
-  private idOdooInterval: NodeJS.Timeout | null = null;
-  private idProducaoInterval: NodeJS.Timeout | null = null;
+  private idOdooInterval: ReturnType<typeof setInterval> | null = null;
+  private idProducaoInterval: ReturnType<typeof setInterval> | null = null;
   private isActive = false;
 
   // Métricas de monitoramento
