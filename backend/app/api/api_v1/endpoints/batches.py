@@ -377,160 +377,131 @@ async def update_batch_task(
         raise HTTPException(status_code=500, detail=f"Internal Server Error [ref: {request_id}]")
 
 class CreateBatchRequest(SQLModel):
-    mo_ids: List[int] # Odoo IDs
+    mo_ids: List[int]  # Odoo IDs
 
-from app.services.odoo_client import OdooClient
-from app.core.config import settings
-from app.models.manufacturing import ManufacturingOrder
 
 @router.post("/", response_model=Dict[str, Any])
 async def create_batch(
     payload: CreateBatchRequest,
-    session: AsyncSession = Depends(deps.get_session)
+    session: AsyncSession = Depends(deps.get_session),
 ) -> Any:
     """
-    Create a new Batch from Odoo Manufacturing Orders.
+    Cria um novo Lote a partir de Ordens de Fabricação do Odoo.
     """
-    if not payload.mo_ids:
-        raise HTTPException(status_code=400, detail="No MO IDs provided")
+    from app.services.odoo_client import OdooClient
+    from app.services.odoo_utils import get_active_odoo_db
+    from app.core.config import settings
+    from app.models.manufacturing import ManufacturingOrder
 
-    # 1. Fetch MOs from Odoo
+    if not payload.mo_ids:
+        raise HTTPException(status_code=400, detail="Nenhuma MO informada")
+
+    # 1. Buscar MOs no Odoo usando banco ativo
+    active_db = await get_active_odoo_db(session)
     try:
         client = OdooClient(
-           url=settings.ODOO_URL,
-           db=settings.ODOO_DB,
-           auth_type="jsonrpc_password",
-           login=settings.ODOO_SERVICE_LOGIN,
-           secret=settings.ODOO_SERVICE_PASSWORD
+            url=settings.ODOO_URL,
+            db=active_db,
+            auth_type=settings.ODOO_AUTH_TYPE,
+            login=settings.ODOO_SERVICE_LOGIN,
+            secret=settings.ODOO_SERVICE_PASSWORD,
         )
-        
-        # Read details for selected MOs
         mos_data = await client.search_read(
-            'mrp.production', 
-            domain=[['id', 'in', payload.mo_ids]],
-            fields=['id', 'name', 'product_qty', 'date_start', 'state', 'origin', 'x_studio_nome_da_obra']
+            "mrp.production",
+            domain=[["id", "in", payload.mo_ids]],
+            fields=["id", "name", "product_qty", "date_start", "state", "origin", "x_studio_nome_da_obra"],
         )
         await client.close()
     except Exception as e:
-        request_id = str(uuid.uuid4())[:8]
-        # logger.error(f"Odoo Fetch Error [ref:{request_id}]: {e}")
-        raise HTTPException(status_code=500, detail=f"Odoo Fetch Error [ref: {request_id}]")
+        req_id = str(uuid.uuid4())[:8]
+        logger.exception(f"create_batch: Odoo fetch error [ref:{req_id}]: {e}")
+        raise HTTPException(status_code=500, detail=f"Erro ao buscar MOs no Odoo [ref: {req_id}]")
 
     if not mos_data:
-        raise HTTPException(status_code=404, detail="No MOs found in Odoo for provided IDs")
+        raise HTTPException(status_code=404, detail="Nenhuma MO encontrada no Odoo para os IDs informados")
 
-    # 2. Create Batch
-    try:
-        # Generate batch name with timestamp
-        new_batch = Batch(name=f"Lote {datetime.now().strftime('%d/%m %H:%M')}")
-        session.add(new_batch)
-        await session.commit()
-        await session.refresh(new_batch)
-    except Exception as e:
-        # Log error for debugging if needed, but raise to be caught by middleware
-        # print(f"Batch Create Error: {e}") 
-        raise e
+    # 2. Criar Lote
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    new_batch = Batch(name=f"Lote {now.strftime('%d/%m %H:%M')}")
+    session.add(new_batch)
+    await session.commit()
+    await session.refresh(new_batch)
 
-    # 3. Process MOs
+    # 3. Processar MOs
     created_requests_count = 0
-    
+
     for mo_data in mos_data:
-        # Check/Create Local ManufacturingOrder
-        stmt_mo = select(ManufacturingOrder).where(ManufacturingOrder.odoo_id == mo_data['id'])
+        # Garantir ManufacturingOrder local
+        stmt_mo = select(ManufacturingOrder).where(ManufacturingOrder.odoo_id == mo_data["id"])
         res_mo = await session.exec(stmt_mo)
         local_mo = res_mo.first()
-        
+
         if not local_mo:
-            # Parse date
             date_start = None
-            if mo_data.get('date_start'):
-                # Parse Odoo date string 'YYYY-MM-DD HH:MM:SS'
-                try:
-                    date_start = datetime.strptime(mo_data['date_start'], '%Y-%m-%d %H:%M:%S')
-                except ValueError:
-                    # Fallback if format differs (e.g. ISO)
+            if mo_data.get("date_start"):
+                for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S"):
                     try:
-                        date_start = datetime.fromisoformat(mo_data['date_start'])
-                    except:
-                        date_start = datetime.now()
-            
-            # Handle x_studio_nome_da_obra which can be a list [id, name]
-            raw_obra = mo_data.get('x_studio_nome_da_obra')
-            # print(f"DEBUG: raw_obra={raw_obra} type={type(raw_obra)}.") 
-            obra_name = raw_obra
-            if isinstance(raw_obra, list) and len(raw_obra) > 1:
-                obra_name = raw_obra[1] # [id, "Name"]
-            elif isinstance(raw_obra, list) and len(raw_obra) > 0:
-                 obra_name = str(raw_obra[0]) 
+                        date_start = datetime.strptime(mo_data["date_start"], fmt)
+                        break
+                    except ValueError:
+                        continue
+                if date_start is None:
+                    try:
+                        date_start = datetime.fromisoformat(mo_data["date_start"])
+                    except Exception:
+                        date_start = now
+
+            raw_obra = mo_data.get("x_studio_nome_da_obra")
+            if isinstance(raw_obra, list):
+                obra_name = raw_obra[1] if len(raw_obra) > 1 else (str(raw_obra[0]) if raw_obra else None)
+            else:
+                obra_name = raw_obra
 
             local_mo = ManufacturingOrder(
-                odoo_id=mo_data['id'],
-                name=mo_data['name'],
+                odoo_id=mo_data["id"],
+                name=mo_data["name"],
                 x_studio_nome_da_obra=obra_name,
-                product_qty=mo_data['product_qty'],
-                date_start=date_start if date_start else datetime.now(),
-                state=mo_data['state']
+                product_qty=mo_data["product_qty"],
+                date_start=date_start or now,
+                state=mo_data["state"],
             )
-            
-            # Removed debug logging for clean run
             session.add(local_mo)
             await session.commit()
             await session.refresh(local_mo)
-        
-        # Create IDRequest linked to this Batch
-        
-        # KEY CHANGE: Idempotency Check
-        # Check if there is already an active IDRequest for this MO
+
+        # Verificar IDRequest ativo existente para esta MO
         stmt_existing = select(IDRequest).where(
             IDRequest.mo_id == local_mo.id,
-            col(IDRequest.status).not_in(['concluida', 'cancelada'])
+            col(IDRequest.status).not_in(["concluida", "cancelada"]),
         )
-        existing_req = await session.exec(stmt_existing)
-        active_req = existing_req.first()
+        active_req = (await session.exec(stmt_existing)).first()
 
         if active_req:
-            # Already exists and is active.
-            # Decision: Reuse it? Link to new batch?
-            # User requirement: "reutilizar". 
-            # If it belongs to another batch, we might steal it or error. 
-            # For simplicity & Lean: Move it to the new batch (re-prioritization).
-            
+            # Reassociar ao novo lote se necessário
             if active_req.batch_id != new_batch.id:
-                 active_req.batch_id = new_batch.id
-                 active_req.updated_at = datetime.now()
-                 session.add(active_req)
-                 await session.commit()
-                 created_requests_count += 1 # Counted as "processed into this batch"
-            
-            # Ensure tasks are initialized (Poka-yoke)
+                active_req.batch_id = new_batch.id
+                active_req.updated_at = now
+                session.add(active_req)
+                await session.commit()
+                created_requests_count += 1
             await initialize_request_tasks(active_req.id, session)
-            
-            continue # Skip creating new one
+            continue
 
-        # If not exists, create new
-        new_req = IDRequest(
-            mo_id=local_mo.id,
-            batch_id=new_batch.id,
-            status="nova"
-        )
+        # Criar novo IDRequest
+        new_req = IDRequest(mo_id=local_mo.id, batch_id=new_batch.id, status="nova")
         session.add(new_req)
         await session.commit()
         await session.refresh(new_req)
-        
         created_requests_count += 1
-        
-        # 4. Initialize Tasks (5S) - Single Source of Truth
         await initialize_request_tasks(new_req.id, session)
-            
+
     await session.commit()
-    
-    # Invalidate MOs cache as they are now in a batch
     update_sync_version("odoo_version")
-    
+
     return {
-        "batch_id": new_batch.id, 
-        "message": f"Batch created with {created_requests_count} items",
-        "requests_count": created_requests_count
+        "batch_id": str(new_batch.id),
+        "message": f"Lote criado com {created_requests_count} item(s)",
+        "requests_count": created_requests_count,
     }
 
 @router.get("/finished", response_model=List[Dict[str, Any]])
