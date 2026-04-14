@@ -151,7 +151,10 @@ async def login_access_token(
                 raise
             except Exception as inner_e:
                 safe_msg = sanitize_error_message(str(inner_e))
-                logger.error(f"Fallback Error [ref:{request_id}]: {safe_msg}")
+                logger.error(
+                    f"[Auth Fallback] Erro ao validar funcionário via Odoo [ref:{request_id}] → "
+                    f"login='{form_data.username}' db='{active_db}' | {type(inner_e).__name__}: {safe_msg}"
+                )
                 raise HTTPException(
                     status_code=502, 
                     detail=f"Erro ao validar funcionário [ref: {request_id}]"
@@ -165,7 +168,11 @@ async def login_access_token(
         else:
             # Other errors (500, etc)
             safe_msg = sanitize_error_message(error_msg)
-            logger.error(f"Odoo Auth Error [ref:{request_id}]: {safe_msg}")
+            logger.error(
+                f"[Auth Login] Erro inesperado [ref:{request_id}] → "
+                f"login='{form_data.username}' db='{active_db}' url='{settings.ODOO_URL}' | "
+                f"{type(e).__name__}: {safe_msg}"
+            )
             raise HTTPException(
                 status_code=502, 
                 detail=f"Erro de infraestrutura Odoo [ref: {request_id}]"

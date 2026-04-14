@@ -36,18 +36,33 @@ class OdooClient:
                 # Se for erro de auth ou permissão, não retenta (401, 403)
                 if isinstance(e, httpx.HTTPStatusError) and e.response.status_code in [401, 403]:
                     self.uid = None # Força re-autenticação na próxima
+                    logger.error(
+                        f"[Odoo RPC] Erro HTTP {e.response.status_code} (não retentar) → "
+                        f"url={self.url} db={self.db} | {e}"
+                    )
                     raise
 
                 if attempt == max_retries:
-                    logger.error(f"Odoo final failure after {max_retries} retries: {e}")
+                    logger.error(
+                        f"[Odoo RPC] Falha definitiva após {max_retries} tentativas → "
+                        f"url={self.url} db={self.db} | Erro: {type(e).__name__}: {e}"
+                    )
                     raise
                 
                 # Somente retentar em erros que parecem transitórios
                 if isinstance(e, httpx.HTTPStatusError) and e.response.status_code not in [502, 503, 504, 429]:
+                    logger.error(
+                        f"[Odoo RPC] Erro HTTP {e.response.status_code} (não retentar) → "
+                        f"url={self.url} db={self.db} | {e}"
+                    )
                     raise
 
                 delay = base_delay * (2 ** attempt) + random.uniform(0, 0.5)
-                logger.warning(f"Odoo transient error (attempt {attempt+1}/{max_retries+1}): {e}. Retrying in {delay:.2f}s...")
+                logger.warning(
+                    f"[Odoo RPC] Erro transitório (tentativa {attempt+1}/{max_retries+1}) → "
+                    f"url={self.url} db={self.db} | {type(e).__name__}: {e} | "
+                    f"Retentando em {delay:.2f}s..."
+                )
                 await asyncio.sleep(delay)
             except Exception as e:
                 if "Auth Error" in str(e) or "AUTHENTICATION_FAILED" in str(e):
@@ -83,18 +98,30 @@ class OdooClient:
             },
             "id": 1
         }
+        logger.debug(f"[Odoo Auth] Tentando autenticar → url={self.url} db={self.db} login={self.login}")
         try:
             response = await self.session.post(endpoint, json=payload)
             response.raise_for_status()
             data = response.json()
             if "error" in data:
                 self.uid = None
-                raise Exception(f"Odoo Auth Error: {data['error']}")
+                err_detail = data['error']
+                logger.error(
+                    f"[Odoo Auth] ERRO de autenticação → url={self.url} db={self.db} "
+                    f"login={self.login} | Resposta Odoo: {err_detail}"
+                )
+                raise Exception(f"Odoo Auth Error: {err_detail}")
             uid = data.get("result")
             if not uid:
                 self.uid = None
+                logger.error(
+                    f"[Odoo Auth] FALHA — credenciais rejeitadas pelo Odoo → "
+                    f"url={self.url} db='{self.db}' login='{self.login}' | "
+                    f"Verifique ODOO_DB, ODOO_SERVICE_LOGIN e ODOO_SERVICE_PASSWORD no .env"
+                )
                 raise Exception("AUTHENTICATION_FAILED")
             self.uid = uid
+            logger.info(f"[Odoo Auth] ✓ Autenticado com sucesso → db={self.db} login={self.login} uid={uid}")
             return self.uid
         except Exception:
             self.uid = None
@@ -146,7 +173,10 @@ class OdooClient:
             else:
                 return await self._jsonrpc_call_kw(model, "search_read", args=[domain], kwargs=kwargs)
         except Exception as e:
-            logger.warning(f"Odoo Call Failed: {e}. If JSON-2, might fallback or fail.")
+            logger.warning(
+                f"[Odoo search_read] Falha → model={model} db={self.db} | "
+                f"{type(e).__name__}: {e}"
+            )
             raise e
 
     async def call_kw(self, model: str, method: str, args: List = None, kwargs: Dict = None) -> Any:
