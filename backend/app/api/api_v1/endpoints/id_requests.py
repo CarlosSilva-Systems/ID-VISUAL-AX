@@ -249,13 +249,13 @@ async def transfer_manual_request(
         )
 
         # 2e. Check existing activity (Idempotency - Hardened)
+        # Nota: mail.activity nao tem campo 'active' em Odoo 16/17 — removido do dominio
         domain = [
             ['res_model', '=', 'mrp.production'],
             ['res_id', '=', mo.odoo_id],
             ['activity_type_id', '=', act_type_id],
             ['user_id', '=', user_id],
             ['summary', '=', summary],
-            ['active', '=', True]
         ]
         
         existing = await client.search_read('mail.activity', domain=domain, fields=['id'], limit=1)
@@ -266,14 +266,16 @@ async def transfer_manual_request(
             logger.debug(f"Reusing existing Odoo activity {activity_id} for MO {mo.name}")
         else:
             # 2f. Create Activity (Full Payload)
+            # res_model (string) e res_model_id (int) sao ambos necessarios dependendo da versao do Odoo
             payload = {
+                'res_model': 'mrp.production',
                 'res_model_id': res_model_id,
                 'res_id': mo.odoo_id,
                 'activity_type_id': act_type_id,
                 'summary': summary,
                 'note': note_content,
                 'date_deadline': deadline,
-                'user_id': user_id 
+                'user_id': user_id,
             }
             
             logger.debug(f"Sending Payload to Odoo -> {payload}")
@@ -285,9 +287,16 @@ async def transfer_manual_request(
     except HTTPException:
         raise # Re-raise known HTTP exceptions (422, 500)
     except Exception as e:
-        request_id = str(uuid.uuid4())[:8]
-        logger.exception(f"Odoo Transfer Execution Failed [ref:{request_id}]: {e}")
-        raise HTTPException(status_code=500, detail=f"Erro na transferência para o Odoo [ref: {request_id}]")
+        ref = str(uuid.uuid4())[:8]
+        err_msg = str(e)
+        logger.exception(f"Odoo Transfer Execution Failed [ref:{ref}]: {err_msg}")
+        # Expoe a mensagem do Odoo RPC diretamente para facilitar diagnostico,
+        # mas sem stack trace (ja logado acima).
+        detail = f"Erro na transferência para o Odoo [ref: {ref}]"
+        if "Odoo RPC Error" in err_msg:
+            # Extrai a parte legivel da mensagem de erro do Odoo
+            detail = f"{detail} — {err_msg}"
+        raise HTTPException(status_code=500, detail=detail)
     finally:
         await client.close()
         
