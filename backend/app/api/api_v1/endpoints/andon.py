@@ -906,6 +906,11 @@ async def get_tv_data(
     from app.api.api_v1.endpoints.sync import _sync_state
     from fastapi.responses import JSONResponse
     import time
+    
+    def iso_utc(dt) -> str | None:
+        """Converte datetime para ISO 8601 UTC com sufixo Z."""
+        return dt.isoformat() + 'Z' if dt else None
+    
     try:
         # 1. Obter status locais do banco (sem Odoo)
         stmt = select(AndonStatus)
@@ -981,7 +986,7 @@ async def get_tv_data(
                 "reason": c.reason,
                 "workcenter_name": c.workcenter_name,
                 "triggered_by": c.triggered_by,
-                "created_at": c.created_at.isoformat() if c.created_at else None
+                "created_at": iso_utc(c.created_at)
             })
             if c.status == "IN_PROGRESS":
                 recent_events.append({
@@ -990,7 +995,7 @@ async def get_tv_data(
                     "reason": c.reason,
                     "workcenter_name": c.workcenter_name,
                     "triggered_by": c.triggered_by,
-                    "created_at": c.updated_at.isoformat() if c.updated_at else None
+                    "created_at": iso_utc(c.updated_at)
                 })
             if c.status == "RESOLVED":
                 dur = (c.updated_at - c.created_at).total_seconds() / 60 if c.updated_at and c.created_at else 0
@@ -1001,7 +1006,7 @@ async def get_tv_data(
                     "triggered_by": c.triggered_by,
                     "duration_minutes": dur,
                     "resolved_note": c.resolved_note,
-                    "resolved_at": c.updated_at.isoformat() if c.updated_at else None
+                    "resolved_at": iso_utc(c.updated_at)
                 })
         
         # Build IDRequests and ID Request Events
@@ -1027,9 +1032,9 @@ async def get_tv_data(
                 "notes": idr.notes,
                 "priority": idr.priority,
                 "is_transferred": idr.transferred_to_queue,
-                "created_at": idr.created_at.isoformat() if idr.created_at else None,
-                "started_at": idr.started_at.isoformat() if idr.started_at else None,
-                "finished_at": effective_finished_at.isoformat() if effective_finished_at else None,
+                "created_at": iso_utc(idr.created_at),
+                "started_at": iso_utc(idr.started_at),
+                "finished_at": iso_utc(effective_finished_at),
             })
             
             idr_id_str = str(idr.id)
@@ -1039,7 +1044,7 @@ async def get_tv_data(
                 "mo_number": mo.name,
                 "requester_name": idr.requester_name,
                 "source": idr.source,
-                "created_at": idr.created_at.isoformat() if idr.created_at else None
+                "created_at": iso_utc(idr.created_at)
             })
             if idr.transferred_to_queue and idr.transferred_at:
                 recent_events.append({
@@ -1047,7 +1052,7 @@ async def get_tv_data(
                     "entity_id": idr_id_str,
                     "mo_number": mo.name,
                     "requester_name": idr.requester_name,
-                    "created_at": idr.transferred_at.isoformat()
+                    "created_at": iso_utc(idr.transferred_at)
                 })
             if idr.started_at:
                 recent_events.append({
@@ -1055,7 +1060,7 @@ async def get_tv_data(
                     "entity_id": idr_id_str,
                     "mo_number": mo.name,
                     "requester_name": idr.requester_name,
-                    "created_at": idr.started_at.isoformat()
+                    "created_at": iso_utc(idr.started_at)
                 })
             # Gera IDVISUAL_DONE usando concluido_em como fallback para finished_at
             if idr.status == IDRequestStatus.CONCLUIDA and effective_finished_at:
@@ -1068,7 +1073,7 @@ async def get_tv_data(
                     "requester_name": idr.requester_name,
                     "notes": idr.notes,
                     "duration_minutes": dur,
-                    "finished_at": effective_finished_at.isoformat()
+                    "finished_at": iso_utc(effective_finished_at)
                 })
 
         def get_time(ev: dict) -> str:
@@ -1083,8 +1088,8 @@ async def get_tv_data(
                 "description": c.description, "workcenter_id": c.workcenter_id,
                 "workcenter_name": c.workcenter_name, "mo_id": c.mo_id, "status": c.status,
                 "triggered_by": c.triggered_by, "assigned_team": c.assigned_team,
-                "created_at": c.created_at.isoformat() if c.created_at else None,
-                "updated_at": c.updated_at.isoformat() if c.updated_at else None
+                "created_at": iso_utc(c.created_at),
+                "updated_at": iso_utc(c.updated_at)
             })
 
         payload = {
