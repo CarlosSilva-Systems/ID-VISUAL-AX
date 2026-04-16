@@ -4,6 +4,7 @@
  * - Compares version to skip unchanged responses
  * - Generates log entries from recent_events
  * - Persists last 30 logs in localStorage
+ * - TTS (Web Speech API) para eventos IDVISUAL_DONE
  */
 import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { api } from '../../services/api';
@@ -76,8 +77,9 @@ export interface TVLog {
     source: string;
     text: string;
     requester?: string;
-    highlight?: boolean; // flash on arrival
-    finishedAt?: string; // used for 2h expiration
+    highlight?: boolean;   // flash on arrival
+    blinking?: boolean;    // piscar lento por 5 min (apenas ID_VISUAL_OK)
+    finishedAt?: string;   // usado para expiração de 24h e timer de 5min
 }
 
 interface AndonTVState {
@@ -87,6 +89,7 @@ interface AndonTVState {
     logs: TVLog[];
     lastUpdated: Date | null;
     isConnected: boolean;
+    ttsBlocked: boolean;   // true se o browser bloqueou autoplay de áudio
 }
 
 const AndonTVContext = createContext<AndonTVState>({
@@ -96,6 +99,7 @@ const AndonTVContext = createContext<AndonTVState>({
     logs: [],
     lastUpdated: null,
     isConnected: false,
+    ttsBlocked: false,
 });
 
 // ── localStorage helpers ─────────────────────────────────────────
@@ -117,13 +121,47 @@ function saveLogsToStorage(logs: TVLog[]) {
     try {
         localStorage.setItem(LOGS_KEY, JSON.stringify(logs.slice(0, MAX_LOGS)));
     } catch {
-        // ignore storage errors
+        // ignorar erros de storage
+    }
+}
+
+// ── TTS Engine ───────────────────────────────────────────────────
+
+/**
+ * Sintetiza voz em pt-BR usando Web Speech API.
+ * Retorna true se disparou com sucesso, false se bloqueado/indisponível.
+ */
+function speakPtBR(text: string): boolean {
+    if (typeof window === 'undefined' || !window.speechSynthesis) {
+        console.warn('[TTS] Web Speech API não disponível neste navegador.');
+        return false;
+    }
+    try {
+        // Cancelar qualquer fala em andamento para não acumular fila
+        window.speechSynthesis.cancel();
+
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.lang = 'pt-BR';
+        utterance.rate = 0.95;   // ligeiramente mais lento para clareza
+        utterance.pitch = 1.0;
+        utterance.volume = 1.0;
+
+        // Tentar selecionar voz pt-BR se disponível
+        const voices = window.speechSynthesis.getVoices();
+        const ptVoice = voices.find(v => v.lang === 'pt-BR') ?? voices.find(v => v.lang.startsWith('pt'));
+        if (ptVoice) utterance.voice = ptVoice;
+
+        window.speechSynthesis.speak(utterance);
+        return true;
+    } catch (err) {
+        console.warn('[TTS] Erro ao sintetizar voz:', err);
+        return false;
     }
 }
 
 // ── Event → Log converters ──────────────────────────────────────
 
-function makeLogId() {
+function makeLogId(): string {
     return `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 }
 
@@ -134,92 +172,147 @@ function formatDuration(minutes: number | null | undefined): string {
     return h > 0 ? `${h}h ${m}m` : `${m}m`;
 }
 
-function eventToLog(ev: any): TVLog | null {
-    const ts = ev.resolved_at || ev.finished_at || ev.created_at || new Date().toISOString();
+/**
+ * Converte um evento do backend em uma entrada de log.
+ * Retorna null para eventos que não devem gerar log.
+ * Valida campos obrigatórios antes de retornar (Req 12 AC 4-5).
+ */
+export function eventToLog(ev: Record<string, unknown>): TVLog | null {
+    const ts = (ev.resolved_at ?? ev.finished_at ?? ev.created_at ?? new Date().toISOString()) as string;
     const time = new Date(ts).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+
+    let log: TVLog | null = null;
 
     switch (ev.event_type) {
         case 'CALL_OPENED': {
             const type: LogType = ev.color === 'RED' ? 'VERMELHO' : 'AMARELO';
-            return {
+            log = {
                 id: makeLogId(),
                 timestamp: ts,
                 type,
-                source: ev.workcenter_name || 'Mesa',
+                source: (ev.workcenter_name as string) || 'Mesa',
                 text: `[${time}] ${type} — ${ev.workcenter_name} — ${ev.reason}`,
-                requester: ev.triggered_by,
+                requester: ev.triggered_by as string | undefined,
                 highlight: true,
             };
+            break;
         }
         case 'CALL_IN_PROGRESS': {
-            return {
+            log = {
                 id: makeLogId(),
                 timestamp: ts,
                 type: 'INFO',
-                source: ev.workcenter_name || 'Mesa',
+                source: (ev.workcenter_name as string) || 'Mesa',
                 text: `[${time}] EM ATENDIMENTO — ${ev.workcenter_name} — ${ev.reason}`,
-                requester: ev.triggered_by,
+                requester: ev.triggered_by as string | undefined,
             };
+            break;
         }
         case 'CALL_RESOLVED': {
-            const dur = formatDuration(ev.duration_minutes);
-            return {
+            const dur = formatDuration(ev.duration_minutes as number | undefined);
+            log = {
                 id: makeLogId(),
                 timestamp: ts,
                 type: 'RESOLVIDO',
-                source: ev.workcenter_name || 'Mesa',
+                source: (ev.workcenter_name as string) || 'Mesa',
                 text: `[${time}] RESOLVIDO — ${ev.workcenter_name}${dur ? ` — Tempo: ${dur}` : ''}${ev.resolved_note ? ` — ${ev.resolved_note}` : ''}`,
-                requester: ev.triggered_by,
+                requester: ev.triggered_by as string | undefined,
                 highlight: false,
             };
+            break;
         }
         case 'IDVISUAL_CREATED': {
-            // A entrada na fila SÓ DEVE gerar log quando a ID visual entrar na fila E SOMENTE SE tiver sido solicitada pela produção.
+            // Só gera log quando solicitado manualmente pela produção (Req 1 AC 1, Req 10 AC 2)
             if (!ev.requester_name && ev.source !== 'manual') return null;
-
-            return {
+            log = {
                 id: makeLogId(),
                 timestamp: ts,
                 type: 'ID_VISUAL_PENDENTE',
                 source: 'Produção',
                 text: `Nova solicitação recebida da produção.`,
-                requester: ev.requester_name,
+                requester: ev.requester_name as string | undefined,
             };
+            break;
         }
         case 'IDVISUAL_STARTED': {
-            return {
+            log = {
                 id: makeLogId(),
                 timestamp: ts,
                 type: 'ID_VISUAL_EM_ANDAMENTO',
                 source: 'Engenharia',
                 text: `Trabalhando.`,
-                requester: ev.requester_name,
+                requester: ev.requester_name as string | undefined,
             };
+            break;
         }
         case 'IDVISUAL_DONE': {
-            return {
+            log = {
                 id: makeLogId(),
                 timestamp: ts,
                 type: 'ID_VISUAL_OK',
                 source: 'Engenharia',
                 text: `ID visual pronta, favor buscar na mesa da engenharia.`,
-                requester: ev.requester_name,
+                requester: ev.requester_name as string | undefined,
                 highlight: true,
-                finishedAt: ev.finished_at,
+                blinking: true,
+                finishedAt: ev.finished_at as string | undefined,
             };
+            break;
         }
         case 'IDVISUAL_TRANSFERRED': {
-            // Transição silenciosa: não gera log quando transferido da aba solicitações para a fila principal.
-            return null;
+            // Gera log laranja de transferência para a fila (Req 2)
+            log = {
+                id: makeLogId(),
+                timestamp: ts,
+                type: 'ID_VISUAL_TRANSFERRED',
+                source: 'Sistema',
+                text: `Transferida para fila de produção.`,
+                requester: ev.requester_name as string | undefined,
+            };
+            break;
         }
         default:
             return null;
     }
+
+    // Validação de campos obrigatórios (Req 12 AC 4-5)
+    if (!log || !log.id || !log.timestamp || !log.type || !log.source || !log.text) {
+        console.error('[AndonTV] Log com campos obrigatórios ausentes, descartando:', log);
+        return null;
+    }
+
+    return log;
+}
+
+// ── Pretty Printer (Req 11) ──────────────────────────────────────
+
+/**
+ * Formata um TVLog em string legível para debugging.
+ * Omite campos opcionais quando undefined/null.
+ */
+export function formatLogForDebug(log: TVLog): string {
+    const fields: Record<string, unknown> = {
+        id: log.id,
+        timestamp: new Date(log.timestamp).toISOString(),
+        type: log.type,
+        source: log.source,
+        text: log.text,
+    };
+    if (log.requester != null) fields.requester = log.requester;
+    if (log.highlight != null) fields.highlight = log.highlight;
+    if (log.blinking != null) fields.blinking = log.blinking;
+    if (log.finishedAt != null) fields.finishedAt = new Date(log.finishedAt).toISOString();
+
+    return JSON.stringify(fields, null, 2);
 }
 
 // ── Provider ─────────────────────────────────────────────────────
 
 const POLL_INTERVAL_MS = 8000;
+/** Tempo em ms que ID_VISUAL_OK fica piscando (5 minutos) */
+const BLINK_DURATION_MS = 5 * 60 * 1000;
+/** Tempo em ms após o qual ID_VISUAL_OK é removido do log (24 horas) */
+const LOG_EXPIRY_MS = 24 * 60 * 60 * 1000;
 
 export function AndonTVProvider({ children }: { children: React.ReactNode }) {
     const [state, setState] = useState<AndonTVState>({
@@ -229,9 +322,10 @@ export function AndonTVProvider({ children }: { children: React.ReactNode }) {
         logs: loadLogsFromStorage(),
         lastUpdated: null,
         isConnected: false,
+        ttsBlocked: false,
     });
 
-    // Track which event entity IDs we've already logged to avoid duplicates
+    // Rastreia chaves de eventos já processados para evitar duplicatas (Req 9)
     const seenEventKeys = useRef<Set<string>>(new Set());
     const lastVersion = useRef<string | number | null>(null);
 
@@ -241,10 +335,9 @@ export function AndonTVProvider({ children }: { children: React.ReactNode }) {
         const fetchData = async () => {
             try {
                 const data = await api.getAndonTVData();
-
                 if (cancelled) return;
 
-                // Skip if version unchanged
+                // Pular se versão não mudou (Req 9 — evita re-render desnecessário)
                 const newVersion = data.version;
                 if (newVersion === lastVersion.current) {
                     setState(prev => ({ ...prev, isConnected: true }));
@@ -252,20 +345,47 @@ export function AndonTVProvider({ children }: { children: React.ReactNode }) {
                 }
                 lastVersion.current = newVersion;
 
-                // Generate new logs from recent_events (avoid duplicates)
+                // Gerar novos logs a partir de recent_events (evitar duplicatas)
                 const newLogs: TVLog[] = [];
-                const events: any[] = (data.recent_events || []).slice().reverse(); // oldest first
+                // Backend retorna mais recente primeiro; invertemos para processar do mais antigo
+                const events: Record<string, unknown>[] = Array.isArray(data.recent_events)
+                    ? (data.recent_events as Record<string, unknown>[]).slice().reverse()
+                    : [];
+
+                const ttsQueue: string[] = [];
+
                 for (const ev of events) {
-                    const key = `${ev.event_type}:${ev.entity_id}:${ev.event_type === 'CALL_RESOLVED' ? 'R' : ev.event_type === 'IDVISUAL_DONE' ? 'D' : ev.event_type === 'CALL_IN_PROGRESS' ? 'P' : 'O'}`;
+                    // Chave única por evento + estado (Req 9 AC 2, AC 5)
+                    const suffix =
+                        ev.event_type === 'CALL_RESOLVED' ? 'R' :
+                        ev.event_type === 'IDVISUAL_DONE' ? 'D' :
+                        ev.event_type === 'CALL_IN_PROGRESS' ? 'P' : 'O';
+                    const key = `${ev.event_type}:${ev.entity_id ?? ev.mo_number ?? ev.workcenter_name}:${suffix}`;
+
                     if (!seenEventKeys.current.has(key)) {
                         seenEventKeys.current.add(key);
                         const log = eventToLog(ev);
-                        if (log) newLogs.push(log);
+                        if (log) {
+                            newLogs.push(log);
+                            // Enfileirar TTS para IDVISUAL_DONE (Req 4 AC 1)
+                            if (ev.event_type === 'IDVISUAL_DONE' && ev.requester_name) {
+                                ttsQueue.push(
+                                    `Atenção ${ev.requester_name}. Sua Identificação Visual foi finalizada. Por favor retire na mesa da engenharia.`
+                                );
+                            }
+                        }
                     }
                 }
 
+                // Disparar TTS para cada IDVISUAL_DONE novo (Req 4)
+                let ttsWasBlocked = false;
+                for (const msg of ttsQueue) {
+                    const ok = speakPtBR(msg);
+                    if (!ok) ttsWasBlocked = true;
+                }
+
                 setState(prev => {
-                    // Prepend new logs (newest first)
+                    // Prepend novos logs (mais recente no topo)
                     const combined = [...newLogs.slice().reverse(), ...prev.logs].slice(0, MAX_LOGS);
                     saveLogsToStorage(combined);
                     return {
@@ -275,9 +395,10 @@ export function AndonTVProvider({ children }: { children: React.ReactNode }) {
                         logs: combined,
                         lastUpdated: new Date(),
                         isConnected: true,
+                        ttsBlocked: ttsWasBlocked ? true : prev.ttsBlocked,
                     };
                 });
-            } catch (err) {
+            } catch {
                 if (!cancelled) {
                     setState(prev => ({ ...prev, isConnected: false }));
                 }
@@ -286,28 +407,36 @@ export function AndonTVProvider({ children }: { children: React.ReactNode }) {
 
         const fetchInterval = setInterval(fetchData, POLL_INTERVAL_MS);
 
-        // --- Log Expiration Cleanup (Every 1 minute) ---
+        // Limpeza de logs expirados e desativação de blinking após 5min (a cada 1 minuto)
         const cleanupInterval = setInterval(() => {
             const now = new Date();
             setState(prev => {
-                const filtered = prev.logs.filter(log => {
-                    if (log.type !== 'ID_VISUAL_OK') return true;
+                let changed = false;
+                const updated = prev.logs
+                    .filter(log => {
+                        if (log.type !== 'ID_VISUAL_OK') return true;
+                        // Expirar após 24h (Req 5 AC 6)
+                        const base = log.finishedAt ? new Date(log.finishedAt) : new Date(log.timestamp);
+                        const keep = now.getTime() - base.getTime() < LOG_EXPIRY_MS;
+                        if (!keep) changed = true;
+                        return keep;
+                    })
+                    .map(log => {
+                        if (log.type !== 'ID_VISUAL_OK' || !log.blinking) return log;
+                        // Desativar blinking após 5min (Req 5 AC 5)
+                        const base = log.finishedAt ? new Date(log.finishedAt) : new Date(log.timestamp);
+                        if (now.getTime() - base.getTime() >= BLINK_DURATION_MS) {
+                            changed = true;
+                            return { ...log, blinking: false };
+                        }
+                        return log;
+                    });
 
-                    // Expiration relative to finishedAt (priority) or timestamp (fallback)
-                    const baseDate = log.finishedAt ? new Date(log.finishedAt) : new Date(log.timestamp);
-                    const diffMs = now.getTime() - baseDate.getTime();
-                    const hoursElapsed = diffMs / (1000 * 60 * 60);
-
-                    return hoursElapsed < 2; // Return true to keep log if < 2h
-                });
-
-                if (filtered.length !== prev.logs.length) {
-                    saveLogsToStorage(filtered);
-                    return { ...prev, logs: filtered };
-                }
-                return prev;
+                if (!changed) return prev;
+                saveLogsToStorage(updated);
+                return { ...prev, logs: updated };
             });
-        }, 60000);
+        }, 60_000);
 
         fetchData();
         return () => {
