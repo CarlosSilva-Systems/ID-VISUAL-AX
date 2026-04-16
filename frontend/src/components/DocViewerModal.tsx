@@ -221,6 +221,13 @@ export function DocViewerModal({ viewUrl, downloadUrl, title, onClose, onBack }:
 // ── hook ──────────────────────────────────────────────────────────────────────
 
 /**
+ * Timeout para a requisicao de listagem de documentos.
+ * Se o Odoo nao responder em DOCS_FETCH_TIMEOUT_MS, a requisicao e abortada
+ * e o usuario recebe feedback imediato para tentar novamente.
+ */
+const DOCS_FETCH_TIMEOUT_MS = 15_000; // 15 segundos
+
+/**
  * Estado interno do modal: discriminated union entre lista e viewer.
  * Armazenar 'docs' e 'moNumber' no estado 'viewer' permite que o botao
  * 'Voltar' restaure a lista sem uma nova chamada a API.
@@ -233,6 +240,14 @@ export function useDocViewer() {
     const [loading, setLoading] = useState<string | null>(null);
     const [modal, setModal] = useState<ModalState | null>(null);
 
+    /**
+     * Ref para o AbortController da requisicao em andamento.
+     * Permite cancelar a requisicao anterior se o usuario clicar em outro
+     * botao de docs antes da primeira terminar, e tambem e usado pelo
+     * timeout interno para abortar requisicoes lentas.
+     */
+    const abortRef = React.useRef<AbortController | null>(null);
+
     const openDocs = useCallback(async (odooMoId: number | string, moNumber: string) => {
         const id = Number(odooMoId);
         if (!id) {
@@ -240,9 +255,26 @@ export function useDocViewer() {
             return;
         }
         const key = String(id);
+
+        // Cancela requisicao anterior se ainda estiver em andamento.
+        // Isso garante que apenas 1 requisicao fica ativa por vez e que
+        // o loading do botao anterior e limpo corretamente.
+        if (abortRef.current) {
+            abortRef.current.abort();
+        }
+
+        const controller = new AbortController();
+        abortRef.current = controller;
+
+        // Timeout: aborta automaticamente apos DOCS_FETCH_TIMEOUT_MS.
+        // O timer e limpo no finally para nao vazar se a requisicao terminar antes.
+        const timeoutId = setTimeout(() => {
+            controller.abort();
+        }, DOCS_FETCH_TIMEOUT_MS);
+
         setLoading(key);
         try {
-            const res = await api.getMODocuments(id);
+            const res = await api.getMODocuments(id, { signal: controller.signal });
             if (!res.documents || res.documents.length === 0) {
                 toast.warning('Nenhum documento encontrado para esta MO.');
                 return;
@@ -271,9 +303,26 @@ export function useDocViewer() {
             // eliminando o tempo de espera percebido ao clicar no botao.
             setModal({ type: 'list', moNumber, docs: res.documents });
         } catch (err: any) {
+            // AbortError pode ser: timeout interno OU cancelamento por novo clique.
+            // Distinguimos pelo estado do controller para dar a mensagem certa.
+            if (err instanceof DOMException && err.name === 'AbortError') {
+                if (controller.signal.aborted) {
+                    // Foi o timeout — informa o usuario
+                    toast.error('Tempo esgotado ao buscar documentos. Tente novamente.');
+                }
+                // Se foi cancelado por novo clique, nao exibe nada (o novo clique
+                // ja iniciou seu proprio loading)
+                return;
+            }
             toast.error('Erro ao buscar documentos: ' + (err.message || 'Erro desconhecido'));
         } finally {
-            setLoading(null);
+            clearTimeout(timeoutId);
+            // Limpa o loading apenas se este controller ainda e o ativo.
+            // Evita que um abort por novo clique limpe o loading do novo clique.
+            if (abortRef.current === controller) {
+                setLoading(null);
+                abortRef.current = null;
+            }
         }
     }, []);
 
