@@ -199,7 +199,7 @@ export const Layout = ({ children, user }: LayoutProps) => {
       items: [
         { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, path: "/id-visual/dashboard" },
         { id: "requests", label: "Solicitações (ID)", icon: ClipboardList, path: "/id-visual/solicitacoes", badge: manualCount > 0 ? (manualCount > 99 ? '99+' : manualCount) : null },
-        { id: "production", label: "Visão Produção", icon: Zap, path: "/id-visual/producao" },
+        { id: "production", label: "Produção", icon: Factory, path: "/id-visual/producao" },
         { id: "analytics", label: "Indicadores", icon: BarChart3, path: "/id-visual/analytics" },
       ]
     },
