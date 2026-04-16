@@ -931,9 +931,11 @@ async def get_tv_data(
         stmt_calls = select(AndonCall).where(AndonCall.created_at >= recent_date)
         recent_calls = (await session.execute(stmt_calls)).scalars().all()
         
+        # Query otimizada: IDRequests concluídas recentemente OU ainda abertas
+        # Usa concluido_em para IDRequests finalizadas (em vez de updated_at)
         stmt_idrs = select(IDRequest, ManufacturingOrder).join(ManufacturingOrder).where(
             (IDRequest.status != IDRequestStatus.CONCLUIDA) | 
-            (IDRequest.updated_at >= recent_date)
+            (IDRequest.concluido_em >= recent_date)
         )
         recent_idrs_joined = (await session.execute(stmt_idrs)).all()
         
