@@ -30,10 +30,14 @@ def update_id_request_status(req: IDRequest, new_status: IDRequestStatus | str) 
     if new_status == IDRequestStatus.EM_PROGRESSO or new_status == IDRequestStatus.EM_LOTE:
         if not req.iniciado_em:  # Não sobrescreve se já começou e voltou
             req.iniciado_em = now_utc
+        if not req.started_at:  # Para compatibilidade com Andon TV
+            req.started_at = now_utc
 
     elif new_status == IDRequestStatus.CONCLUIDA:
         if not req.concluido_em:
             req.concluido_em = now_utc
+        if not req.finished_at:  # CRÍTICO: Para Andon TV gerar evento IDVISUAL_DONE
+            req.finished_at = now_utc
             
     elif new_status == IDRequestStatus.ENTREGUE:
         if not req.entregue_em:
