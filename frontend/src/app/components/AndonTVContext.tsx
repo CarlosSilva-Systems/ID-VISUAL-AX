@@ -413,6 +413,7 @@ export function AndonTVProvider({ children }: { children: React.ReactNode }) {
                         lastUpdated: new Date(),
                         isConnected: true,
                         ttsBlocked: ttsWasBlocked ? true : prev.ttsBlocked,
+                        wsConnected: prev.wsConnected,
                     };
                 });
             } catch {
