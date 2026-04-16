@@ -342,7 +342,7 @@ export function AndonTVProvider({ children }: { children: React.ReactNode }) {
         let cancelled = false;
 
         // ── Fetch /tv-data ────────────────────────────────────────────────────
-        // force=true: disparado pelo WebSocket — nunca bloqueado, ignora versão
+        // force=true: disparado pelo WebSocket — nunca bloqueado, sempre processa
         // force=false: polling de fundo — bloqueado se já há um em andamento
         const fetchData = async (force = false) => {
             if (!force && isPollingRef.current) return;
@@ -351,13 +351,20 @@ export function AndonTVProvider({ children }: { children: React.ReactNode }) {
                 const data = await api.getAndonTVData();
                 if (cancelled) return;
 
-                const newVersion = data.version;
-                // Só pular se versão igual E não foi forçado pelo WebSocket
-                if (!force && newVersion === lastVersion.current) {
+                const newVersion = String(data.version ?? '');
+
+                // Sempre processar se forçado (WebSocket) ou se versão mudou
+                const versionChanged = newVersion !== lastVersion.current;
+                if (!force && !versionChanged) {
+                    // Versão igual no polling — apenas confirmar conexão
                     setState(prev => prev.isConnected ? prev : { ...prev, isConnected: true });
                     return;
                 }
-                lastVersion.current = newVersion;
+
+                // Atualizar versão rastreada
+                if (versionChanged) {
+                    lastVersion.current = newVersion;
+                }
 
                 const newLogs: TVLog[] = [];
                 const events: Record<string, unknown>[] = Array.isArray(data.recent_events)
