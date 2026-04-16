@@ -27,6 +27,7 @@ from app.services.websocket_manager import ws_manager
 
 import logging
 import json
+import traceback
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
@@ -939,10 +940,11 @@ async def get_tv_data(
         id_reqs_data = []
         recent_events = []
         
-        # Build Call Events
+        # Build Call Events — entity_id é necessário para deduplicação no frontend
         for c in recent_calls:
             recent_events.append({
                 "event_type": "CALL_OPENED",
+                "entity_id": c.id,
                 "color": c.color,
                 "reason": c.reason,
                 "workcenter_name": c.workcenter_name,
@@ -952,6 +954,7 @@ async def get_tv_data(
             if c.status == "IN_PROGRESS":
                 recent_events.append({
                     "event_type": "CALL_IN_PROGRESS",
+                    "entity_id": c.id,
                     "reason": c.reason,
                     "workcenter_name": c.workcenter_name,
                     "triggered_by": c.triggered_by,
@@ -961,6 +964,7 @@ async def get_tv_data(
                 dur = (c.updated_at - c.created_at).total_seconds() / 60 if c.updated_at and c.created_at else 0
                 recent_events.append({
                     "event_type": "CALL_RESOLVED",
+                    "entity_id": c.id,
                     "workcenter_name": c.workcenter_name,
                     "triggered_by": c.triggered_by,
                     "duration_minutes": dur,
@@ -992,8 +996,10 @@ async def get_tv_data(
                 "finished_at": idr.finished_at.isoformat() if idr.finished_at else None,
             })
             
+            idr_id_str = str(idr.id)
             recent_events.append({
                 "event_type": "IDVISUAL_CREATED",
+                "entity_id": idr_id_str,
                 "mo_number": mo.name,
                 "requester_name": idr.requester_name,
                 "source": idr.source,
@@ -1002,6 +1008,7 @@ async def get_tv_data(
             if idr.transferred_to_queue and idr.transferred_at:
                 recent_events.append({
                     "event_type": "IDVISUAL_TRANSFERRED",
+                    "entity_id": idr_id_str,
                     "mo_number": mo.name,
                     "requester_name": idr.requester_name,
                     "created_at": idr.transferred_at.isoformat()
@@ -1009,6 +1016,7 @@ async def get_tv_data(
             if idr.started_at:
                 recent_events.append({
                     "event_type": "IDVISUAL_STARTED",
+                    "entity_id": idr_id_str,
                     "mo_number": mo.name,
                     "requester_name": idr.requester_name,
                     "created_at": idr.started_at.isoformat()
@@ -1017,6 +1025,7 @@ async def get_tv_data(
                 dur = (idr.finished_at - (idr.started_at or idr.created_at)).total_seconds() / 60
                 recent_events.append({
                     "event_type": "IDVISUAL_DONE",
+                    "entity_id": idr_id_str,
                     "mo_number": mo.name,
                     "requester_name": idr.requester_name,
                     "notes": idr.notes,
@@ -1024,9 +1033,10 @@ async def get_tv_data(
                     "finished_at": idr.finished_at.isoformat()
                 })
 
-        def get_time(ev):
+        def get_time(ev: dict) -> str:
             return ev.get('finished_at') or ev.get('resolved_at') or ev.get('created_at') or ""
-        recent_events.sort(key=get_time)
+        # Ordenar do mais recente para o mais antigo (Req 8 AC 7)
+        recent_events.sort(key=get_time, reverse=True)
             
         calls_data = []
         for c in all_active_calls:
@@ -1087,4 +1097,82 @@ async def get_andon_history(
         stats[cat] = stats.get(cat, 0) + 1
         
     return [{"label": k, "value": v} for k, v in stats.items()]
+
+
+@router.delete("/reset")
+async def reset_andon_data(
+    session: AsyncSession = Depends(get_session),
+):
+    """
+    Reseta dados de teste do sistema Andon.
+    - Remove chamados ativos criados nos últimos 7 dias
+    - Remove IDRequests manuais em estados abertos
+    - Reseta todos os AndonStatus para cinza
+    - Incrementa andon_version para forçar atualização do frontend
+    """
+    from app.api.api_v1.endpoints.sync import update_sync_version
+    from sqlmodel import delete
+
+    try:
+        cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=7)
+
+        # 1. Deletar chamados ativos recentes
+        stmt_calls = select(AndonCall).where(
+            AndonCall.status != "RESOLVED",
+            AndonCall.created_at >= cutoff,
+        )
+        res_calls = await session.execute(stmt_calls)
+        calls_to_delete = res_calls.scalars().all()
+        calls_deleted = len(calls_to_delete)
+        for call in calls_to_delete:
+            await session.delete(call)
+
+        # 2. Deletar IDRequests manuais em estados abertos
+        open_statuses = [
+            IDRequestStatus.NOVA.value,
+            IDRequestStatus.TRIAGEM.value,
+            IDRequestStatus.EM_LOTE.value,
+        ]
+        stmt_idrs = select(IDRequest).where(
+            IDRequest.source == "manual",
+            IDRequest.status.in_(open_statuses),
+        )
+        res_idrs = await session.execute(stmt_idrs)
+        idrs_to_delete = res_idrs.scalars().all()
+        id_requests_deleted = len(idrs_to_delete)
+        for idr in idrs_to_delete:
+            await session.delete(idr)
+
+        # 3. Resetar todos os AndonStatus para cinza
+        stmt_statuses = select(AndonStatus)
+        res_statuses = await session.execute(stmt_statuses)
+        all_statuses = res_statuses.scalars().all()
+        statuses_reset = len(all_statuses)
+        for s in all_statuses:
+            s.status = "cinza"
+            s.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
+            s.updated_by = "system:reset"
+
+        await session.commit()
+
+        # 4. Forçar atualização do frontend via versão
+        update_sync_version("andon_version")
+
+        logger.info(
+            f"[Andon Reset] calls_deleted={calls_deleted} "
+            f"id_requests_deleted={id_requests_deleted} "
+            f"statuses_reset={statuses_reset}"
+        )
+
+        return {
+            "calls_deleted": calls_deleted,
+            "id_requests_deleted": id_requests_deleted,
+            "statuses_reset": statuses_reset,
+        }
+
+    except Exception as e:
+        req_id = str(uuid.uuid4())[:8]
+        logger.exception(f"Erro em reset_andon_data [ref:{req_id}]: {e}")
+        await session.rollback()
+        raise HTTPException(status_code=500, detail=f"Erro interno no servidor [ref: {req_id}]")
 
