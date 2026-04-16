@@ -6,7 +6,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
     Activity, AlertTriangle, CheckCircle2, Clock, Factory,
     Image as ImageIcon, MonitorPlay, Package, Users, Signal, SignalLow, Zap,
-    AlertCircle, Info, ChevronRight
+    Volume2, ChevronRight
 } from 'lucide-react';
 import { AndonTVProvider, LogType, TVCall, TVIDRequest, TVLog, TVWorkcenter, useAndonTV } from './AndonTVContext';
 import { normalizeLabel, cn } from '../../lib/utils';
@@ -93,6 +93,8 @@ const LOG_STYLES: Record<LogType, { bg: string; badge: string; text: string; hig
 
 function LogItem({ log }: { log: TVLog }) {
     const style = LOG_STYLES[log.type] || LOG_STYLES.INFO;
+
+    // Flash de chegada (2s) — para todos os logs com highlight:true
     const [flash, setFlash] = useState(log.highlight ?? false);
     useEffect(() => {
         if (!flash) return;
@@ -100,16 +102,41 @@ function LogItem({ log }: { log: TVLog }) {
         return () => clearTimeout(t);
     }, []);
 
-    // Extrair o timestamp e o texto separados, pois o backend (AndonTVContext) 
-    // manda o texto com "[HH:MM] " prefixado, vamos limpar isso se existir.
+    // Piscar lento em verde por 5 min — apenas ID_VISUAL_OK com blinking:true (Req 5 AC 1-4)
+    const [blink, setBlink] = useState(log.blinking ?? false);
+    useEffect(() => {
+        if (!blink) return;
+        // Alterna visibilidade a cada 500ms (500ms ligado, 500ms desligado)
+        const interval = setInterval(() => {
+            setBlink(prev => {
+                // Se o log já não está mais em blinking (atualizado pelo context), parar
+                if (!log.blinking) return false;
+                return prev; // mantém o estado de piscar — o context desativa após 5min
+            });
+        }, 500);
+        return () => clearInterval(interval);
+    }, [log.blinking]);
+
+    // Sincronizar blink com mudança externa (context desativa blinking após 5min)
+    useEffect(() => {
+        setBlink(log.blinking ?? false);
+    }, [log.blinking]);
+
     const cleanText = log.text.replace(/^\[\d{2}:\d{2}\]\s*/, '');
     const timeOnly = new Date(log.timestamp).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 
+    // Classe de fundo: blinking usa animação CSS, flash usa highlight estático
+    const bgClass = blink
+        ? 'animate-pulse bg-emerald-900/40 rounded-lg'
+        : flash
+            ? (style.highlight ?? '')
+            : '';
+
     return (
-        <div className={`relative pl-6 py-3 transition-all duration-700 ${flash ? style.highlight ?? '' : ''}`}>
+        <div className={`relative pl-6 py-3 transition-all duration-700 ${bgClass}`}>
             {/* Linha vertical da timeline */}
             <div className="absolute left-[11px] top-0 bottom-0 w-[2px] bg-slate-800" />
-            
+
             {/* Ponto da timeline */}
             <div className={`absolute left-2.5 top-5 w-2 h-2 rounded-full -translate-x-[3px] ring-4 ring-slate-950 ${style.dot}`} />
 
@@ -122,7 +149,7 @@ function LogItem({ log }: { log: TVLog }) {
                         {log.type.replace(/_/g, ' ')}
                     </span>
                 </div>
-                
+
                 <div className="min-w-0 pr-2">
                     <p className={`text-base leading-snug tracking-wide ${style.text} break-words drop-shadow-md`}>
                         {normalizeLabel(cleanText)}
@@ -138,7 +165,7 @@ function LogItem({ log }: { log: TVLog }) {
     );
 }
 
-function LogPanel({ logs }: { logs: TVLog[] }) {
+function LogPanel({ logs, ttsBlocked }: { logs: TVLog[]; ttsBlocked: boolean }) {
     const ref = useRef<HTMLDivElement>(null);
     const prevLen = useRef(logs.length);
     useEffect(() => {
@@ -147,6 +174,10 @@ function LogPanel({ logs }: { logs: TVLog[] }) {
         }
         prevLen.current = logs.length;
     }, [logs.length]);
+
+    // Separar logs piscantes (fixos no topo) dos demais (Req 5 AC 4)
+    const blinkingLogs = logs.filter(l => l.blinking);
+    const normalLogs = logs.filter(l => !l.blinking);
 
     return (
         <aside className="w-[30%] min-w-[320px] h-full bg-slate-950 border-l border-slate-800/60 flex flex-col shadow-2xl relative z-10">
@@ -157,17 +188,34 @@ function LogPanel({ logs }: { logs: TVLog[] }) {
                     <h2 className="text-lg font-black tracking-[0.2em] uppercase text-slate-200">
                         Registro de Eventos
                     </h2>
+                    {/* Fallback visual TTS bloqueado (Req 4 AC 5) */}
+                    {ttsBlocked && (
+                        <div
+                            title="Síntese de voz bloqueada pelo navegador"
+                            className="ml-auto flex items-center gap-1 text-amber-400 animate-pulse"
+                        >
+                            <Volume2 className="w-4 h-4" />
+                            <span className="text-[10px] font-black uppercase tracking-wider">Voz bloqueada</span>
+                        </div>
+                    )}
                 </div>
                 <p className="text-xs text-slate-500 font-bold mt-1 tracking-wide uppercase">Histórico Recente</p>
             </div>
 
+            {/* Logs piscantes fixos no topo (ID_VISUAL_OK em blinking) — Req 5 AC 4 */}
+            {blinkingLogs.length > 0 && (
+                <div className="border-b border-emerald-800/40 bg-emerald-950/20 shrink-0">
+                    {blinkingLogs.map(log => <LogItem key={log.id} log={log} />)}
+                </div>
+            )}
+
             {/* Log list (Timeline) */}
             <div ref={ref} className="flex-1 overflow-y-auto px-4 py-4 scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent">
-                {logs.length === 0 ? (
+                {normalLogs.length === 0 && blinkingLogs.length === 0 ? (
                     <p className="text-center text-slate-600 text-sm font-bold mt-12 tracking-widest uppercase">Nenhum evento</p>
                 ) : (
                     <div className="relative pb-8">
-                        {logs.map(log => <LogItem key={log.id} log={log} />)}
+                        {normalLogs.map(log => <LogItem key={log.id} log={log} />)}
                     </div>
                 )}
             </div>
@@ -628,7 +676,7 @@ function TimerBar({ duration }: { duration: number }) {
 // ── Main TV Component ─────────────────────────────────────────────
 
 function AndonTVInner() {
-    const { workcenters, calls, idRequests, logs, isConnected, lastUpdated } = useAndonTV();
+    const { workcenters, calls, idRequests, logs, isConnected, lastUpdated, ttsBlocked } = useAndonTV();
     const [currentTime, setCurrentTime] = useState(new Date());
     const [panelIndex, setPanelIndex] = useState(0);
     const [transitioning, setTransitioning] = useState(false);
@@ -822,7 +870,7 @@ function AndonTVInner() {
                 </main>
 
                 {/* Fixed right log panel */}
-                <LogPanel logs={logs} />
+                <LogPanel logs={logs} ttsBlocked={ttsBlocked} />
             </div>
 
             {/* ── Start Overlay (Required for Fullscreen) ── */}
