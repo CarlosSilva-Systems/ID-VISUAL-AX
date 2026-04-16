@@ -121,6 +121,22 @@ export function VisaoProducao() {
     });
   };
 
+  // ── Não Consta ──
+  const handleNaoConsta = async (requestId: string, items: string[], registradoPor: string) => {
+    try {
+      await api.reportNaoConsta(requestId, items, registradoPor);
+      toast.success('Não Consta registrado com sucesso.', {
+        description: `${items.length} item(ns) registrado(s).`,
+        duration: 4000,
+      });
+      // Atualiza o histórico para refletir o badge "Não Consta"
+      await fetchHistory();
+    } catch (err: any) {
+      toast.error(err.message || 'Erro ao registrar Não Consta');
+      throw err; // Propaga para o modal não fechar em caso de erro
+    }
+  };
+
   // ── Submit request ──
   const handleSubmit = async () => {
     if (!selectedMO || !panelType || !requesterName.trim()) return;
@@ -187,6 +203,7 @@ export function VisaoProducao() {
       submitting={submitting}
       blueprints={blueprints}
       history={history}
+      onNaoConsta={handleNaoConsta}
     />
   );
 }
