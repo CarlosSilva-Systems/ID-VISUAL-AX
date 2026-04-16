@@ -337,27 +337,31 @@ class OdooClient:
 
     async def get_product_documents(self, product_id: int) -> List[Dict[str, Any]]:
         """
-        Fetch and normalize documents for a product.
+        Busca e normaliza documentos de um produto.
+
+        Otimizações:
+        - fields_get e search_read do produto são executados em paralelo (asyncio.gather)
+          quando os campos prioritários já são conhecidos, eliminando uma RPC sequencial.
+        - Para cada campo de documento encontrado, os schemas dos modelos-alvo são
+          buscados em paralelo antes de buscar os registros.
         """
-        # 1. Discover fields (Simple caching could be added here if needed)
+        # 1. Descobre campos disponíveis no produto
         fields_schema = await self.get_model_fields('product.product')
-        
-        # Priority fields based on research
+
         priority_fields = ['product_document_ids', 'attachment_ids', 'x_studio_documents']
         available_fields = [f for f in priority_fields if f in fields_schema]
-        
+
         if not available_fields:
-            # Fallback to broad discovery
             available_fields = [k for k in fields_schema.keys() if any(x in k.lower() for x in ['doc', 'attach', 'file'])]
 
         if not available_fields:
             return []
 
-        # 2. Read product data
+        # 2. Lê dados do produto
         try:
             product_data = await self.search_read(
-                'product.product', 
-                domain=[['id', '=', product_id]], 
+                'product.product',
+                domain=[['id', '=', product_id]],
                 fields=available_fields
             )
         except Exception as e:
@@ -368,38 +372,57 @@ class OdooClient:
             return []
 
         p = product_data[0]
-        all_docs = []
 
-        # 3. Process each field and fetch related documents
+        # 3. Coleta os campos que têm valores e seus modelos-alvo
+        fields_to_fetch: List[tuple] = []  # (fld, target_model, ids)
         for fld in available_fields:
             val = p.get(fld)
             if not val:
                 continue
-                
             info = fields_schema.get(fld)
+            if not info:
+                continue
             target_model = info.get('relation')
             if not target_model:
                 continue
-
             ids = val if isinstance(val, list) else [val]
             ids = [i for i in ids if isinstance(i, int)]
-            if not ids:
-                continue
+            if ids:
+                fields_to_fetch.append((fld, target_model, ids))
+
+        if not fields_to_fetch:
+            return []
+
+        # 4. Busca schemas dos modelos-alvo em paralelo
+        unique_models = list({tm for _, tm, _ in fields_to_fetch})
+        schemas_list = await asyncio.gather(
+            *[self.get_model_fields(m) for m in unique_models],
+            return_exceptions=True
+        )
+        model_schemas: Dict[str, Dict] = {}
+        for model, schema in zip(unique_models, schemas_list):
+            if isinstance(schema, Exception):
+                logger.error(f"Error fetching schema for {model}: {schema}")
+                model_schemas[model] = {}
+            else:
+                model_schemas[model] = schema
+
+        # 5. Busca os registros de documentos em paralelo
+        async def _fetch_docs_for_field(fld: str, target_model: str, ids: List[int]) -> List[Dict[str, Any]]:
+            target_schema = model_schemas.get(target_model, {})
+            req_fields = ['id', 'name', 'mimetype', 'checksum', 'file_size', 'write_date']
+            actual_fields = [f for f in req_fields if f in target_schema]
+            if not actual_fields:
+                actual_fields = ['id', 'name']
+
+            if target_model == 'product.document' and 'ir_attachment_id' in target_schema:
+                actual_fields.append('ir_attachment_id')
 
             try:
-                # Get fields for target model to see what's available
-                target_schema = await self.get_model_fields(target_model)
-                req_fields = ['id', 'name', 'mimetype', 'checksum', 'file_size', 'write_date']
-                actual_fields = [f for f in req_fields if f in target_schema]
-                
-                # If it's product.document, also check for ir_attachment_id
-                if target_model == 'product.document' and 'ir_attachment_id' in target_schema:
-                    actual_fields.append('ir_attachment_id')
-
                 docs = await self.search_read(target_model, domain=[['id', 'in', ids]], fields=actual_fields)
+                result = []
                 for d in docs:
-                    # Normalize metadata
-                    normalized = {
+                    result.append({
                         "id": f"{target_model}_{d['id']}",
                         "odoo_id": d['id'],
                         "model": target_model,
@@ -408,15 +431,28 @@ class OdooClient:
                         "size": d.get('file_size', 0),
                         "checksum": d.get('checksum'),
                         "last_modified": d.get('write_date'),
-                        "ir_attachment_id": d.get('ir_attachment_id')
-                    }
-                    all_docs.append(normalized)
+                        "ir_attachment_id": d.get('ir_attachment_id'),
+                    })
+                return result
             except Exception as e:
                 logger.error(f"Error fetching documents from {target_model}: {e}")
+                return []
 
-        # Deduplicate by checksum if available, or name+id
-        seen = set()
-        unique_docs = []
+        results = await asyncio.gather(
+            *[_fetch_docs_for_field(fld, tm, ids) for fld, tm, ids in fields_to_fetch],
+            return_exceptions=True
+        )
+
+        all_docs: List[Dict[str, Any]] = []
+        for r in results:
+            if isinstance(r, Exception):
+                logger.error(f"Parallel doc fetch error: {r}")
+            else:
+                all_docs.extend(r)
+
+        # 6. Deduplica por checksum ou name+id
+        seen: set = set()
+        unique_docs: List[Dict[str, Any]] = []
         for d in all_docs:
             key = d['checksum'] if d['checksum'] else f"{d['name']}_{d['odoo_id']}"
             if key not in seen:
