@@ -368,8 +368,8 @@ async def trigger_andon_basic(
             session.add(call)
             resolved_calls.append(call)
     
-    update_sync_version("andon_version")
     await session.commit()
+    update_sync_version("andon_version")  # após commit — dados já persistidos
 
     # Emitir WebSocket para chamados que requerem justificativa
     if req.status == "verde":
@@ -582,8 +582,8 @@ async def create_andon_call(
             session, req.workcenter_id, req.workcenter_name,
             req.color.lower(), req.triggered_by
         )
-        update_sync_version("andon_version")
         await session.commit()
+        update_sync_version("andon_version")  # após commit — dados já persistidos
         return call
 
     except Exception as e:
