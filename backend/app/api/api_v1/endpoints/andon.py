@@ -896,49 +896,51 @@ async def update_call_status(
 @router.get("/tv-data")
 async def get_tv_data(
     session: AsyncSession = Depends(get_session),
-    odoo: Any = Depends(get_odoo_client)
 ):
+    """
+    Endpoint de dados para o Andon TV.
+    Usa APENAS o banco de dados local (sem chamadas ao Odoo) para garantir
+    resposta rápida e consistente. Os workcenters são lidos da tabela AndonStatus
+    que é mantida sincronizada pelos endpoints de acionamento.
+    """
     from app.api.api_v1.endpoints.sync import _sync_state
     from fastapi.responses import JSONResponse
     import time
     try:
-        # 1. Obter todos os Workcenters do Odoo
-        odoo_wcs = await odoo.get_workcenters()
-        
-        # 2. Obter status locais do SQLite
+        # 1. Obter status locais do banco (sem Odoo)
         stmt = select(AndonStatus)
         result = await session.execute(stmt)
-        local_statuses = {s.workcenter_odoo_id: s.status for s in result.scalars().all()}
-        
+        all_statuses = result.scalars().all()
+        local_statuses = {s.workcenter_odoo_id: s for s in all_statuses}
+
+        # 2. Chamados ativos
         active_calls_stmt = select(AndonCall).where(AndonCall.status != "RESOLVED")
         res_active_calls = await session.execute(active_calls_stmt)
         all_active_calls = res_active_calls.scalars().all()
-        wc_calls_map = {}
+        wc_calls_map: dict = {}
         for c in all_active_calls:
             wc_calls_map.setdefault(c.workcenter_id, []).append(c)
 
-        # 3. Mapear Workcenters
+        # 3. Montar workcenters a partir do AndonStatus (sem Odoo)
         workcenters_data = []
-        for wc in odoo_wcs:
-            wc_id = wc["id"]
-            local_status = local_statuses.get(wc_id, "cinza")
+        for wc_id, status_rec in local_statuses.items():
             active_calls = wc_calls_map.get(wc_id, [])
-            
+
             if active_calls:
                 is_red = any(c.color == "RED" for c in active_calls)
                 status_color = "vermelho" if is_red else "amarelo"
             else:
-                status_color = local_status
+                status_color = status_rec.status
 
             workcenters_data.append({
                 "id": wc_id,
-                "name": normalize_label(wc["name"]),
-                "code": normalize_label(wc.get("code", "")),
+                "name": normalize_label(status_rec.workcenter_name),
+                "code": "",
                 "status": status_color,
                 "active_calls_count": len(active_calls),
                 "operational_status": "PRODUÇÃO LIGADA" if status_color == "verde" else "PARADO",
                 "has_active_production": status_color in ["verde", "amarelo_suave"],
-                "operator_name": "---", 
+                "operator_name": "---",
                 "fabrication_code": "---",
                 "obra_name": "---",
                 "stage": "Livre",
@@ -946,15 +948,12 @@ async def get_tv_data(
                 "is_online": True,
                 "sync_pending": False
             })
-            
-        # 4. Construir recent_events
+
+        # 4. Construir recent_events (apenas banco local)
         recent_date = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=24)
         stmt_calls = select(AndonCall).where(AndonCall.created_at >= recent_date)
         recent_calls = (await session.execute(stmt_calls)).scalars().all()
-        
-        # Query robusta: IDRequests abertas OU concluídas recentemente.
-        # Para IDRequests CONCLUIDAS, usa concluido_em (preferencial) ou finished_at como fallback.
-        # Isso garante que registros antigos (sem concluido_em) também sejam incluídos.
+
         stmt_idrs = select(IDRequest, ManufacturingOrder).join(ManufacturingOrder).where(
             or_(
                 IDRequest.status != IDRequestStatus.CONCLUIDA,
@@ -963,11 +962,11 @@ async def get_tv_data(
             )
         )
         recent_idrs_joined = (await session.execute(stmt_idrs)).all()
-        
+
         id_reqs_data = []
         recent_events = []
-        
-        # Build Call Events — entity_id é necessário para deduplicação no frontend
+
+        # Build Call Events
         for c in recent_calls:
             recent_events.append({
                 "event_type": "CALL_OPENED",
