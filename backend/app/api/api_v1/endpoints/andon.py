@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request, WebSocket, WebSocketDisconnect
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
@@ -32,6 +32,25 @@ import traceback
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+# ── WebSocket — Andon TV ──────────────────────────────────────────────────────
+
+@router.websocket("/ws")
+async def andon_websocket(websocket: WebSocket):
+    """
+    WebSocket dedicado para o Andon TV.
+    O cliente conecta e fica aguardando mensagens do servidor.
+    Quando qualquer dado do Andon muda (chamado, ID Visual, etc.), o servidor
+    envia { "event": "andon_version_changed" } e o cliente faz fetch imediato
+    do /tv-data em vez de esperar o próximo ciclo de polling.
+    """
+    await ws_manager.connect(websocket)
+    try:
+        while True:
+            # Manter conexão viva — cliente pode enviar ping a qualquer momento
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        ws_manager.disconnect(websocket)
 
 def _build_mo_name(p_info: dict) -> str:
     """Monta o nome da fabricação no formato 'Obra | MO' ou só um deles se o outro faltar."""
