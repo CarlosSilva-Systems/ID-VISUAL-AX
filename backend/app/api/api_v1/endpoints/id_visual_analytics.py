@@ -93,18 +93,21 @@ async def get_kpis(
     def avg(lst):
         return _fmt_minutes(sum(lst) / len(lst)) if lst else None
 
+    nao_consta = [r for r in requests if r.nao_consta_em is not None]
+
     return {
         "total_solicitadas": total,
         "total_concluidas": len(concluidas),
         "total_em_aberto": len(em_aberto),
         "total_bloqueadas": len(bloqueadas),
+        "total_nao_consta": len(nao_consta),
         "taxa_conclusao_pct": round(len(concluidas) / total * 100, 1) if total else 0,
         "taxa_bloqueio_pct": round(len(bloqueadas) / total * 100, 1) if total else 0,
+        "taxa_nao_consta_pct": round(len(nao_consta) / total * 100, 1) if total else 0,
         "tempo_medio_fila_min": avg(tempo_fila),
         "tempo_medio_producao_min": avg(tempo_producao),
         "lead_time_medio_min": avg(lead_time),
     }
-
 
 @router.get("/volume-diario")
 async def get_volume_diario(
@@ -302,4 +305,76 @@ async def get_lotes_stats(
         "lotes_finalizados": len(finalizados),
         "lotes_em_andamento": len([b for b in batches if b.status == BatchStatus.ACTIVE]),
         "tempo_medio_lote_min": _fmt_minutes(sum(tempos) / len(tempos)) if tempos else None,
+    }
+
+
+@router.get("/nao-consta")
+async def get_nao_consta(
+    from_date: str = Query(..., description="YYYY-MM-DD"),
+    to_date: str = Query(..., description="YYYY-MM-DD"),
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Métricas de ocorrências 'Não Consta' no período.
+
+    Retorna:
+    - total_ocorrencias: quantas requests tiveram nao_consta registrado
+    - taxa_nao_consta_pct: % das requests solicitadas no período que tiveram nao_consta
+    - por_item: ranking dos task_codes mais frequentes nas ocorrências
+    - ocorrencias: lista detalhada com mo_number, items, registrado_por, data
+    """
+    start = _naive(datetime.fromisoformat(from_date))
+    end = _naive(datetime.fromisoformat(to_date) + timedelta(days=1))
+
+    # Total de requests solicitadas no período (denominador da taxa)
+    stmt_total = select(func.count(IDRequest.id)).where(
+        IDRequest.created_at >= start,
+        IDRequest.created_at < end,
+    )
+    total_solicitadas = (await session.execute(stmt_total)).scalar() or 0
+
+    # Requests com nao_consta registrado no período
+    stmt_nc = (
+        select(IDRequest, ManufacturingOrder.name)
+        .join(ManufacturingOrder, IDRequest.mo_id == ManufacturingOrder.id, isouter=True)
+        .where(
+            IDRequest.nao_consta_em >= start,
+            IDRequest.nao_consta_em < end,
+        )
+        .order_by(IDRequest.nao_consta_em.desc())
+    )
+    rows = (await session.execute(stmt_nc)).all()
+
+    total_ocorrencias = len(rows)
+    taxa = round(total_ocorrencias / total_solicitadas * 100, 1) if total_solicitadas else 0
+
+    # Ranking por item (task_code)
+    item_counts: dict[str, int] = {}
+    ocorrencias = []
+    for r, mo_name in rows:
+        items = r.nao_consta_items or []
+        for item in items:
+            item_counts[item] = item_counts.get(item, 0) + 1
+        ocorrencias.append({
+            "request_id": str(r.id),
+            "mo_number": mo_name or "—",
+            "items": items,
+            "registrado_por": r.nao_consta_registrado_por or "—",
+            "nao_consta_em": r.nao_consta_em.isoformat() if r.nao_consta_em else None,
+            "package_code": r.package_code or "—",
+        })
+
+    por_item = sorted(
+        [{"task_code": k, "total": v} for k, v in item_counts.items()],
+        key=lambda x: x["total"],
+        reverse=True,
+    )
+
+    return {
+        "total_ocorrencias": total_ocorrencias,
+        "total_solicitadas": total_solicitadas,
+        "taxa_nao_consta_pct": taxa,
+        "por_item": por_item,
+        "ocorrencias": ocorrencias,
     }
