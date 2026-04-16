@@ -101,3 +101,45 @@
 - **Testes automatizados**: Não implementados nesta iteração. A spec descreve propriedades de round-trip (Req 12) que podem ser validadas com Vitest + property-based testing (fast-check). Recomendado como próxima tarefa.
 - **Persistência de `seenEventKeys`**: Intencionalmente não persistido (ver decisão no design.md).
 - **Integração Odoo para reset**: O endpoint de reset não pausa WOs no Odoo — apenas limpa dados locais.
+
+---
+
+## Correções Pós-Implementação (Debugging)
+
+### Bug #1: Eventos `IDVISUAL_DONE` não eram gerados
+
+**Sintoma**: Andon TV não recebia notificações quando ID Visual era finalizada.
+
+**Causa Raiz**:
+1. `update_id_request_status()` setava `concluido_em` mas **não setava `finished_at`**
+2. Endpoint `/tv-data` verificava `if idr.finished_at:` antes de gerar evento `IDVISUAL_DONE`
+3. Como `finished_at` era sempre `None`, o evento nunca era gerado
+
+**Solução**: 
+- Modificado `update_id_request_status()` para setar `finished_at` quando status vira `CONCLUIDA`
+- Também seta `started_at` quando status vira `EM_PROGRESSO` (para consistência)
+- **Commit**: `fix(id-request): seta finished_at e started_at quando status muda para CONCLUIDA/EM_PROGRESSO`
+
+### Bug #2: Query filtrava IDRequests concluídas por `updated_at`
+
+**Sintoma**: IDRequests finalizadas há mais de 24h não apareciam nos `recent_events`.
+
+**Causa Raiz**:
+- Query usava `IDRequest.updated_at >= recent_date` para filtrar IDRequests concluídas
+- `updated_at` pode ser alterado por qualquer mudança no registro (não reflete quando foi finalizada)
+- IDRequests finalizadas há mais de 24h eram excluídas mesmo que `finished_at` fosse recente
+
+**Solução**:
+- Modificada query para usar `IDRequest.concluido_em >= recent_date` em vez de `updated_at`
+- `concluido_em` é o timestamp correto de quando a ID Visual foi finalizada
+- **Commit**: `fix(andon-tv): usa concluido_em em vez de updated_at para filtrar IDRequests finalizadas`
+
+### Validação
+
+Para testar a correção:
+1. Finalizar um lote com IDRequests (endpoint `PATCH /batches/{id}/finalize`)
+2. Verificar que `finished_at` e `concluido_em` foram setados no banco
+3. Polling do Andon TV deve receber evento `IDVISUAL_DONE` com `entity_id`, `mo_number`, `requester_name`, `finished_at`
+4. TTS deve disparar automaticamente
+5. Log deve aparecer no painel lateral com badge verde piscante por 5 minutos
+6. Após 24h, o log deve ser removido automaticamente
