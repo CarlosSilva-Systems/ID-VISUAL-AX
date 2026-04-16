@@ -5,6 +5,7 @@ from slowapi.util import get_remote_address
 limiter = Limiter(key_func=get_remote_address)
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel import select
+from sqlalchemy import or_
 from typing import Any, Dict, List, Optional
 from datetime import datetime, timedelta, timezone
 import uuid
@@ -931,11 +932,15 @@ async def get_tv_data(
         stmt_calls = select(AndonCall).where(AndonCall.created_at >= recent_date)
         recent_calls = (await session.execute(stmt_calls)).scalars().all()
         
-        # Query otimizada: IDRequests concluídas recentemente OU ainda abertas
-        # Usa concluido_em para IDRequests finalizadas (em vez de updated_at)
+        # Query robusta: IDRequests abertas OU concluídas recentemente.
+        # Para IDRequests CONCLUIDAS, usa concluido_em (preferencial) ou finished_at como fallback.
+        # Isso garante que registros antigos (sem concluido_em) também sejam incluídos.
         stmt_idrs = select(IDRequest, ManufacturingOrder).join(ManufacturingOrder).where(
-            (IDRequest.status != IDRequestStatus.CONCLUIDA) | 
-            (IDRequest.concluido_em >= recent_date)
+            or_(
+                IDRequest.status != IDRequestStatus.CONCLUIDA,
+                IDRequest.concluido_em >= recent_date,
+                IDRequest.finished_at >= recent_date,
+            )
         )
         recent_idrs_joined = (await session.execute(stmt_idrs)).all()
         
