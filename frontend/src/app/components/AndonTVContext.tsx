@@ -90,6 +90,7 @@ interface AndonTVState {
     lastUpdated: Date | null;
     isConnected: boolean;
     ttsBlocked: boolean;   // true se o browser bloqueou autoplay de áudio
+    wsConnected: boolean;  // true se WebSocket está ativo (tempo real)
 }
 
 const AndonTVContext = createContext<AndonTVState>({
@@ -100,6 +101,7 @@ const AndonTVContext = createContext<AndonTVState>({
     lastUpdated: null,
     isConnected: false,
     ttsBlocked: false,
+    wsConnected: false,
 });
 
 // ── localStorage helpers ─────────────────────────────────────────
@@ -341,6 +343,13 @@ const BLINK_DURATION_MS = 5 * 60 * 1000;
 /** Tempo em ms após o qual ID_VISUAL_OK é removido do log (24 horas) */
 const LOG_EXPIRY_MS = 24 * 60 * 60 * 1000;
 
+/** Constrói a URL do WebSocket a partir da URL da API HTTP */
+function buildWsUrl(): string {
+    const apiUrl = (import.meta as Record<string, any>).env?.VITE_API_URL || 'http://localhost:8000/api/v1';
+    // Trocar protocolo http(s) por ws(s) e apontar para /andon/ws
+    return apiUrl.replace(/^http/, 'ws') + '/andon/ws';
+}
+
 export function AndonTVProvider({ children }: { children: React.ReactNode }) {
     const [state, setState] = useState<AndonTVState>({
         workcenters: [],
@@ -350,21 +359,29 @@ export function AndonTVProvider({ children }: { children: React.ReactNode }) {
         lastUpdated: null,
         isConnected: false,
         ttsBlocked: false,
+        wsConnected: false,
     });
 
     // Rastreia chaves de eventos já processados para evitar duplicatas (Req 9)
     const seenEventKeys = useRef<Set<string>>(new Set());
     const lastVersion = useRef<string | number | null>(null);
+    // Ref para o WebSocket ativo — permite fechar na limpeza
+    const wsRef = useRef<WebSocket | null>(null);
+    // Ref para o fetch em andamento — evita fetches paralelos
+    const fetchingRef = useRef(false);
 
     useEffect(() => {
         let cancelled = false;
 
+        // ── Fetch de dados do /tv-data ────────────────────────────────────────
         const fetchData = async () => {
+            if (fetchingRef.current) return; // evitar fetch paralelo
+            fetchingRef.current = true;
             try {
                 const data = await api.getAndonTVData();
                 if (cancelled) return;
 
-                // Pular se versão não mudou (Req 9 — evita re-render desnecessário)
+                // Pular se versão não mudou
                 const newVersion = data.version;
                 if (newVersion === lastVersion.current) {
                     setState(prev => ({ ...prev, isConnected: true }));
@@ -433,9 +450,57 @@ export function AndonTVProvider({ children }: { children: React.ReactNode }) {
                 if (!cancelled) {
                     setState(prev => ({ ...prev, isConnected: false }));
                 }
+            } finally {
+                fetchingRef.current = false;
             }
         };
 
+        // ── WebSocket — notificação em tempo real ─────────────────────────────
+        let wsReconnectTimeout: ReturnType<typeof setTimeout> | null = null;
+
+        const connectWebSocket = () => {
+            if (cancelled) return;
+
+            const wsUrl = buildWsUrl();
+            const ws = new WebSocket(wsUrl);
+            wsRef.current = ws;
+
+            ws.onopen = () => {
+                if (cancelled) { ws.close(); return; }
+                setState(prev => ({ ...prev, wsConnected: true }));
+                // Conexão estabelecida — fetch imediato para sincronizar
+                fetchData();
+            };
+
+            ws.onmessage = (event) => {
+                if (cancelled) return;
+                try {
+                    const msg = JSON.parse(event.data as string) as { event: string; data?: unknown };
+                    if (msg.event === 'andon_version_changed') {
+                        // Dado mudou no servidor — fetch imediato
+                        fetchData();
+                    }
+                } catch {
+                    // mensagem malformada — ignorar
+                }
+            };
+
+            ws.onclose = () => {
+                wsRef.current = null;
+                setState(prev => ({ ...prev, wsConnected: false }));
+                if (!cancelled) {
+                    // Reconectar após 3s
+                    wsReconnectTimeout = setTimeout(connectWebSocket, 3000);
+                }
+            };
+
+            ws.onerror = () => {
+                // onclose será chamado logo após — reconexão tratada lá
+                ws.close();
+            };
+        };
+
+        // Polling de fallback — garante atualização mesmo se WebSocket cair
         const fetchInterval = setInterval(fetchData, POLL_INTERVAL_MS);
 
         // Limpeza de logs expirados e desativação de blinking após 5min (a cada 1 minuto)
@@ -469,11 +534,19 @@ export function AndonTVProvider({ children }: { children: React.ReactNode }) {
             });
         }, 60_000);
 
+        // Iniciar: fetch imediato + WebSocket
         fetchData();
+        connectWebSocket();
+
         return () => {
             cancelled = true;
             clearInterval(fetchInterval);
             clearInterval(cleanupInterval);
+            if (wsReconnectTimeout) clearTimeout(wsReconnectTimeout);
+            if (wsRef.current) {
+                wsRef.current.close();
+                wsRef.current = null;
+            }
         };
     }, []);
 
