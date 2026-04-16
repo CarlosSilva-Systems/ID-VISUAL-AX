@@ -676,7 +676,7 @@ function TimerBar({ duration }: { duration: number }) {
 // ── Main TV Component ─────────────────────────────────────────────
 
 function AndonTVInner() {
-    const { workcenters, calls, idRequests, logs, isConnected, lastUpdated, ttsBlocked } = useAndonTV();
+    const { workcenters, calls, idRequests, logs, isConnected, lastUpdated, ttsBlocked, wsConnected } = useAndonTV();
     const [currentTime, setCurrentTime] = useState(new Date());
     const [panelIndex, setPanelIndex] = useState(0);
     const [transitioning, setTransitioning] = useState(false);
@@ -815,8 +815,11 @@ function AndonTVInner() {
                         : <SignalLow className="w-4 h-4 animate-pulse" />
                     }
                     <span className="hidden sm:inline">
-                        {isConnected ? 'Ao vivo' : 'Reconectando...'}
+                        {!isConnected ? 'Reconectando...' : wsConnected ? 'Tempo real' : 'Ao vivo'}
                     </span>
+                    {isConnected && wsConnected && (
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    )}
                 </div>
 
                 {/* Clock */}
