@@ -527,7 +527,8 @@ export const api = {
     },
 
     getAndonTVData: async () => {
-        return api.get('/andon/tv-data');
+        // Adiciona timestamp para garantir que o browser nunca use cache desta rota
+        return api.get(`/andon/tv-data?_t=${Date.now()}`);
     },
 
     // ── Settings ──
