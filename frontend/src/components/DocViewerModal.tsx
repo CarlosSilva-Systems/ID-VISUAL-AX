@@ -1,6 +1,14 @@
 /**
  * DocViewerModal — visualizador de documentos inline padronizado.
  *
+ * Fluxo otimizado em 2 etapas:
+ *   1. Clique no botão → abre modal de lista imediatamente (feedback instantâneo
+ *      assim que a API responde, sem aguardar carregamento de binário)
+ *   2. Clique em um doc da lista → carrega o binário e exibe o viewer
+ *
+ * Excecao: se a MO tiver exatamente 1 documento previewable, abre direto
+ * no viewer (comportamento anterior preservado para o caso mais comum).
+ *
  * Uso:
  *   const { openDocs, isLoading, DocViewer } = useDocViewer();
  *   <button onClick={() => openDocs(odooMoId, moNumber)} disabled={isLoading(odooMoId)}>Docs</button>
@@ -212,15 +220,18 @@ export function DocViewerModal({ viewUrl, downloadUrl, title, onClose, onBack }:
 
 // ── hook ──────────────────────────────────────────────────────────────────────
 
-interface DocViewerState {
-    viewUrl: string;
-    downloadUrl: string;
-    title: string;
-}
+/**
+ * Estado interno do modal: discriminated union entre lista e viewer.
+ * Armazenar 'docs' e 'moNumber' no estado 'viewer' permite que o botao
+ * 'Voltar' restaure a lista sem uma nova chamada a API.
+ */
+type ModalState =
+    | { type: 'list'; moNumber: string; docs: DocMeta[] }
+    | { type: 'viewer'; viewUrl: string; downloadUrl: string; title: string; docs: DocMeta[]; moNumber: string };
 
 export function useDocViewer() {
     const [loading, setLoading] = useState<string | null>(null);
-    const [viewer, setViewer] = useState<DocViewerState | null>(null);
+    const [modal, setModal] = useState<ModalState | null>(null);
 
     const openDocs = useCallback(async (odooMoId: number | string, moNumber: string) => {
         const id = Number(odooMoId);
@@ -236,12 +247,29 @@ export function useDocViewer() {
                 toast.warning('Nenhum documento encontrado para esta MO.');
                 return;
             }
-            const doc = res.documents.find((d: DocMeta) => d.is_previewable) ?? res.documents[0];
-            setViewer({
-                viewUrl: buildFullUrl(doc.view_url),
-                downloadUrl: buildFullUrl(doc.download_url),
-                title: `${doc.name} — ${moNumber}`,
-            });
+
+            const previewable: DocMeta[] = res.documents.filter((d: DocMeta) => d.is_previewable);
+
+            // Caso especial: exatamente 1 documento previewable → abre direto no viewer,
+            // preservando o comportamento anterior e evitando uma tela intermediaria
+            // desnecessaria para o caso mais comum.
+            if (res.documents.length === 1 && previewable.length === 1) {
+                const doc = previewable[0];
+                setModal({
+                    type: 'viewer',
+                    viewUrl: buildFullUrl(doc.view_url),
+                    downloadUrl: buildFullUrl(doc.download_url),
+                    title: `${doc.name} — ${moNumber}`,
+                    docs: res.documents,
+                    moNumber,
+                });
+                return;
+            }
+
+            // Caso geral: exibe lista para o usuario escolher qual documento abrir.
+            // O binario so e carregado (via iframe) quando o usuario seleciona um doc,
+            // eliminando o tempo de espera percebido ao clicar no botao.
+            setModal({ type: 'list', moNumber, docs: res.documents });
         } catch (err: any) {
             toast.error('Erro ao buscar documentos: ' + (err.message || 'Erro desconhecido'));
         } finally {
@@ -249,12 +277,53 @@ export function useDocViewer() {
         }
     }, []);
 
+    const handleSelectDoc = useCallback((doc: DocMeta, moNumber: string, allDocs: DocMeta[]) => {
+        setModal({
+            type: 'viewer',
+            viewUrl: buildFullUrl(doc.view_url),
+            downloadUrl: buildFullUrl(doc.download_url),
+            title: `${doc.name} — ${moNumber}`,
+            docs: allDocs,
+            moNumber,
+        });
+    }, []);
+
+    const handleBack = useCallback(() => {
+        setModal(prev =>
+            prev?.type === 'viewer'
+                ? { type: 'list', moNumber: prev.moNumber, docs: prev.docs }
+                : null
+        );
+    }, []);
+
     const isLoading = useCallback((key: string | number) => loading === String(key), [loading]);
 
     const DocViewer = useCallback(() => {
-        if (!viewer) return null;
-        return <DocViewerModal {...viewer} onClose={() => setViewer(null)} />;
-    }, [viewer]);
+        if (!modal) return null;
 
-    return { openDocs, isLoading, DocViewer };
+        if (modal.type === 'list') {
+            return (
+                <DocListModal
+                    moNumber={modal.moNumber}
+                    docs={modal.docs}
+                    onSelectDoc={(doc) => handleSelectDoc(doc, modal.moNumber, modal.docs)}
+                    onClose={() => setModal(null)}
+                />
+            );
+        }
+
+        return (
+            <DocViewerModal
+                viewUrl={modal.viewUrl}
+                downloadUrl={modal.downloadUrl}
+                title={modal.title}
+                onClose={() => setModal(null)}
+                onBack={modal.docs.length > 1 ? handleBack : undefined}
+            />
+        );
+    }, [modal, handleSelectDoc, handleBack]);
+
+    // 'docsLoading' exportado como alias de 'isLoading' para retrocompatibilidade
+    // com componentes que ja usavam a desestruturacao: { isLoading: docsLoading }
+    return { openDocs, isLoading, docsLoading: isLoading, DocViewer };
 }
