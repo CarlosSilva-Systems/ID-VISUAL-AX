@@ -104,12 +104,13 @@ function StatCard({ label, value, icon: Icon, color }: { label: string, value: s
   );
 }
 
-function DashboardRow({ item, isSelected, onToggle, onViewDocs, isMobile }: {
+function DashboardRow({ item, isSelected, onToggle, onViewDocs, isMobile, isDocsLoading }: {
   item: Fabrication;
   isSelected: boolean;
   onToggle: () => void;
   onViewDocs: () => void;
   isMobile: boolean;
+  isDocsLoading: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
 
@@ -203,9 +204,14 @@ function DashboardRow({ item, isSelected, onToggle, onViewDocs, isMobile }: {
         <div className="flex items-center gap-2">
           <button
             onClick={(e) => { e.stopPropagation(); onViewDocs(); }}
-            className="flex items-center gap-1.5 px-3 min-h-[44px] text-xs font-bold text-blue-600 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 active:bg-blue-200 transition-colors"
+            disabled={isDocsLoading}
+            className="flex items-center gap-1.5 px-3 min-h-[44px] text-xs font-bold text-blue-600 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 active:bg-blue-200 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
           >
-            <FileText size={13} /> Docs
+            {isDocsLoading
+              ? <Loader2 size={13} className="animate-spin" />
+              : <FileText size={13} />
+            }
+            Docs
           </button>
           <button
             onClick={() => setExpanded(v => !v)}
@@ -278,10 +284,14 @@ function DashboardRow({ item, isSelected, onToggle, onViewDocs, isMobile }: {
         <div className="flex items-center gap-3">
           <button
             onClick={(e) => { e.stopPropagation(); onViewDocs(); }}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-blue-600 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 active:bg-blue-200 transition-colors"
+            disabled={isDocsLoading}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-blue-600 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 active:bg-blue-200 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
             title="Ver documentos"
           >
-            <FileText size={14} />
+            {isDocsLoading
+              ? <Loader2 size={14} className="animate-spin" />
+              : <FileText size={14} />
+            }
             Docs
           </button>
           <button
@@ -307,7 +317,7 @@ export function Dashboard({ onCreateBatch }: DashboardProps) {
   const breakpoint = useBreakpoint();
   const isMobile = breakpoint === 'mobile' || breakpoint === 'sm';
 
-  const { openDocs, DocViewer } = useDocViewer();
+  const { openDocs, isLoading: docsLoading, DocViewer } = useDocViewer();
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [filter, setFilter] = useState<'Todas' | 'Hoje' | 'Esta Semana' | 'Atrasadas' | 'Bloqueadas'>('Todas');
@@ -564,7 +574,7 @@ export function Dashboard({ onCreateBatch }: DashboardProps) {
             </div>
             <div className="divide-y divide-gray-100">
               {filteredItems.filter(i => i.source !== 'producao').map(item => (
-                <DashboardRow key={item.id} item={item} isSelected={selectedIds.has(item.id)} onToggle={() => toggleSelect(item.id)} onViewDocs={() => openDocs(item.id, item.mo_number)} isMobile={isMobile} />
+                <DashboardRow key={item.id} item={item} isSelected={selectedIds.has(item.id)} onToggle={() => toggleSelect(item.id)} onViewDocs={() => openDocs(item.id, item.mo_number)} isMobile={isMobile} isDocsLoading={docsLoading(item.id)} />
               ))}
               {filteredItems.filter(i => i.source !== 'producao').length === 0 && (
                 <EmptyState
@@ -585,7 +595,7 @@ export function Dashboard({ onCreateBatch }: DashboardProps) {
             </div>
             <div className="divide-y divide-gray-100">
               {filteredItems.filter(i => i.source === 'producao').map(item => (
-                <DashboardRow key={item.id} item={item} isSelected={selectedIds.has(item.id)} onToggle={() => toggleSelect(item.id)} onViewDocs={() => openDocs(item.id, item.mo_number)} isMobile={isMobile} />
+                <DashboardRow key={item.id} item={item} isSelected={selectedIds.has(item.id)} onToggle={() => toggleSelect(item.id)} onViewDocs={() => openDocs(item.id, item.mo_number)} isMobile={isMobile} isDocsLoading={docsLoading(item.id)} />
               ))}
               {filteredItems.filter(i => i.source === 'producao').length === 0 && (
                 <EmptyState
