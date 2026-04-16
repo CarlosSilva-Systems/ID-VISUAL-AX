@@ -233,5 +233,5 @@ void setupServerStop() {
 }
 
 bool setupServerIsRunning() {
-    return g_running;
+    return g_running;  
 }
