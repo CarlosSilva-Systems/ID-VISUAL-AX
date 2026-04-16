@@ -397,8 +397,29 @@ export const api = {
         return api.get(`/production/requests?limit=${limit}&offset=${offset}`);
     },
 
-    getMODocuments: async (moId: number, limit: number = 50, offset: number = 0) => {
-        return api.get(`/odoo/mos/${moId}/documents?limit=${limit}&offset=${offset}`);
+    getMODocuments: async (moId: number, options?: { signal?: AbortSignal; limit?: number; offset?: number }) => {
+        const { signal, limit = 50, offset = 0 } = options ?? {};
+        const cleanEndpoint = `/odoo/mos/${moId}/documents?limit=${limit}&offset=${offset}`;
+        try {
+            const response = await fetch(`${API_URL}${cleanEndpoint}`, {
+                method: 'GET',
+                headers: getHeaders(),
+                signal,
+            });
+            if (!response.ok) {
+                if (response.status === 401) {
+                    localStorage.removeItem('id_visual_token');
+                    window.location.reload();
+                }
+                throw new Error(`API Error: ${response.statusText}`);
+            }
+            return await response.json();
+        } catch (error) {
+            // Não logar AbortError — é cancelamento intencional
+            if (error instanceof DOMException && error.name === 'AbortError') throw error;
+            console.error('getMODocuments failed:', error);
+            throw error;
+        }
     },
 
     // ── Auth ──
