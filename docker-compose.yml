@@ -29,7 +29,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1
     volumes:
       # Volume persistente para armazenamento de firmware OTA (.bin files)
       - ota_firmware:/app/storage/ota/firmware

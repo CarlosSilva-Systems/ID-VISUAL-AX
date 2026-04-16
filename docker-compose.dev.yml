@@ -1,0 +1,11 @@
+# Sobrescreve docker-compose.yml para desenvolvimento local com hot-reload.
+# Uso: docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+#
+# ATENÇÃO: --reload usa múltiplos processos e quebra o WebSocket em memória.
+# Para testar o Andon TV em tempo real, use docker-compose.yml (sem este arquivo).
+services:
+  api:
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    volumes:
+      - ./backend:/app
+      - ota_firmware:/app/storage/ota/firmware
