@@ -130,6 +130,9 @@ function saveLogsToStorage(logs: TVLog[]) {
 /**
  * Sintetiza voz em pt-BR usando Web Speech API.
  * Retorna true se disparou com sucesso, false se bloqueado/indisponível.
+ *
+ * NOTA: Chrome carrega vozes de forma assíncrona. Esta função tenta selecionar
+ * uma voz pt-BR se disponível, mas funciona mesmo sem ela (usa voz padrão do sistema).
  */
 function speakPtBR(text: string): boolean {
     if (typeof window === 'undefined' || !window.speechSynthesis) {
@@ -142,16 +145,40 @@ function speakPtBR(text: string): boolean {
 
         const utterance = new SpeechSynthesisUtterance(text);
         utterance.lang = 'pt-BR';
-        utterance.rate = 0.95;   // ligeiramente mais lento para clareza
+        utterance.rate = 0.92;   // ligeiramente mais lento para clareza
         utterance.pitch = 1.0;
         utterance.volume = 1.0;
 
-        // Tentar selecionar voz pt-BR se disponível
-        const voices = window.speechSynthesis.getVoices();
-        const ptVoice = voices.find(v => v.lang === 'pt-BR') ?? voices.find(v => v.lang.startsWith('pt'));
-        if (ptVoice) utterance.voice = ptVoice;
+        // Função interna que tenta selecionar voz pt-BR e dispara a fala
+        const doSpeak = () => {
+            const voices = window.speechSynthesis.getVoices();
+            if (voices.length > 0) {
+                const ptVoice =
+                    voices.find(v => v.lang === 'pt-BR') ??
+                    voices.find(v => v.lang.startsWith('pt')) ??
+                    null;
+                if (ptVoice) utterance.voice = ptVoice;
+            }
+            window.speechSynthesis.speak(utterance);
+        };
 
-        window.speechSynthesis.speak(utterance);
+        // Chrome: vozes podem não estar carregadas ainda na primeira chamada
+        const voices = window.speechSynthesis.getVoices();
+        if (voices.length > 0) {
+            doSpeak();
+        } else {
+            // Aguardar carregamento das vozes (máx 2s) e então falar
+            const timeout = setTimeout(() => {
+                window.speechSynthesis.onvoiceschanged = null;
+                doSpeak();
+            }, 2000);
+            window.speechSynthesis.onvoiceschanged = () => {
+                clearTimeout(timeout);
+                window.speechSynthesis.onvoiceschanged = null;
+                doSpeak();
+            };
+        }
+
         return true;
     } catch (err) {
         console.warn('[TTS] Erro ao sintetizar voz:', err);
@@ -356,11 +383,15 @@ export function AndonTVProvider({ children }: { children: React.ReactNode }) {
 
                 for (const ev of events) {
                     // Chave única por evento + estado (Req 9 AC 2, AC 5)
+                    // entity_id pode ser int (AndonCall) ou UUID string (IDRequest) — normalizar para string
+                    const entityId = ev.entity_id != null
+                        ? String(ev.entity_id)
+                        : (ev.mo_number ?? ev.workcenter_name ?? 'unknown');
                     const suffix =
                         ev.event_type === 'CALL_RESOLVED' ? 'R' :
                         ev.event_type === 'IDVISUAL_DONE' ? 'D' :
                         ev.event_type === 'CALL_IN_PROGRESS' ? 'P' : 'O';
-                    const key = `${ev.event_type}:${ev.entity_id ?? ev.mo_number ?? ev.workcenter_name}:${suffix}`;
+                    const key = `${ev.event_type}:${entityId}:${suffix}`;
 
                     if (!seenEventKeys.current.has(key)) {
                         seenEventKeys.current.add(key);
