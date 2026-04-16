@@ -403,6 +403,9 @@ async def _handle_button(mac: str, color: str, payload_raw: bytes):
 
             await session.commit()
             logger.info(f"MQTT button: {len(active_calls)} chamados resolvidos para workcenter {device.workcenter_id} via botão verde")
+            # Notificar Andon TV — versão incrementada após commit
+            from app.api.api_v1.endpoints.sync import update_sync_version
+            update_sync_version("andon_version")
             await _send_andon_state(mac, "GREEN")
             await ws_manager.broadcast("andon_resolved", {
                 "workcenter_id": device.workcenter_id, "device_mac": mac, "resolved_count": len(active_calls)
@@ -466,6 +469,9 @@ async def _handle_button(mac: str, color: str, payload_raw: bytes):
         await session.commit()
         await session.refresh(call)
         logger.info(f"MQTT button: chamado {button_config['call_color']} criado para workcenter {device.workcenter_id} via {mac}")
+        # Notificar Andon TV — versão incrementada após commit
+        from app.api.api_v1.endpoints.sync import update_sync_version
+        update_sync_version("andon_version")
         await _send_andon_state(mac, button_config["call_color"])
         await ws_manager.broadcast("andon_call_created", {
             "call_id": call.id, "color": call.color,
@@ -596,6 +602,9 @@ async def _handle_pause(mac: str, payload_raw: bytes):
 
             await session.commit()
             await _send_andon_state(mac, "GRAY")
+            # Notificar Andon TV — versão incrementada após commit
+            from app.api.api_v1.endpoints.sync import update_sync_version
+            update_sync_version("andon_version")
             await ws_manager.broadcast("production_paused", {
                 "workcenter_id": wc_id, "device_mac": mac, "wo_id": wo_id,
             })
@@ -626,6 +635,9 @@ async def _handle_pause(mac: str, payload_raw: bytes):
             # Enviar estado via MQTT para atualizar g_andonStatus no ESP32
             await _send_andon_state(mac, mqtt_state)
             
+            # Notificar Andon TV — versão incrementada após commit
+            from app.api.api_v1.endpoints.sync import update_sync_version
+            update_sync_version("andon_version")
             await ws_manager.broadcast("production_resumed", {
                 "workcenter_id": wc_id, "device_mac": mac,
                 "wo_id": wo_id, "restored_status": prev_status,
