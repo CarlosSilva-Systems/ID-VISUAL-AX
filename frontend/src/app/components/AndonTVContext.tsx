@@ -334,23 +334,26 @@ export function AndonTVProvider({ children }: { children: React.ReactNode }) {
 
     const seenEventKeys = useRef<Set<string>>(new Set());
     const lastVersion = useRef<string | number | null>(null);
-    const isFetchingRef = useRef(false);
+    // Controla se o polling de fundo está em andamento (não bloqueia fetch do WS)
+    const isPollingRef = useRef(false);
     const wsRef = useRef<WebSocket | null>(null);
 
     useEffect(() => {
         let cancelled = false;
 
         // ── Fetch /tv-data ────────────────────────────────────────────────────
-        const fetchData = async () => {
-            if (isFetchingRef.current) return;
-            isFetchingRef.current = true;
+        // force=true: disparado pelo WebSocket — nunca bloqueado, ignora versão
+        // force=false: polling de fundo — bloqueado se já há um em andamento
+        const fetchData = async (force = false) => {
+            if (!force && isPollingRef.current) return;
+            if (!force) isPollingRef.current = true;
             try {
                 const data = await api.getAndonTVData();
                 if (cancelled) return;
 
                 const newVersion = data.version;
-                if (newVersion === lastVersion.current) {
-                    // Versão igual — apenas confirmar conexão sem re-render
+                // Só pular se versão igual E não foi forçado pelo WebSocket
+                if (!force && newVersion === lastVersion.current) {
                     setState(prev => prev.isConnected ? prev : { ...prev, isConnected: true });
                     return;
                 }
@@ -410,7 +413,7 @@ export function AndonTVProvider({ children }: { children: React.ReactNode }) {
                     setState(prev => ({ ...prev, isConnected: false }));
                 }
             } finally {
-                isFetchingRef.current = false;
+                if (!force) isPollingRef.current = false;
             }
         };
 
@@ -435,7 +438,7 @@ export function AndonTVProvider({ children }: { children: React.ReactNode }) {
                 if (cancelled) { ws.close(); return; }
                 console.info('[AndonTV] WebSocket conectado — modo tempo real ativo');
                 setState(prev => ({ ...prev, wsConnected: true }));
-                fetchData(); // sincronizar imediatamente ao conectar
+                fetchData(true); // sincronizar imediatamente ao conectar
             };
 
             ws.onmessage = (event) => {
@@ -443,7 +446,7 @@ export function AndonTVProvider({ children }: { children: React.ReactNode }) {
                 try {
                     const msg = JSON.parse(event.data as string) as { event: string };
                     if (msg.event === 'andon_version_changed') {
-                        fetchData(); // fetch imediato ao receber notificação
+                        fetchData(true); // fetch forçado — nunca bloqueado, ignora versão cached
                     }
                 } catch { /* mensagem malformada — ignorar */ }
             };
@@ -464,7 +467,7 @@ export function AndonTVProvider({ children }: { children: React.ReactNode }) {
         };
 
         // Polling de fallback — 1.5s garante atualização mesmo sem WebSocket
-        const fetchInterval = setInterval(fetchData, POLL_INTERVAL_MS);
+        const fetchInterval = setInterval(() => fetchData(false), POLL_INTERVAL_MS);
 
         // Limpeza de logs expirados (a cada 1 minuto)
         const cleanupInterval = setInterval(() => {
@@ -496,7 +499,7 @@ export function AndonTVProvider({ children }: { children: React.ReactNode }) {
         }, 60_000);
 
         // Iniciar
-        fetchData();
+        fetchData(false);
         connectWebSocket();
 
         return () => {
