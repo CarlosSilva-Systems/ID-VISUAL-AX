@@ -2,6 +2,7 @@
 Production Portal endpoints.
 GET  /production/search  — search Odoo MOs by fabrication number
 POST /production/request — create manual ID Visual request (urgent, Lean + Poka-yoke)
+POST /production/requests/{id}/nao-consta — registra IDs que nao chegaram ao operador
 """
 from __future__ import annotations
 
@@ -515,3 +516,109 @@ async def get_production_requests(
         ))
         
     return response
+
+
+# ── POST /production/requests/{id}/nao-consta ─────────────────────
+class NaoConstaPayload(BaseModel):
+    """Payload para registrar IDs que não chegaram ao operador."""
+    model_config = ConfigDict(extra="forbid")
+
+    items: List[str] = Field(
+        ...,
+        min_length=1,
+        description="Lista de task_codes que não chegaram. Ex: ['WAGO_210_804', 'ELESYS_EFZ']",
+    )
+    registrado_por: str = Field(..., min_length=2, max_length=100)
+
+
+class NaoConstaResponse(BaseModel):
+    request_id: str
+    mo_number: str
+    nao_consta_em: str
+    nao_consta_items: List[str]
+    nao_consta_registrado_por: str
+
+
+@router.post("/requests/{request_id}/nao-consta", response_model=NaoConstaResponse)
+async def registrar_nao_consta(
+    request_id: uuid.UUID,
+    payload: NaoConstaPayload,
+    session: AsyncSession = Depends(deps.get_session),
+    current_user: Any = Depends(deps.get_current_user),
+) -> Any:
+    """
+    Registra que uma ou mais IDs solicitadas não chegaram ao operador ('Não Consta').
+
+    Regras:
+    - Apenas requests com status aberto (nova, triagem, em_lote, em_progresso) podem
+      receber o registro — IDs já concluídas ou canceladas não fazem sentido.
+    - Os task_codes informados devem pertencer ao blueprint do panel_type da request.
+    - Sobrescreve um registro anterior se já existir (idempotente por request).
+    - Registra HistoryLog para auditoria.
+    """
+    # 1. Busca a request
+    stmt = (
+        select(IDRequest, ManufacturingOrder)
+        .join(ManufacturingOrder, IDRequest.mo_id == ManufacturingOrder.id)
+        .where(IDRequest.id == request_id)
+    )
+    result = await session.exec(stmt)
+    row = result.first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Solicitação não encontrada")
+
+    id_request, mo = row
+
+    # 2. Valida status — só faz sentido para requests abertas
+    status_str = id_request.status.value if hasattr(id_request.status, "value") else str(id_request.status)
+    open_statuses = {s.value for s in OPEN_STATUSES}
+    if status_str not in open_statuses:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Não é possível registrar 'Não Consta' para uma solicitação com status '{status_str}'.",
+        )
+
+    # 3. Valida task_codes contra o blueprint do panel_type
+    panel = id_request.package_code or "custom"
+    allowed_codes = set(PANEL_BLUEPRINTS.get(panel, ALL_TASK_CODES))
+    invalid = [c for c in payload.items if c not in allowed_codes]
+    if invalid:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "message": f"Códigos inválidos para o tipo '{panel}'",
+                "invalid_codes": invalid,
+                "allowed_codes": list(allowed_codes),
+            },
+        )
+
+    # 4. Registra
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    id_request.nao_consta_em = now
+    id_request.nao_consta_items = payload.items
+    id_request.nao_consta_registrado_por = payload.registrado_por
+    session.add(id_request)
+
+    # 5. HistoryLog
+    log = HistoryLog(
+        entity_type="id_request",
+        entity_id=id_request.id,
+        action="NAO_CONSTA_REGISTRADO",
+        after_json={
+            "items": payload.items,
+            "registrado_por": payload.registrado_por,
+            "mo_number": mo.name,
+            "panel_type": panel,
+        },
+    )
+    session.add(log)
+    await session.commit()
+    await session.refresh(id_request)
+
+    return NaoConstaResponse(
+        request_id=str(id_request.id),
+        mo_number=mo.name,
+        nao_consta_em=now.isoformat() + "Z",
+        nao_consta_items=payload.items,
+        nao_consta_registrado_por=payload.registrado_por,
+    )
