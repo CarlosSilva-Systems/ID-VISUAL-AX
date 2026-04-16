@@ -62,6 +62,14 @@ class IDRequest(SQLModel, table=True):
     concluido_em: Optional[datetime] = Field(default=None, index=True)
     entregue_em: Optional[datetime] = Field(default=None, index=True)
     aprovado_em: Optional[datetime] = Field(default=None, index=True)
+
+    # Rastreamento de "Não Consta" — ID solicitada que não chegou ao operador.
+    # nao_consta_em: timestamp do registro da ocorrência.
+    # nao_consta_items: lista JSON dos task_codes que não chegaram (ex: ["WAGO_210_804"]).
+    # nao_consta_registrado_por: nome do operador que registrou.
+    nao_consta_em: Optional[datetime] = Field(default=None, index=True)
+    nao_consta_items: Optional[List[str]] = Field(default=None, sa_column=Column(JSON))
+    nao_consta_registrado_por: Optional[str] = Field(default=None)
     
     version: int = Field(default=1) # Optimistic locking
     
