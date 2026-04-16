@@ -337,7 +337,7 @@ export function formatLogForDebug(log: TVLog): string {
 
 // ── Provider ─────────────────────────────────────────────────────
 
-const POLL_INTERVAL_MS = 8000;
+const POLL_INTERVAL_MS = 1500;  // 1.5s — polling agressivo para resposta quase instantânea
 /** Tempo em ms que ID_VISUAL_OK fica piscando (5 minutos) */
 const BLINK_DURATION_MS = 5 * 60 * 1000;
 /** Tempo em ms após o qual ID_VISUAL_OK é removido do log (24 horas) */
@@ -369,14 +369,20 @@ export function AndonTVProvider({ children }: { children: React.ReactNode }) {
     const wsRef = useRef<WebSocket | null>(null);
     // Ref para o fetch em andamento — evita fetches paralelos
     const fetchingRef = useRef(false);
+    // AbortController para cancelar fetch anterior quando um novo chega
+    const abortRef = useRef<AbortController | null>(null);
 
     useEffect(() => {
         let cancelled = false;
 
         // ── Fetch de dados do /tv-data ────────────────────────────────────────
         const fetchData = async () => {
-            if (fetchingRef.current) return; // evitar fetch paralelo
-            fetchingRef.current = true;
+            // Cancelar fetch anterior se ainda estiver em andamento
+            if (abortRef.current) {
+                abortRef.current.abort();
+            }
+            abortRef.current = new AbortController();
+
             try {
                 const data = await api.getAndonTVData();
                 if (cancelled) return;
@@ -451,7 +457,7 @@ export function AndonTVProvider({ children }: { children: React.ReactNode }) {
                     setState(prev => ({ ...prev, isConnected: false }));
                 }
             } finally {
-                fetchingRef.current = false;
+                abortRef.current = null;
             }
         };
 
@@ -543,6 +549,10 @@ export function AndonTVProvider({ children }: { children: React.ReactNode }) {
             clearInterval(fetchInterval);
             clearInterval(cleanupInterval);
             if (wsReconnectTimeout) clearTimeout(wsReconnectTimeout);
+            if (abortRef.current) {
+                abortRef.current.abort();
+                abortRef.current = null;
+            }
             if (wsRef.current) {
                 wsRef.current.close();
                 wsRef.current = null;
