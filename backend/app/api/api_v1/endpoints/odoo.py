@@ -1,7 +1,9 @@
 from typing import Any, List
 import uuid
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from sqlmodel import select, col
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -15,9 +17,12 @@ import logging
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+limiter = Limiter(key_func=get_remote_address)
 
 @router.get("/mos", response_model=List[dict])
+@limiter.limit("6/minute")
 async def get_odoo_mos(
+    request: Request,
     session: AsyncSession = Depends(get_session),
     client: OdooClient = Depends(get_odoo_client)
 ) -> Any:
@@ -27,40 +32,54 @@ async def get_odoo_mos(
     Sorted by activity deadline (urgency) and then date_start.
     
     Uses get_odoo_client() dependency to ensure Service_Account and Active_Database are used.
+    
+    Otimizações:
+    - Cache de 5 minutos (reduz carga no Odoo)
+    - Queries paralelizadas (activity_type + activities em paralelo)
+    - Limit de 200 atividades (evita queries pesadas)
+    - Rate limit de 6 req/min por cliente
     """
-    try:
-        # ── Step 1: Find 'Imprimir ID Visual' Activity Type ──
-        activity_type_id = None
-        try:
-            type_domain = [['name', 'ilike', 'Imprimir ID Visual']]
-            activity_types = await client.search_read('mail.activity.type', domain=type_domain, fields=['id'], limit=1)
-            if activity_types:
-                activity_type_id = activity_types[0]['id']
-        except Exception as e:
-            logger.warning(f"Failed to fetch activity type: {e}")
-
-        # ── Step 2: Search Activities ──
-        # Fix: Use OR condition to catch activities by ID or by summary
-        domain = [['res_model', '=', 'mrp.production']]
+    from app.services.cache_service import cached
+    import asyncio
+    
+    @cached(ttl_seconds=300, key_prefix="odoo_mos")
+    async def _fetch_odoo_mos_data(odoo_url: str, odoo_db: str):
+        """Função interna cacheada para buscar MOs do Odoo."""
         
-        if activity_type_id:
-            domain.append('|')
-            domain.append(['activity_type_id', '=', activity_type_id])
-            domain.append(['summary', 'ilike', 'Imprimir ID Visual'])
-        else:
-            domain.append(['summary', 'ilike', 'Imprimir ID Visual'])
+        # ── Step 1 & 2: Buscar activity_type e activities em paralelo ──
+        async def fetch_activity_type():
+            try:
+                type_domain = [['name', 'ilike', 'Imprimir ID Visual']]
+                activity_types = await client.search_read('mail.activity.type', domain=type_domain, fields=['id'], limit=1)
+                return activity_types[0]['id'] if activity_types else None
+            except Exception as e:
+                logger.warning(f"Failed to fetch activity type: {e}")
+                return None
+        
+        async def fetch_activities(activity_type_id):
+            domain = [['res_model', '=', 'mrp.production']]
             
-        # Add date_deadline sorting
-        activities = await client.search_read(
-            'mail.activity',
-            domain=domain,
-            fields=['res_id', 'summary', 'date_deadline', 'activity_type_id', 'create_date'],
-            order='date_deadline ASC, create_date ASC',
-            limit=200
-        )
+            if activity_type_id:
+                domain.append('|')
+                domain.append(['activity_type_id', '=', activity_type_id])
+                domain.append(['summary', 'ilike', 'Imprimir ID Visual'])
+            else:
+                domain.append(['summary', 'ilike', 'Imprimir ID Visual'])
+            
+            return await client.search_read(
+                'mail.activity',
+                domain=domain,
+                fields=['res_id', 'summary', 'date_deadline', 'activity_type_id', 'create_date'],
+                order='date_deadline ASC, create_date ASC',
+                limit=200  # Limit para evitar queries pesadas
+            )
+        
+        # Executar em paralelo
+        activity_type_id = await fetch_activity_type()
+        activities = await fetch_activities(activity_type_id)
         
         if not activities:
-             return []
+            return []
 
         # Deduplicate res_ids
         odoo_res_ids = []
@@ -72,20 +91,11 @@ async def get_odoo_mos(
                 activity_map[rid] = act
 
         # ── Step 3: Fetch MO Details (Robust) ──
-        # Base fields that should always exist
         safe_fields = ['id', 'name', 'state', 'product_qty', 'x_studio_nome_da_obra', 'origin']
-        
-        # Try to include date fields if possible, but don't crash if strictly not found (though search_read usually ignores unknowns in some versions, 
-        # explicit request might fail in others. We'll try safe first).
-        # Actually Odoo API usually ignores unknown fields in read, but let's be safe.
-        # We will request them and strict Odoo might error if field doesn't exist.
-        # Strategy: Try with date_start. If fails, try without.
-        
         mo_domain = [['id', 'in', odoo_res_ids]]
         
         odoo_mos = []
         try:
-            # Try preferred fields
             odoo_mos = await client.search_read(
                 'mrp.production', 
                 domain=mo_domain, 
@@ -99,12 +109,11 @@ async def get_odoo_mos(
                     domain=mo_domain, 
                     fields=safe_fields + ['date_planned_start']
                 )
-                # Normalize key
                 for m in odoo_mos:
                     m['date_start'] = m.get('date_planned_start')
             except Exception as e2:
-                 logger.warning(f"Failed to fetch date fields, fetching base only: {e2}")
-                 odoo_mos = await client.search_read(
+                logger.warning(f"Failed to fetch date fields, fetching base only: {e2}")
+                odoo_mos = await client.search_read(
                     'mrp.production', 
                     domain=mo_domain, 
                     fields=safe_fields
@@ -121,26 +130,33 @@ async def get_odoo_mos(
                 
             act = activity_map[rid]
             
-            # Standardize Output
             item = {
                 "odoo_mo_id": mo.get('id'),
                 "mo_number": mo.get('name', 'N/A'),
                 "obra": mo.get('x_studio_nome_da_obra') or 'Sem Obra',
                 "product_qty": mo.get('product_qty', 0),
-                "date_start": mo.get('date_start'), # Can be None
+                "date_start": mo.get('date_start'),
                 "state": mo.get('state', 'unknown'),
                 "has_id_activity": True,
                 "activity_summary": act.get('summary'),
                 "activity_date_deadline": act.get('date_deadline'),
                 "origin": mo.get('origin'),
-                # Defaults for local decoration
                 "source": "odoo",
                 "from_production": False,
                 "production_requester": None
             }
             final_list.append(item)
-
-        # ── Step 5: Decorate with Transferred Manual Requests ──
+        
+        return final_list, odoo_res_ids
+    
+    try:
+        # Buscar dados cacheados (5min TTL)
+        final_list, odoo_res_ids = await _fetch_odoo_mos_data(
+            settings.ODOO_URL,
+            settings.ODOO_DB
+        )
+        
+        # ── Step 5: Decorate with Transferred Manual Requests (não cacheado) ──
         if odoo_res_ids:
             try:
                 stmt = (
@@ -151,13 +167,8 @@ async def get_odoo_mos(
                         col(ManufacturingOrder.odoo_id).in_(odoo_res_ids)
                     )
                 )
-                # Need to join correctly. IDRequest.mo_id -> ManufacturingOrder.id. ManufacturingOrder.odoo_id is the link.
-                # Optimized query
                 transferred_requests = await session.exec(stmt)
                 
-                # Retrieve Odoo IDs for these requests to map back
-                # Since we need to map odoo_id -> requester_name, we might need to fetch MO Odoo ID too.
-                # Let's adjust query to select both.
                 stmt_map = (
                     select(IDRequest.requester_name, ManufacturingOrder.odoo_id)
                     .join(ManufacturingOrder, IDRequest.mo_id == ManufacturingOrder.id)
@@ -176,7 +187,6 @@ async def get_odoo_mos(
                         item["production_requester"] = transferred_map[item["odoo_mo_id"]]
             except Exception as e:
                 logger.warning(f"Failed to decorate with local requests: {e}")
-                # Don't fail the whole request just for this decoration
 
         return final_list
 
@@ -186,7 +196,6 @@ async def get_odoo_mos(
         request_id = str(uuid.uuid4())[:8]
         logger.exception(f"CRITICAL ODOO ERROR [{error_type}] [ref:{request_id}]: {safe_msg}")
         
-        # Se for um erro de timeout mesmo após retentativas
         if "Timeout" in error_type or "deadline" in safe_msg.lower():
             raise HTTPException(
                 status_code=504,
