@@ -4,40 +4,46 @@ import time
 
 router = APIRouter()
 
-# Global state for sync (simple implementation for now)
+# Contador atômico de versão — incrementa a cada mudança, sem colisão de timestamps
+# Usar contador garante que TODA mudança gera uma versão diferente,
+# independente de quantas mudanças ocorram no mesmo segundo.
+_version_counter = int(time.time() * 1000)  # inicia com ms para evitar colisão após restart
+
 _sync_state = {
     "odoo_version": str(int(time.time())),
     "requests_version": str(int(time.time())),
-    "andon_version": str(int(time.time()))
+    "andon_version": str(_version_counter),
 }
 
 
 def update_sync_version(key: str):
     """
     Atualiza a versão de um domínio de dados.
-    Quando a chave é 'andon_version', agenda broadcast WebSocket imediato
-    para notificar o Andon TV sem esperar o próximo ciclo de polling.
+    Para 'andon_version': usa contador incremental (garante unicidade mesmo
+    com múltiplas mudanças no mesmo segundo) e agenda broadcast WebSocket.
 
-    IMPORTANTE: deve ser chamado APÓS o session.commit() para garantir que
+    IMPORTANTE: deve ser chamado APÓS session.commit() para garantir que
     os dados já estão persistidos quando o frontend fizer o fetch.
     """
-    _sync_state[key] = str(int(time.time()))
+    global _version_counter
     if key == "andon_version":
+        _version_counter += 1
+        _sync_state[key] = str(_version_counter)
         _try_broadcast_andon()
+    else:
+        _sync_state[key] = str(int(time.time()))
 
 
 def _try_broadcast_andon():
     """
-    Tenta agendar o broadcast WebSocket no event loop ativo.
-    FastAPI sempre roda em um event loop async, então get_running_loop()
-    deve funcionar em todos os endpoints.
+    Agenda o broadcast WebSocket no event loop ativo.
+    FastAPI sempre roda em um event loop async.
     """
     try:
         loop = asyncio.get_running_loop()
         loop.create_task(_do_broadcast())
     except RuntimeError:
-        # Sem event loop (ex: testes síncronos) — ignorar silenciosamente
-        pass
+        pass  # contexto síncrono (testes) — ignorar
 
 
 async def _do_broadcast():
@@ -48,16 +54,7 @@ async def _do_broadcast():
             "version": _sync_state["andon_version"]
         })
     except Exception:
-        pass  # Broadcast nunca deve quebrar o fluxo principal
-
-
-async def broadcast_andon_now():
-    """
-    Versão awaitable para uso direto em handlers async.
-    Garante que o broadcast acontece imediatamente, sem agendamento.
-    Use quando precisar de garantia de ordem (ex: logo após session.commit()).
-    """
-    await _do_broadcast()
+        pass
 
 
 @router.get("/status")
