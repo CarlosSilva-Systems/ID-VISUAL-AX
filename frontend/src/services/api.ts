@@ -397,6 +397,14 @@ export const api = {
         return api.get(`/production/requests?limit=${limit}&offset=${offset}`);
     },
 
+    // ── Produção — Não Consta ──
+    reportNaoConsta: async (requestId: string, items: string[], registradoPor: string) => {
+        return api.post(`/production/requests/${requestId}/nao-consta`, {
+            items,
+            registrado_por: registradoPor,
+        });
+    },
+
     getMODocuments: async (moId: number, options?: { signal?: AbortSignal; limit?: number; offset?: number }) => {
         const { signal, limit = 50, offset = 0 } = options ?? {};
         const cleanEndpoint = `/odoo/mos/${moId}/documents?limit=${limit}&offset=${offset}`;
