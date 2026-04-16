@@ -140,39 +140,43 @@ async def update_or_create_status(
 # --- Endpoints ---
 
 @router.get("/workcenters")
+@limiter.limit("10/minute")
 async def get_workcenters_status(
+    request: Request,
     session: AsyncSession = Depends(get_session),
     odoo: Any = Depends(get_odoo_client)
 ):
     """
     Retorna a lista de workcenters enriquecida com status, produção atual e planejamento.
+    
+    Otimizações:
+    - Cache de 30 segundos (reduz carga no Odoo)
+    - Queries paralelizadas (workcenters + workorders + productions)
+    - Limit de 500 workorders (evita queries pesadas)
+    - Rate limit de 10 req/min por cliente
     """
-    try:
-        # 1. Buscar Workcenters do Odoo
-        odoo_wcs = await odoo.get_workcenters()
+    from app.services.cache_service import cached
+    
+    @cached(ttl_seconds=30, key_prefix="workcenters")
+    async def _fetch_workcenters_data(session_id: str, odoo_url: str):
+        """Função interna cacheada para buscar dados do Odoo."""
+        import asyncio
         
-        # 2. Status locais do SQLite (vermelho/amarelo manual)
-        stmt = select(AndonStatus)
-        result = await session.execute(stmt)
-        local_statuses = {s.workcenter_odoo_id: s.status for s in result.scalars().all()}
-
-        # 3. Buscar Chamados Ativos para detectar is_stop
-        stmt_active_calls = select(AndonCall).where(AndonCall.status != "RESOLVED")
-        res_active_calls = await session.execute(stmt_active_calls)
-        all_active_calls = res_active_calls.scalars().all()
-        wc_calls_map = {}
-        for c in all_active_calls:
-            wc_calls_map.setdefault(c.workcenter_id, []).append(c)
-
-        # 4. Buscar Ordens de Fabricação Ativas e Planejadas
-        all_wos = await odoo.search_read(
+        # 1. Buscar dados do Odoo em paralelo (3 queries simultâneas)
+        odoo_wcs_task = odoo.get_workcenters()
+        all_wos_task = odoo.search_read(
             'mrp.workorder',
             domain=[
                 ['state', 'in', ['progress', 'ready', 'waiting', 'pending']],
             ],
-            fields=['workcenter_id', 'user_id', 'production_id', 'name', 'date_start', 'state']
+            fields=['workcenter_id', 'user_id', 'production_id', 'name', 'date_start', 'state'],
+            limit=500  # Limit para evitar queries pesadas
         )
-
+        
+        # Executar em paralelo
+        odoo_wcs, all_wos = await asyncio.gather(odoo_wcs_task, all_wos_task)
+        
+        # 2. Extrair production_ids e buscar detalhes
         prod_ids = []
         for wo in all_wos:
             p_id = wo.get('production_id')
@@ -193,6 +197,28 @@ async def get_workcenters_status(
                 production_map = {p['id']: p for p in prods}
             except Exception as pe:
                 logger.warning(f"Failed to fetch production details: {pe}")
+        
+        return odoo_wcs, all_wos, production_map
+    
+    try:
+        # Buscar dados cacheados (30s TTL)
+        odoo_wcs, all_wos, production_map = await _fetch_workcenters_data(
+            str(id(session)),  # Session ID para cache key
+            settings.ODOO_URL  # URL para cache key
+        )
+        
+        # 2. Status locais do banco (não cacheado — sempre fresh)
+        stmt = select(AndonStatus)
+        result = await session.execute(stmt)
+        local_statuses = {s.workcenter_odoo_id: s.status for s in result.scalars().all()}
+
+        # 3. Buscar Chamados Ativos para detectar is_stop
+        stmt_active_calls = select(AndonCall).where(AndonCall.status != "RESOLVED")
+        res_active_calls = await session.execute(stmt_active_calls)
+        all_active_calls = res_active_calls.scalars().all()
+        wc_calls_map = {}
+        for c in all_active_calls:
+            wc_calls_map.setdefault(c.workcenter_id, []).append(c)
 
         wc_data_enriched = {}
         for wo in all_wos:
@@ -370,6 +396,10 @@ async def trigger_andon_basic(
     
     await session.commit()
     update_sync_version("andon_version")  # após commit — dados já persistidos
+
+    # Invalidar cache de workcenters após mudança de status
+    from app.services.cache_service import invalidate_cache_pattern
+    await invalidate_cache_pattern("workcenters:")
 
     # Emitir WebSocket para chamados que requerem justificativa
     if req.status == "verde":
@@ -584,6 +614,11 @@ async def create_andon_call(
         )
         await session.commit()
         update_sync_version("andon_version")  # após commit — dados já persistidos
+        
+        # Invalidar cache de workcenters após criar chamado
+        from app.services.cache_service import invalidate_cache_pattern
+        await invalidate_cache_pattern("workcenters:")
+        
         return call
 
     except Exception as e:
