@@ -422,6 +422,10 @@ async def create_manual_request(
         await session.commit()
         await session.refresh(id_request)
 
+        # Notificar Andon TV sobre nova solicitação manual (dispara WebSocket + polling)
+        from app.api.api_v1.endpoints.sync import update_sync_version
+        update_sync_version("andon_version")
+
         return ManualRequestResponse(
             request_id=str(id_request.id),
             mo_number=mo.name,

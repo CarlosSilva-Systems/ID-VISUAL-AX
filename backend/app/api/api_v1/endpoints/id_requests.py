@@ -331,6 +331,8 @@ async def transfer_manual_request(
     # Invalidate both caches (request is gone from manual, appears in Odoo queue)
     update_sync_version("odoo_version")
     update_sync_version("requests_version")
+    # Notificar Andon TV sobre transferência (dispara evento IDVISUAL_TRANSFERRED)
+    update_sync_version("andon_version")
     
     return {
         "created_activity": created,
