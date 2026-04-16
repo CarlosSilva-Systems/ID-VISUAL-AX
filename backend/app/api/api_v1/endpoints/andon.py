@@ -5,7 +5,7 @@ from slowapi.util import get_remote_address
 limiter = Limiter(key_func=get_remote_address)
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel import select
-from sqlalchemy import or_
+from sqlalchemy import or_, and_
 from typing import Any, Dict, List, Optional
 from datetime import datetime, timedelta, timezone
 import uuid
@@ -957,8 +957,14 @@ async def get_tv_data(
         stmt_idrs = select(IDRequest, ManufacturingOrder).join(ManufacturingOrder).where(
             or_(
                 IDRequest.status != IDRequestStatus.CONCLUIDA,
-                IDRequest.concluido_em >= recent_date,
-                IDRequest.finished_at >= recent_date,
+                and_(
+                    IDRequest.concluido_em != None,  # noqa: E711
+                    IDRequest.concluido_em >= recent_date,
+                ),
+                and_(
+                    IDRequest.finished_at != None,  # noqa: E711
+                    IDRequest.finished_at >= recent_date,
+                ),
             )
         )
         recent_idrs_joined = (await session.execute(stmt_idrs)).all()
@@ -1080,7 +1086,7 @@ async def get_tv_data(
             "workcenters": workcenters_data,
             "calls": calls_data,
             "id_requests": id_reqs_data,
-            "recent_events": recent_events[-60:]
+            "recent_events": recent_events[:60]
         }
         # Cache-Control: no-store garante que o browser nunca sirva uma resposta cacheada
         return JSONResponse(content=payload, headers={
