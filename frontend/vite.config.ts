@@ -38,6 +38,7 @@ export default defineConfig({
         changeOrigin: true,
         timeout: 30000,
         proxyTimeout: 30000,
+        ws: true,  // habilita proxy de WebSocket (necessário para /api/v1/andon/ws)
       },
     },
   },
