@@ -1,7 +1,9 @@
 import logging
 import base64
 import uuid
-from typing import Any, Dict, List, Optional
+import time
+import asyncio
+from typing import Any, Dict, List, Optional, Tuple
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse, JSONResponse
 import io
@@ -12,6 +14,35 @@ from app.api import deps
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Cache em memória para lista de documentos por produto
+# Documentos de produto raramente mudam — TTL de 5 minutos é seguro e elimina
+# as RPCs repetidas ao Odoo quando o usuário abre docs de MOs do mesmo produto.
+# ---------------------------------------------------------------------------
+_DOC_CACHE_TTL_SECONDS = 300  # 5 minutos
+
+# Estrutura: { product_id: (timestamp, normalized_docs_list) }
+_product_docs_cache: Dict[int, Tuple[float, List[Dict[str, Any]]]] = {}
+# Lock por product_id para evitar thundering herd (múltiplos cliques simultâneos)
+_product_docs_locks: Dict[int, asyncio.Lock] = {}
+
+
+def _get_product_lock(product_id: int) -> asyncio.Lock:
+    if product_id not in _product_docs_locks:
+        _product_docs_locks[product_id] = asyncio.Lock()
+    return _product_docs_locks[product_id]
+
+
+def _cache_get(product_id: int) -> Optional[List[Dict[str, Any]]]:
+    entry = _product_docs_cache.get(product_id)
+    if entry and (time.monotonic() - entry[0]) < _DOC_CACHE_TTL_SECONDS:
+        return entry[1]
+    return None
+
+
+def _cache_set(product_id: int, docs: List[Dict[str, Any]]) -> None:
+    _product_docs_cache[product_id] = (time.monotonic(), docs)
 
 # --- Utilities ---
 
@@ -42,7 +73,12 @@ async def list_mo_documents(
     odoo_mo_id: int,
 ):
     """
-    List documents linked to the product of a specific Manufacturing Order.
+    Lista documentos vinculados ao produto de uma Ordem de Produção.
+
+    Otimizações aplicadas:
+    - Cache em memória por product_id (TTL 5 min) — elimina RPCs repetidas ao Odoo
+      quando múltiplas MOs do mesmo produto são consultadas na mesma sessão.
+    - Lock por product_id para evitar thundering herd em cliques simultâneos.
     """
     client = OdooClient(
         url=settings.ODOO_URL,
@@ -51,9 +87,9 @@ async def list_mo_documents(
         login=settings.ODOO_SERVICE_LOGIN,
         secret=settings.ODOO_SERVICE_PASSWORD
     )
-    
+
     try:
-        # 1. Fetch MO to get product_id
+        # 1. Busca MO para obter product_id
         mo_data = await client.search_read(
             'mrp.production',
             domain=[['id', '=', odoo_mo_id]],
@@ -61,45 +97,91 @@ async def list_mo_documents(
         )
         if not mo_data:
             raise HTTPException(status_code=404, detail="Ordem de produção não encontrada no Odoo")
-        
+
         product_raw = mo_data[0].get('product_id')
         if not product_raw:
-            return {"mo_id": odoo_mo_id, "product_id": None, "documents": []}
-            
+            return {"mo_id": odoo_mo_id, "product_id": None, "documents": [], "total": 0, "cached": False}
+
         product_id = product_raw[0] if isinstance(product_raw, (list, tuple)) else product_raw
-        
-        # 2. Fetch documents for product
-        docs = await client.get_product_documents(product_id)
-        
-        # 3. Normalize for frontend
-        normalized = []
-        for d in docs:
-            doc_id = f"{d['model']}_{d['odoo_id']}"
-            normalized.append({
-                "id": doc_id,
-                "odoo_document_id": d['odoo_id'],
-                "attachment_id": d.get('ir_attachment_id'),
-                "name": d['name'],
-                "mimetype": d['mimetype'],
-                "size": d['size'],
-                "checksum": d['checksum'],
-                "is_previewable": is_previewable(d['mimetype']),
-                "view_url": f"/api/v1/odoo/mos/{odoo_mo_id}/documents/{doc_id}/view",
-                "download_url": f"/api/v1/odoo/mos/{odoo_mo_id}/documents/{doc_id}/download"
-            })
-            
+
+        # 2. Verifica cache antes de ir ao Odoo
+        cached_docs = _cache_get(product_id)
+        if cached_docs is not None:
+            logger.debug(f"Cache hit para product_id={product_id} (MO {odoo_mo_id})")
+            # Reescreve as URLs com o odoo_mo_id correto (URLs são por MO, não por produto)
+            normalized = _rewrite_urls(cached_docs, odoo_mo_id)
+            return {
+                "mo_id": odoo_mo_id,
+                "product_id": product_id,
+                "documents": normalized,
+                "total": len(normalized),
+                "cached": True,
+            }
+
+        # 3. Sem cache — busca no Odoo com lock para evitar thundering herd
+        lock = _get_product_lock(product_id)
+        async with lock:
+            # Double-check após adquirir o lock (outro request pode ter populado)
+            cached_docs = _cache_get(product_id)
+            if cached_docs is not None:
+                normalized = _rewrite_urls(cached_docs, odoo_mo_id)
+                return {
+                    "mo_id": odoo_mo_id,
+                    "product_id": product_id,
+                    "documents": normalized,
+                    "total": len(normalized),
+                    "cached": True,
+                }
+
+            docs = await client.get_product_documents(product_id)
+
+            # Normaliza sem URLs (serão adicionadas dinamicamente)
+            base_docs = []
+            for d in docs:
+                doc_id = f"{d['model']}_{d['odoo_id']}"
+                base_docs.append({
+                    "id": doc_id,
+                    "odoo_document_id": d['odoo_id'],
+                    "attachment_id": d.get('ir_attachment_id'),
+                    "name": d['name'],
+                    "mimetype": d['mimetype'],
+                    "size": d['size'],
+                    "checksum": d['checksum'],
+                    "is_previewable": is_previewable(d['mimetype']),
+                })
+
+            _cache_set(product_id, base_docs)
+
+        normalized = _rewrite_urls(base_docs, odoo_mo_id)
         return {
             "mo_id": odoo_mo_id,
             "product_id": product_id,
             "documents": normalized,
-            "total": len(normalized)
+            "total": len(normalized),
+            "cached": False,
         }
+
+    except HTTPException:
+        raise
     except Exception as e:
         request_id = str(uuid.uuid4())[:8]
         logger.error(f"Error listing documents for MO {odoo_mo_id} [ref:{request_id}]: {e}")
         raise HTTPException(status_code=502, detail=f"Erro ao buscar documentos no Odoo [ref: {request_id}]")
     finally:
         await client.close()
+
+
+def _rewrite_urls(base_docs: List[Dict[str, Any]], odoo_mo_id: int) -> List[Dict[str, Any]]:
+    """Adiciona view_url e download_url ao snapshot do cache com o odoo_mo_id correto."""
+    result = []
+    for d in base_docs:
+        doc_id = d["id"]
+        result.append({
+            **d,
+            "view_url": f"/api/v1/odoo/mos/{odoo_mo_id}/documents/{doc_id}/view",
+            "download_url": f"/api/v1/odoo/mos/{odoo_mo_id}/documents/{doc_id}/download",
+        })
+    return result
 
 @router.get("/mos/{odoo_mo_id}/documents/{doc_id}/view")
 async def view_document(odoo_mo_id: int, doc_id: str):
