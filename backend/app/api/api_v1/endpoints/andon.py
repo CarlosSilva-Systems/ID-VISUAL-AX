@@ -899,6 +899,7 @@ async def get_tv_data(
     odoo: Any = Depends(get_odoo_client)
 ):
     from app.api.api_v1.endpoints.sync import _sync_state
+    from fastapi.responses import JSONResponse
     import time
     try:
         # 1. Obter todos os Workcenters do Odoo
@@ -1075,13 +1076,18 @@ async def get_tv_data(
                 "updated_at": c.updated_at.isoformat() if c.updated_at else None
             })
 
-        return {
+        payload = {
             "version": _sync_state.get("andon_version", str(int(time.time()))),
             "workcenters": workcenters_data,
             "calls": calls_data,
             "id_requests": id_reqs_data,
             "recent_events": recent_events[-60:]
         }
+        # Cache-Control: no-store garante que o browser nunca sirva uma resposta cacheada
+        return JSONResponse(content=payload, headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate",
+            "Pragma": "no-cache",
+        })
     except Exception as e:
         request_id = str(uuid.uuid4())[:8]
         logger.error(f"Error in get_tv_data [ref:{request_id}]: {traceback.format_exc()}")
