@@ -349,7 +349,7 @@ async def create_manual_request(
             mo.x_studio_nome_da_obra = normalize_many2one_display(odoo_mo.get("x_studio_nome_da_obra")) or mo.x_studio_nome_da_obra
             mo.product_qty = safe_float(odoo_mo.get("product_qty"))
             mo.state = safe_str(odoo_mo.get("state")) or mo.state
-            mo.last_sync_at = datetime.now(timezone.utc)
+            mo.last_sync_at = datetime.now(timezone.utc).replace(tzinfo=None)
             mo.date_start = parse_date(odoo_mo.get("date_start"))
         else:
             # 4b. Create Local MO (Snapshot)

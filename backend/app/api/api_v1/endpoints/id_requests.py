@@ -75,7 +75,7 @@ async def get_manual_requests(
                     new_state = fresh_states[mo.odoo_id]
                     if mo.state != new_state:
                          mo.state = new_state
-                         mo.last_sync_at = datetime.now(timezone.utc)
+                         mo.last_sync_at = datetime.now(timezone.utc).replace(tzinfo=None)
                          session.add(mo)
             
             # Commit updates to local DB so next read is fast/correct
@@ -302,7 +302,7 @@ async def transfer_manual_request(
         
     # 3. Update Local State
     req.transferred_to_queue = True
-    req.transferred_at = datetime.now(timezone.utc)
+    req.transferred_at = datetime.now(timezone.utc).replace(tzinfo=None)
     req.odoo_activity_id = activity_id
     # Optional: Change status to something else? Keep as is but filter out via 'transferred_to_queue' flag?
     # User suggestion: "status='transferida' (ou remover dos status abertos)"

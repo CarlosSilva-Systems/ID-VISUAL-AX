@@ -58,6 +58,12 @@ async def get_current_user(
         return user
     except Exception as e:
         logger.error(f"User lookup failed for {user_identifier}: {e}")
+        # Rollback explícito para limpar qualquer estado de transação inválida
+        # antes que a mesma sessão seja usada pelo endpoint downstream.
+        try:
+            await session.rollback()
+        except Exception:
+            pass
         return None
 
 
