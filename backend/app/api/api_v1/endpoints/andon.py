@@ -1012,6 +1012,10 @@ async def get_tv_data(
             elif idr.status in [IDRequestStatus.EM_PROGRESSO, IDRequestStatus.EM_LOTE, IDRequestStatus.TRIAGEM]:
                 prod_status = "in_progress"
                 
+            # Usa concluido_em como fallback quando finished_at não foi setado
+            # (registros finalizados antes da correção do id_request_service)
+            effective_finished_at = idr.finished_at or idr.concluido_em
+
             id_reqs_data.append({
                 "id": str(idr.id),
                 "mo_number": mo.name,
@@ -1025,7 +1029,7 @@ async def get_tv_data(
                 "is_transferred": idr.transferred_to_queue,
                 "created_at": idr.created_at.isoformat() if idr.created_at else None,
                 "started_at": idr.started_at.isoformat() if idr.started_at else None,
-                "finished_at": idr.finished_at.isoformat() if idr.finished_at else None,
+                "finished_at": effective_finished_at.isoformat() if effective_finished_at else None,
             })
             
             idr_id_str = str(idr.id)
@@ -1053,8 +1057,10 @@ async def get_tv_data(
                     "requester_name": idr.requester_name,
                     "created_at": idr.started_at.isoformat()
                 })
-            if idr.status == IDRequestStatus.CONCLUIDA and idr.finished_at:
-                dur = (idr.finished_at - (idr.started_at or idr.created_at)).total_seconds() / 60
+            # Gera IDVISUAL_DONE usando concluido_em como fallback para finished_at
+            if idr.status == IDRequestStatus.CONCLUIDA and effective_finished_at:
+                ref_start = idr.started_at or idr.iniciado_em or idr.created_at
+                dur = (effective_finished_at - ref_start).total_seconds() / 60 if ref_start else 0
                 recent_events.append({
                     "event_type": "IDVISUAL_DONE",
                     "entity_id": idr_id_str,
@@ -1062,7 +1068,7 @@ async def get_tv_data(
                     "requester_name": idr.requester_name,
                     "notes": idr.notes,
                     "duration_minutes": dur,
-                    "finished_at": idr.finished_at.isoformat()
+                    "finished_at": effective_finished_at.isoformat()
                 })
 
         def get_time(ev: dict) -> str:

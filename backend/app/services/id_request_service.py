@@ -20,7 +20,10 @@ def update_id_request_status(req: IDRequest, new_status: IDRequestStatus | str) 
             return req
 
     # Apenas atualiza se houve mudança real (evita overwrite de timestamps por acidente)
-    if req.status == new_status:
+    # Compara tanto enum quanto string para evitar falso-negativo
+    current_status_val = req.status.value if hasattr(req.status, 'value') else str(req.status)
+    new_status_val = new_status.value if hasattr(new_status, 'value') else str(new_status)
+    if current_status_val == new_status_val:
         return req
         
     req.status = new_status
