@@ -654,7 +654,7 @@ async def finalize_batch(
     batch.finalized_at = now
     session.add(batch)
     
-    # Update IDRequest statuses
+    # Update IDRequest statuses — finished_at é setado aqui via update_id_request_status
     for req in requests:
         update_id_request_status(req, IDRequestStatus.CONCLUIDA)
         session.add(req)
@@ -662,7 +662,9 @@ async def finalize_batch(
     await session.commit()
     await session.refresh(batch)
     
-    # Invalidate cache
+    # Invalidar cache do Andon TV para que o polling detecte os eventos IDVISUAL_DONE
+    update_sync_version("andon_version")
+    # Invalidar cache geral de ordens
     update_sync_version("odoo_version")
     
     # C) CLOSE ODOO ACTIVITIES
