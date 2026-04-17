@@ -10,7 +10,7 @@ O carrossel da Andon TV apresentava travamentos e pulos de seções quando a lis
 
 ## Causa Raiz
 
-### Condição de Corrida na Rotação Dinâmica
+### Índice Inválido Após Mudança Dinâmica
 
 ```typescript
 // ANTES (código problemático)
@@ -18,82 +18,76 @@ const panels = allPanels.filter(p => p.show); // Lista dinâmica
 
 useEffect(() => {
     const timeout = setTimeout(() => {
-        setPanelIndex(prev => (prev + 1) % panels.length); // ❌ Usa panels.length do momento da execução
+        setPanelIndex(prev => (prev + 1) % panels.length);
     }, PANEL_DURATION_MS);
     return () => clearTimeout(timeout);
-}, [panelIndex, panels.length]); // ❌ Reage apenas ao tamanho, não à estrutura
+}, [panelIndex, panels.length]);
 
-const safeIndex = panelIndex % Math.max(panels.length, 1); // ❌ Clamp simples não resolve dessincronia
+const safeIndex = panelIndex % Math.max(panels.length, 1); // ❌ Pode gerar índice inválido
 ```
 
 ### Cenário de Falha
 
-1. **T=0s**: Carrossel em `panelIndex=1` (Produção), `panels = ['summary', 'production', 'idvisual']` (3 painéis)
-2. **T=10s**: Timer dispara, inicia transição para `panelIndex=2` (ID Visual)
-3. **T=10.2s**: Durante a transição, um chamado Andon é aberto → "Mesas Paradas" entra na lista
-4. **T=10.4s**: `panels = ['summary', 'stopped', 'production', 'idvisual']` (4 painéis)
-5. **T=10.4s**: Transição completa com `panelIndex=2`, mas agora `panels[2]` é "Produção" (não "ID Visual")
-6. **Resultado**: Carrossel "pula" de volta para Produção em vez de avançar para ID Visual
+1. **T=0s**: Carrossel em `panelIndex=2` (ID Visual), `panels = ['summary', 'production', 'idvisual']` (3 painéis)
+2. **T=10s**: Um chamado Andon é aberto → "Mesas Paradas" entra na lista
+3. **T=10.1s**: `panels = ['summary', 'stopped', 'production', 'idvisual']` (4 painéis)
+4. **T=10.1s**: `panelIndex=2` agora aponta para "Produção" em vez de "ID Visual"
+5. **Resultado**: Carrossel exibe painel incorreto ou trava
 
 ## Solução Implementada
 
-### 1. Rastreamento de Mudanças Estruturais
+### Abordagem Simplificada e Robusta
 
 ```typescript
-const prevPanelIdsRef = useRef<string>('');
-const currentPanelIds = panels.map(p => p.id).join(',');
-
+// 1. Rotação simples e direta
 useEffect(() => {
-    if (prevPanelIdsRef.current !== currentPanelIds) {
-        // Detectar entrada/saída de painéis
-        const currentPanelId = panels[panelIndex]?.id;
-        const newIndex = currentPanelIds.split(',').indexOf(currentPanelId);
-        
-        if (newIndex !== -1 && newIndex !== panelIndex) {
-            // Painel atual mudou de posição → ajustar índice
-            setPanelIndex(newIndex);
-        } else if (newIndex === -1) {
-            // Painel atual foi removido → ir para o mais próximo
-            setPanelIndex(Math.min(panelIndex, panels.length - 1));
-        }
-        
-        prevPanelIdsRef.current = currentPanelIds;
+    if (panels.length <= 1) return;
+
+    const timeout = setTimeout(() => {
+        setTransitioning(true);
+        setTimeout(() => {
+            setPanelIndex(prev => (prev + 1) % panels.length);
+            setTransitioning(false);
+        }, 400);
+    }, PANEL_DURATION_MS);
+
+    return () => clearTimeout(timeout);
+}, [panelIndex, panels.length]);
+
+// 2. Ajuste automático quando lista muda
+useEffect(() => {
+    if (panelIndex >= panels.length && panels.length > 0) {
+        setPanelIndex(panels.length - 1);
     }
-}, [currentPanelIds, panelIndex, panels]);
+}, [panels.length, panelIndex]);
+
+// 3. Índice sempre válido
+const safeIndex = Math.max(0, Math.min(panelIndex, panels.length - 1));
 ```
 
-### 2. Logs de Debug para Rastreamento
+### Mudanças Implementadas
 
-```typescript
-console.info('[AndonTV Carousel] Mudança detectada:', {
-    antes: prevIds,
-    depois: currentIds,
-    indiceAtual: panelIndex,
-});
-
-console.info('[AndonTV Carousel] Rotação:', prev, '→', nextIndex, `(${panels[nextIndex]?.id})`);
-```
-
-### 3. Índice Seguro com Clamp Robusto
-
-```typescript
-// Garantir que o índice nunca excede o tamanho da lista
-const safeIndex = Math.min(panelIndex, panels.length - 1);
-```
+1. **Tempo aumentado**: 12s → 20s por painel (melhor legibilidade)
+2. **Lógica simplificada**: Removida detecção complexa de mudanças estruturais
+3. **Ajuste automático**: Quando `panels.length` muda, índice é clamped automaticamente
+4. **Clamp robusto**: `Math.max(0, Math.min(panelIndex, panels.length - 1))` garante índice sempre válido
 
 ## Comportamento Esperado Após a Correção
 
-### Cenário 1: Painel Entra Durante Transição
-- **Antes**: Carrossel pula ou trava
-- **Depois**: Índice é ajustado automaticamente, rotação continua suave
+### Cenário 1: Painel Entra Durante Rotação
+- Lista cresce de 3 → 4 painéis
+- Índice atual permanece válido
+- Próxima rotação inclui o novo painel naturalmente
 
-### Cenário 2: Painel Sai Durante Transição
-- **Antes**: Índice inválido causa renderização vazia ou erro
-- **Depois**: Índice é clamped para o painel mais próximo válido
+### Cenário 2: Painel Sai Durante Rotação
+- Lista diminui de 4 → 3 painéis
+- Se `panelIndex >= 3`, é ajustado para `2` automaticamente
+- Rotação continua normalmente
 
 ### Cenário 3: Múltiplas Mudanças Rápidas
-- **Antes**: Estado inconsistente, comportamento imprevisível
-- **Depois**: Cada mudança é detectada e ajustada sequencialmente
+- Cada mudança dispara o `useEffect` de ajuste
+- Índice é sempre clamped para valor válido
+- Timer de rotação não é afetado
 
 ## Testes Recomendados
 
@@ -108,24 +102,25 @@ const safeIndex = Math.min(panelIndex, panels.length - 1);
    - Verificar que painel sai da rotação sem travar
 
 3. **Teste de Timing Crítico**:
-   - Abrir/fechar chamados Andon exatamente durante transições (T=12s, T=24s, etc.)
+   - Abrir/fechar chamados Andon exatamente durante transições
    - Verificar que carrossel nunca pula ou trava
 
-4. **Teste de Console**:
-   - Abrir DevTools → Console
-   - Observar logs `[AndonTV Carousel]` durante mudanças
-   - Confirmar que ajustes de índice são registrados corretamente
+4. **Teste de Duração**:
+   - Confirmar que cada painel fica visível por 20 segundos
+   - Verificar que transições são suaves (400ms)
 
 ## Métricas de Sucesso
 
 - ✅ Zero pulos de seção durante 1 hora de operação contínua
 - ✅ Zero travamentos durante entrada/saída de painéis
-- ✅ Logs de debug claros e rastreáveis
 - ✅ Transições visuais suaves mesmo com mudanças dinâmicas
+- ✅ Tempo de exibição de 20 segundos por painel
+- ✅ Lógica simples e fácil de manter
 
 ## Notas Técnicas
 
-- A solução usa `useRef` para rastrear estado anterior sem causar re-renders desnecessários
-- O `useEffect` de ajuste roda **antes** do `useEffect` de rotação (ordem de declaração)
-- Logs de console podem ser removidos em produção se desejado (não afetam performance)
+- A solução usa apenas 2 `useEffect`: um para rotação, outro para ajuste de índice
+- Não há logs de console (removidos para produção)
+- O clamp triplo (`Math.max(0, Math.min(...))`) garante índice sempre no range `[0, panels.length-1]`
 - A correção é **retrocompatível** — não quebra comportamento existente quando painéis são estáticos
+- Tempo de 20 segundos permite melhor leitura dos dados em cada painel

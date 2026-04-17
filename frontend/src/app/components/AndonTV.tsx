@@ -12,7 +12,7 @@ import { AndonTVProvider, LogType, TVCall, TVIDRequest, TVLog, TVWorkcenter, use
 import { normalizeLabel, cn } from '../../lib/utils';
 
 // ── Constants ─────────────────────────────────────────────────────
-const PANEL_DURATION_MS = 12000;
+const PANEL_DURATION_MS = 20000; // 20 segundos por painel
 
 function elapsed(isoDate: string | null | undefined): string {
     if (!isoDate) return '---';
@@ -681,9 +681,6 @@ function AndonTVInner() {
     const [panelIndex, setPanelIndex] = useState(0);
     const [transitioning, setTransitioning] = useState(false);
     const [started, setStarted] = useState(false);
-    
-    // Rastrear a sequência de painéis para detectar mudanças estruturais
-    const prevPanelIdsRef = useRef<string>('');
 
     // Clock
     useEffect(() => {
@@ -722,48 +719,7 @@ function AndonTVInner() {
     ];
     const panels = allPanels.filter(p => p.show);
 
-    // Detectar mudanças na estrutura da lista de painéis (entrada/saída de painéis)
-    const currentPanelIds = panels.map(p => p.id).join(',');
-    useEffect(() => {
-        if (prevPanelIdsRef.current === '') {
-            // Primeira renderização — apenas inicializar
-            prevPanelIdsRef.current = currentPanelIds;
-            console.info('[AndonTV Carousel] Inicializado com painéis:', currentPanelIds);
-            return;
-        }
-
-        if (prevPanelIdsRef.current !== currentPanelIds) {
-            // A lista de painéis mudou — ajustar índice para evitar pulos/travamentos
-            const prevIds = prevPanelIdsRef.current.split(',');
-            const currentIds = currentPanelIds.split(',');
-            
-            console.info('[AndonTV Carousel] Mudança detectada:', {
-                antes: prevIds,
-                depois: currentIds,
-                indiceAtual: panelIndex,
-            });
-
-            // Tentar manter o painel atual se ainda existir
-            const currentPanelId = panels[panelIndex]?.id;
-            const newIndex = currentIds.indexOf(currentPanelId);
-            
-            if (newIndex !== -1 && newIndex !== panelIndex) {
-                // Painel atual ainda existe, mas em posição diferente
-                console.info('[AndonTV Carousel] Ajustando índice:', panelIndex, '→', newIndex);
-                setPanelIndex(newIndex);
-            } else if (newIndex === -1) {
-                // Painel atual foi removido — ir para o próximo válido
-                const safeNewIndex = Math.min(panelIndex, currentIds.length - 1);
-                console.info('[AndonTV Carousel] Painel removido, ajustando para:', safeNewIndex, `(${currentIds[safeNewIndex]})`);
-                setPanelIndex(safeNewIndex);
-            }
-            // Se newIndex === panelIndex, não fazer nada (painel está na mesma posição)
-
-            prevPanelIdsRef.current = currentPanelIds;
-        }
-    }, [currentPanelIds, panelIndex, panels]);
-
-    // Auto-rotate com sequência explícita e proteção contra índices inválidos
+    // Auto-rotate — simples e direto
     useEffect(() => {
         if (panels.length <= 1) return;
 
@@ -771,19 +727,25 @@ function AndonTVInner() {
             setTransitioning(true);
             setTimeout(() => {
                 setPanelIndex(prev => {
-                    const nextIndex = (prev + 1) % panels.length;
-                    console.info('[AndonTV Carousel] Rotação:', prev, '→', nextIndex, `(${panels[nextIndex]?.id})`);
-                    return nextIndex;
+                    // Calcular próximo índice válido
+                    const next = (prev + 1) % panels.length;
+                    return next;
                 });
                 setTransitioning(false);
             }, 400);
         }, PANEL_DURATION_MS);
 
         return () => clearTimeout(timeout);
-    }, [panelIndex, panels.length, panels]);
+    }, [panelIndex, panels.length]);
 
-    // Garantir que o índice está sempre dentro dos limites (fallback de segurança)
-    const safeIndex = Math.min(panelIndex, panels.length - 1);
+    // Garantir índice válido quando lista de painéis muda
+    useEffect(() => {
+        if (panelIndex >= panels.length && panels.length > 0) {
+            setPanelIndex(panels.length - 1);
+        }
+    }, [panels.length, panelIndex]);
+
+    const safeIndex = Math.max(0, Math.min(panelIndex, panels.length - 1));
     const activePanel = panels[safeIndex];
 
     const renderPanel = () => {
