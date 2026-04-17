@@ -501,9 +501,9 @@ async def get_production_requests(
             
         if s in ["nova", "triagem"]:
             p_status = "waiting"
-        elif s in ["em_lote", "em_progresso"]:
+        elif s in ["em_lote", "em_progresso", "bloqueada"]:
              p_status = "in_progress"
-        elif s in ["concluido", "entregue"]:
+        elif s in ["concluida", "entregue"]:
              p_status = "done"
         
         response.append(ProductionRequestResponse(
