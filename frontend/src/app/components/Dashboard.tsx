@@ -371,8 +371,9 @@ export function Dashboard({ onCreateBatch }: DashboardProps) {
     const items = odooMOs;
     return items.filter(item => {
       const searchLower = search.toLowerCase();
+      const obraStr = typeof item.obra === 'string' ? item.obra : '';
       const matchesSearch = (item.mo_number || '').toLowerCase().includes(searchLower) ||
-        (item.obra || '').toLowerCase().includes(searchLower);
+        obraStr.toLowerCase().includes(searchLower);
 
       if (!matchesSearch) return false;
 

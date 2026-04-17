@@ -8,6 +8,7 @@ from sqlmodel import select, col
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.services.odoo_client import OdooClient
+from app.services.odoo_utils import normalize_many2one_display
 from app.core.config import settings
 from app.api.deps import get_session, get_odoo_client, get_current_user
 from app.models.id_request import IDRequest, IDRequestStatus
@@ -130,10 +131,14 @@ async def get_odoo_mos(
                 
             act = activity_map[rid]
             
+            # Normalizar obra (pode vir como [id, "nome"] do Odoo)
+            obra_raw = mo.get('x_studio_nome_da_obra')
+            obra_clean = normalize_many2one_display(obra_raw) or 'Sem Obra'
+            
             item = {
                 "odoo_mo_id": mo.get('id'),
                 "mo_number": mo.get('name', 'N/A'),
-                "obra": mo.get('x_studio_nome_da_obra') or 'Sem Obra',
+                "obra": obra_clean,
                 "product_qty": mo.get('product_qty', 0),
                 "date_start": mo.get('date_start'),
                 "state": mo.get('state', 'unknown'),

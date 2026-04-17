@@ -91,10 +91,20 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 // Estado da MO no Odoo para exibição informativa (badge secundário)
                 const mrpState: MRPState = ODOO_STATE_TO_MRP[rawState] ?? 'Desconhecido';
 
+                // Normalizar obra (pode vir como array [id, "nome"] do Odoo)
+                let obraStr = '';
+                if (typeof mo.obra === 'string') {
+                    obraStr = mo.obra;
+                } else if (Array.isArray(mo.obra) && mo.obra.length > 1) {
+                    obraStr = String(mo.obra[1]);
+                } else if (mo.obra && typeof mo.obra === 'object' && 'name' in mo.obra) {
+                    obraStr = String(mo.obra.name);
+                }
+
                 return {
                     id: String(mo.odoo_mo_id),
                     mo_number: mo.mo_number,
-                    obra: mo.obra,
+                    obra: obraStr,
                     status: statusID,
                     priority: 'Normal',
                     date_start: formatDate(mo.date_start),
