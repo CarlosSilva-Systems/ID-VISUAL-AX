@@ -1,126 +1,141 @@
-# Correção do Bug de Travamento do Carrossel Andon TV
+# Correção do Bug de Pulo do Carrossel Andon TV
 
 ## Problema Identificado
 
-O carrossel da Andon TV apresentava travamentos e pulos de seções quando a lista de painéis mudava dinamicamente durante uma transição. Especificamente, quando o painel "Mesas Paradas" entrava ou saía da rotação (baseado na presença de chamados Andon ativos), o carrossel podia:
+O carrossel da Andon TV apresentava **pulos de seção** quando a lista de painéis mudava dinamicamente. Especificamente:
 
-1. **Pular uma seção** — avançar 2 posições em vez de 1
-2. **Travar** — ficar preso em um painel específico
-3. **Exibir conteúdo incorreto** — mostrar o painel errado para o índice atual
+**Cenário problemático**:
+1. Carrossel está exibindo "Produção" (índice 2 em `['summary', 'stopped', 'production', 'idvisual']`)
+2. Todos os chamados Andon são resolvidos → "Mesas Paradas" sai da lista
+3. Nova lista: `['summary', 'production', 'idvisual']`
+4. **Bug**: Índice 2 agora aponta para "ID Visual" em vez de "Produção"
+5. **Resultado**: Carrossel "pula" de "Produção" para "ID Visual" instantaneamente
 
 ## Causa Raiz
 
-### Índice Inválido Após Mudança Dinâmica
+### Rastreamento por Índice Numérico
 
 ```typescript
 // ANTES (código problemático)
-const panels = allPanels.filter(p => p.show); // Lista dinâmica
+const [panelIndex, setPanelIndex] = useState(0);
 
-useEffect(() => {
-    const timeout = setTimeout(() => {
-        setPanelIndex(prev => (prev + 1) % panels.length);
-    }, PANEL_DURATION_MS);
-    return () => clearTimeout(timeout);
-}, [panelIndex, panels.length]);
-
-const safeIndex = panelIndex % Math.max(panels.length, 1); // ❌ Pode gerar índice inválido
+// Quando lista muda de tamanho, índice numérico aponta para painel diferente
+// Exemplo: índice 2 em [A, B, C, D] é C, mas em [A, C, D] é D
 ```
 
-### Cenário de Falha
-
-1. **T=0s**: Carrossel em `panelIndex=2` (ID Visual), `panels = ['summary', 'production', 'idvisual']` (3 painéis)
-2. **T=10s**: Um chamado Andon é aberto → "Mesas Paradas" entra na lista
-3. **T=10.1s**: `panels = ['summary', 'stopped', 'production', 'idvisual']` (4 painéis)
-4. **T=10.1s**: `panelIndex=2` agora aponta para "Produção" em vez de "ID Visual"
-5. **Resultado**: Carrossel exibe painel incorreto ou trava
+O problema é que **índices numéricos não são estáveis** quando a lista muda. Remover um item no meio desloca todos os índices subsequentes.
 
 ## Solução Implementada
 
-### Abordagem Simplificada e Robusta
+### Rastreamento por ID de Painel
 
 ```typescript
-// 1. Rotação simples e direta
+// Rastrear o ID do painel atual (não o índice)
+const currentPanelIdRef = useRef<string>('summary');
+
+// Sincronizar índice com o ID quando a lista muda
 useEffect(() => {
-    if (panels.length <= 1) return;
-
-    const timeout = setTimeout(() => {
-        setTransitioning(true);
-        setTimeout(() => {
-            setPanelIndex(prev => (prev + 1) % panels.length);
-            setTransitioning(false);
-        }, 400);
-    }, PANEL_DURATION_MS);
-
-    return () => clearTimeout(timeout);
-}, [panelIndex, panels.length]);
-
-// 2. Ajuste automático quando lista muda
-useEffect(() => {
-    if (panelIndex >= panels.length && panels.length > 0) {
-        setPanelIndex(panels.length - 1);
+    const currentId = currentPanelIdRef.current;
+    const newIndex = panels.findIndex(p => p.id === currentId);
+    
+    if (newIndex !== -1 && newIndex !== panelIndex) {
+        // Painel atual ainda existe, mas mudou de posição → ajustar índice
+        setPanelIndex(newIndex);
+    } else if (newIndex === -1) {
+        // Painel atual foi removido → manter no índice atual
+        const safeIdx = Math.min(panelIndex, panels.length - 1);
+        setPanelIndex(safeIdx);
+        // Atualizar ref para o novo painel atual
+        if (panels[safeIdx]) {
+            currentPanelIdRef.current = panels[safeIdx].id;
+        }
     }
-}, [panels.length, panelIndex]);
+}, [panels, panelIndex]);
 
-// 3. Índice sempre válido
-const safeIndex = Math.max(0, Math.min(panelIndex, panels.length - 1));
+// Atualizar ID ao rotacionar
+useEffect(() => {
+    // ... rotação ...
+    const next = (prev + 1) % panels.length;
+    if (panels[next]) {
+        currentPanelIdRef.current = panels[next].id;
+    }
+    return next;
+}, [panelIndex, panels.length, panels]);
 ```
-
-### Mudanças Implementadas
-
-1. **Tempo aumentado**: 12s → 20s por painel (melhor legibilidade)
-2. **Lógica simplificada**: Removida detecção complexa de mudanças estruturais
-3. **Ajuste automático**: Quando `panels.length` muda, índice é clamped automaticamente
-4. **Clamp robusto**: `Math.max(0, Math.min(panelIndex, panels.length - 1))` garante índice sempre válido
 
 ## Comportamento Esperado Após a Correção
 
-### Cenário 1: Painel Entra Durante Rotação
-- Lista cresce de 3 → 4 painéis
-- Índice atual permanece válido
-- Próxima rotação inclui o novo painel naturalmente
+### Cenário 1: "Mesas Paradas" Sai Durante Exibição de "Produção"
 
-### Cenário 2: Painel Sai Durante Rotação
-- Lista diminui de 4 → 3 painéis
-- Se `panelIndex >= 3`, é ajustado para `2` automaticamente
-- Rotação continua normalmente
+**Antes**:
+- Lista: `['summary', 'stopped', 'production', 'idvisual']` → índice 2 = "Produção"
+- "Mesas Paradas" sai
+- Lista: `['summary', 'production', 'idvisual']` → índice 2 = "ID Visual" ❌
+- **Resultado**: Pula de "Produção" para "ID Visual"
 
-### Cenário 3: Múltiplas Mudanças Rápidas
-- Cada mudança dispara o `useEffect` de ajuste
-- Índice é sempre clamped para valor válido
-- Timer de rotação não é afetado
+**Depois**:
+- Lista: `['summary', 'stopped', 'production', 'idvisual']` → índice 2 = "Produção", ID = `'production'`
+- "Mesas Paradas" sai
+- `findIndex('production')` retorna 1 → ajusta índice para 1
+- Lista: `['summary', 'production', 'idvisual']` → índice 1 = "Produção" ✅
+- **Resultado**: Continua exibindo "Produção" normalmente
+
+### Cenário 2: "Mesas Paradas" Entra Durante Exibição de "Produção"
+
+**Antes**:
+- Lista: `['summary', 'production', 'idvisual']` → índice 1 = "Produção"
+- Chamado Andon aberto → "Mesas Paradas" entra
+- Lista: `['summary', 'stopped', 'production', 'idvisual']` → índice 1 = "Mesas Paradas" ❌
+- **Resultado**: Pula de "Produção" para "Mesas Paradas"
+
+**Depois**:
+- Lista: `['summary', 'production', 'idvisual']` → índice 1 = "Produção", ID = `'production'`
+- Chamado Andon aberto → "Mesas Paradas" entra
+- `findIndex('production')` retorna 2 → ajusta índice para 2
+- Lista: `['summary', 'stopped', 'production', 'idvisual']` → índice 2 = "Produção" ✅
+- **Resultado**: Continua exibindo "Produção" normalmente
+
+### Cenário 3: Painel Atual é Removido
+
+Se o painel sendo exibido for removido (ex: "Mesas Paradas" sai enquanto está sendo exibido):
+- `findIndex` retorna -1
+- Mantém o índice atual (ou ajusta se inválido)
+- Atualiza o `currentPanelIdRef` para o novo painel naquela posição
+- Rotação continua normalmente a partir do novo painel
 
 ## Testes Recomendados
 
-1. **Teste de Entrada de "Mesas Paradas"**:
-   - Deixar carrossel rodando em "Resumo → Produção → ID Visual"
-   - Abrir um chamado Andon amarelo/vermelho
-   - Verificar que "Mesas Paradas" entra na rotação sem pulos
-
-2. **Teste de Saída de "Mesas Paradas"**:
-   - Deixar carrossel rodando com "Mesas Paradas" ativo
+1. **Teste de Saída de "Mesas Paradas"**:
+   - Deixar carrossel exibindo "Produção" com "Mesas Paradas" na lista
    - Resolver todos os chamados Andon
-   - Verificar que painel sai da rotação sem travar
+   - ✅ Verificar que continua exibindo "Produção" (não pula)
 
-3. **Teste de Timing Crítico**:
-   - Abrir/fechar chamados Andon exatamente durante transições
-   - Verificar que carrossel nunca pula ou trava
+2. **Teste de Entrada de "Mesas Paradas"**:
+   - Deixar carrossel exibindo "Produção" sem "Mesas Paradas" na lista
+   - Abrir um chamado Andon
+   - ✅ Verificar que continua exibindo "Produção" (não pula)
 
-4. **Teste de Duração**:
-   - Confirmar que cada painel fica visível por 20 segundos
-   - Verificar que transições são suaves (400ms)
+3. **Teste de Remoção do Painel Atual**:
+   - Deixar carrossel exibindo "Mesas Paradas"
+   - Resolver todos os chamados Andon
+   - ✅ Verificar que avança para o próximo painel válido
+
+4. **Teste de Rotação Normal**:
+   - Deixar carrossel rodando sem mudanças na lista
+   - ✅ Verificar que rotação continua a cada 20 segundos
 
 ## Métricas de Sucesso
 
-- ✅ Zero pulos de seção durante 1 hora de operação contínua
-- ✅ Zero travamentos durante entrada/saída de painéis
-- ✅ Transições visuais suaves mesmo com mudanças dinâmicas
+- ✅ Zero pulos de seção quando painéis entram/saem da lista
+- ✅ Painel atual permanece visível quando lista muda
+- ✅ Rotação continua normalmente após mudanças
 - ✅ Tempo de exibição de 20 segundos por painel
-- ✅ Lógica simples e fácil de manter
+- ✅ Transições visuais suaves
 
 ## Notas Técnicas
 
-- A solução usa apenas 2 `useEffect`: um para rotação, outro para ajuste de índice
-- Não há logs de console (removidos para produção)
-- O clamp triplo (`Math.max(0, Math.min(...))`) garante índice sempre no range `[0, panels.length-1]`
-- A correção é **retrocompatível** — não quebra comportamento existente quando painéis são estáticos
-- Tempo de 20 segundos permite melhor leitura dos dados em cada painel
+- **`useRef` para ID**: Não causa re-renders, apenas rastreia estado
+- **`findIndex`**: Busca o painel pelo ID, não pelo índice
+- **Sincronização**: `useEffect` roda sempre que `panels` muda, ajustando o índice
+- **Fallback**: Se painel atual for removido, mantém índice (ou ajusta se inválido)
+- **Atualização de ID**: Toda rotação atualiza o `currentPanelIdRef` para o novo painel
