@@ -681,10 +681,6 @@ function AndonTVInner() {
     const [panelIndex, setPanelIndex] = useState(0);
     const [transitioning, setTransitioning] = useState(false);
     const [started, setStarted] = useState(false);
-    
-    // Rastrear o ID do painel atual (não o índice) para manter posição quando lista muda
-    const currentPanelIdRef = useRef<string>('summary');
-    const prevPanelListRef = useRef<string>('');
 
     // Clock
     useEffect(() => {
@@ -723,31 +719,6 @@ function AndonTVInner() {
     ];
     const panels = allPanels.filter(p => p.show);
 
-    // Sincronizar índice com o ID do painel atual APENAS quando a LISTA muda (não quando índice muda)
-    const panelListSignature = panels.map(p => p.id).join(',');
-    useEffect(() => {
-        // Só executar se a lista de painéis realmente mudou
-        if (prevPanelListRef.current === panelListSignature) return;
-        
-        const currentId = currentPanelIdRef.current;
-        const newIndex = panels.findIndex(p => p.id === currentId);
-        
-        if (newIndex !== -1 && newIndex !== panelIndex) {
-            // Painel atual ainda existe, mas mudou de posição → ajustar índice
-            setPanelIndex(newIndex);
-        } else if (newIndex === -1) {
-            // Painel atual foi removido → manter no índice atual (ou ajustar se inválido)
-            const safeIdx = Math.min(panelIndex, panels.length - 1);
-            setPanelIndex(safeIdx);
-            // Atualizar ref para o novo painel atual
-            if (panels[safeIdx]) {
-                currentPanelIdRef.current = panels[safeIdx].id;
-            }
-        }
-        
-        prevPanelListRef.current = panelListSignature;
-    }, [panelListSignature, panels, panelIndex]); // ✅ Só depende da assinatura da lista, não do índice
-
     // Auto-rotate — simples e direto
     useEffect(() => {
         if (panels.length <= 1) return;
@@ -755,23 +726,16 @@ function AndonTVInner() {
         const timeout = setTimeout(() => {
             setTransitioning(true);
             setTimeout(() => {
-                setPanelIndex(prev => {
-                    // Calcular próximo índice válido
-                    const next = (prev + 1) % panels.length;
-                    // Atualizar o ID do painel atual
-                    if (panels[next]) {
-                        currentPanelIdRef.current = panels[next].id;
-                    }
-                    return next;
-                });
+                setPanelIndex(prev => (prev + 1) % panels.length);
                 setTransitioning(false);
             }, 400);
         }, PANEL_DURATION_MS);
 
         return () => clearTimeout(timeout);
-    }, [panelIndex, panels.length, panels]);
+    }, [panelIndex, panels.length]);
 
-    const safeIndex = Math.max(0, Math.min(panelIndex, panels.length - 1));
+    // Apenas garantir que índice não exceda o tamanho da lista
+    const safeIndex = Math.min(panelIndex, panels.length - 1);
     const activePanel = panels[safeIndex];
 
     const renderPanel = () => {
