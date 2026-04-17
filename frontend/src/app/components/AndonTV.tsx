@@ -684,6 +684,7 @@ function AndonTVInner() {
     
     // Rastrear o ID do painel atual (não o índice) para manter posição quando lista muda
     const currentPanelIdRef = useRef<string>('summary');
+    const prevPanelListRef = useRef<string>('');
 
     // Clock
     useEffect(() => {
@@ -722,8 +723,12 @@ function AndonTVInner() {
     ];
     const panels = allPanels.filter(p => p.show);
 
-    // Sincronizar índice com o ID do painel atual quando a lista muda
+    // Sincronizar índice com o ID do painel atual APENAS quando a LISTA muda (não quando índice muda)
+    const panelListSignature = panels.map(p => p.id).join(',');
     useEffect(() => {
+        // Só executar se a lista de painéis realmente mudou
+        if (prevPanelListRef.current === panelListSignature) return;
+        
         const currentId = currentPanelIdRef.current;
         const newIndex = panels.findIndex(p => p.id === currentId);
         
@@ -739,7 +744,9 @@ function AndonTVInner() {
                 currentPanelIdRef.current = panels[safeIdx].id;
             }
         }
-    }, [panels, panelIndex]);
+        
+        prevPanelListRef.current = panelListSignature;
+    }, [panelListSignature, panels, panelIndex]); // ✅ Só depende da assinatura da lista, não do índice
 
     // Auto-rotate — simples e direto
     useEffect(() => {
