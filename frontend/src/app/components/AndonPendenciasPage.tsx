@@ -230,8 +230,13 @@ export const AndonPendenciasPage: React.FC<AndonPendenciasPageProps> = ({ curren
                     }
                     <div className={`w-3 h-3 rounded-full flex-shrink-0 ${hasRed ? 'bg-red-500' : 'bg-yellow-400'}`} />
                     <span className="font-bold text-slate-900 text-sm sm:text-base truncate">
-                      {firstCall.workcenter_name}
+                      {ownerName !== '—' ? ownerName : firstCall.workcenter_name}
                     </span>
+                    {ownerName !== '—' && (
+                      <span className="hidden sm:inline text-xs text-slate-400 font-medium truncate">
+                        {firstCall.workcenter_name}
+                      </span>
+                    )}
                     {/* Detalhes — ocultos em mobile, visíveis em sm+ */}
                     <div className="hidden sm:flex items-center gap-3 text-sm text-slate-500">
                       <span className="flex items-center gap-1.5">

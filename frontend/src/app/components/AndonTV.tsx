@@ -342,8 +342,13 @@ function PanelMesasParadas({ calls }: { calls: TVCall[] }) {
                             <div className="flex-1 min-w-0">
                                 <div className="flex items-center gap-3 flex-wrap">
                                     <span className={`text-xl font-black ${isRed ? 'text-red-200' : 'text-amber-200'}`}>
-                                        {normalizeLabel(call.workcenter_name)}
+                                        {normalizeLabel(call.triggered_by) || normalizeLabel(call.workcenter_name)}
                                     </span>
+                                    {call.triggered_by && (
+                                        <span className={`text-xs font-medium opacity-60 ${isRed ? 'text-red-300' : 'text-amber-300'}`}>
+                                            {normalizeLabel(call.workcenter_name)}
+                                        </span>
+                                    )}
                                     <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${call.status === 'IN_PROGRESS'
                                         ? 'bg-blue-600/60 text-blue-200'
                                         : isRed ? 'bg-red-800/60 text-red-300' : 'bg-amber-800/60 text-amber-300'
@@ -361,10 +366,6 @@ function PanelMesasParadas({ calls }: { calls: TVCall[] }) {
                                     <span className="flex items-center gap-1">
                                         <Clock className="w-3.5 h-3.5" />
                                         Parado há {elapsed(call.created_at)}
-                                    </span>
-                                    <span className="flex items-center gap-1">
-                                        <Users className="w-3.5 h-3.5" />
-                                        {normalizeLabel(call.triggered_by)}
                                     </span>
                                     {call.assigned_team && (
                                         <span className="flex items-center gap-1 text-blue-400">

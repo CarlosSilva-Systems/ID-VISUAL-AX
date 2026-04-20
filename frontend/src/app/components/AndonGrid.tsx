@@ -216,9 +216,18 @@ export const AndonGrid: React.FC<AndonGridProps> = ({ username }) => {
                             getStatusColor(wc.status)
                         )}
                     >
-                        {/* Header: WC Name + Status Indicator */}
+                        {/* Header: Operator Name + Status Indicator */}
                         <div className="flex items-center justify-between mb-4">
-                            <h3 className="font-black text-lg text-slate-900 truncate pr-2">{wc.name}</h3>
+                            <div className="min-w-0 pr-2">
+                                <h3 className="font-black text-lg text-slate-900 truncate">
+                                    {wc.owner_name && wc.owner_name !== "Sem responsável definido"
+                                        ? wc.owner_name
+                                        : wc.name}
+                                </h3>
+                                {wc.owner_name && wc.owner_name !== "Sem responsável definido" && (
+                                    <p className="text-xs text-slate-400 font-medium truncate">{wc.name}</p>
+                                )}
+                            </div>
                             <div className="flex items-center gap-2">
                                 {/* Ícone IoT — tooltip em desktop, label inline em mobile */}
                                 <TooltipProvider>

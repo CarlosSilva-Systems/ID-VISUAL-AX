@@ -133,8 +133,16 @@ export const AndonOperador: React.FC<AndonOperadorProps> = ({ workcenter, onBack
                     <ArrowLeft className="w-6 h-6" />
                 </button>
                 <div>
-                    <h1 className="text-3xl font-bold tracking-tight text-slate-900">{workcenter.name}</h1>
-                    <p className="text-slate-500">Terminal do Operador</p>
+                    <h1 className="text-3xl font-bold tracking-tight text-slate-900">
+                        {workcenter.owner_name && workcenter.owner_name !== "Sem responsável definido"
+                            ? workcenter.owner_name
+                            : workcenter.name}
+                    </h1>
+                    <p className="text-slate-500">
+                        {workcenter.owner_name && workcenter.owner_name !== "Sem responsável definido"
+                            ? workcenter.name
+                            : 'Terminal do Operador'}
+                    </p>
                 </div>
             </div>
 
