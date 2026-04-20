@@ -35,12 +35,13 @@ def upgrade() -> None:
                type_=sqlmodel.sql.sqltypes.AutoString(),
                existing_nullable=True)
 
-    with op.batch_alter_table('esp_device_logs', schema=None) as batch_op:
-        batch_op.alter_column('level',
-               existing_type=sa.VARCHAR(length=10),
-               type_=sa.Enum('INFO', 'WARN', 'ERROR', name='loglevel'),
-               existing_nullable=False,
-               existing_server_default=sa.text("'INFO'::character varying"))
+    # Conversão de VARCHAR → enum loglevel requer:
+    # 1. Dropar o DEFAULT (que é 'INFO'::varchar, incompatível com o enum)
+    # 2. Alterar o tipo com USING explícito
+    # 3. Recolocar o DEFAULT já como valor do enum
+    op.execute("ALTER TABLE esp_device_logs ALTER COLUMN level DROP DEFAULT")
+    op.execute("ALTER TABLE esp_device_logs ALTER COLUMN level TYPE loglevel USING level::loglevel")
+    op.execute("ALTER TABLE esp_device_logs ALTER COLUMN level SET DEFAULT 'INFO'::loglevel")
 
     with op.batch_alter_table('firmware_versions', schema=None) as batch_op:
         batch_op.drop_index(batch_op.f('idx_firmware_versions_created_at'))
