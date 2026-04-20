@@ -931,21 +931,46 @@ async def update_call_status(
 @router.get("/tv-data")
 async def get_tv_data(
     session: AsyncSession = Depends(get_session),
+    odoo: Any = Depends(get_odoo_client),
 ):
     """
     Endpoint de dados para o Andon TV.
-    Usa APENAS o banco de dados local (sem chamadas ao Odoo) para garantir
-    resposta rápida e consistente. Os workcenters são lidos da tabela AndonStatus
-    que é mantida sincronizada pelos endpoints de acionamento.
+    Dados de status e chamados vêm do banco local (rápido e consistente).
+    Nome do operador é enriquecido via Odoo (WOs ativas), com fallback para
+    AndonStatus.updated_by caso o Odoo esteja indisponível.
     """
     from app.api.api_v1.endpoints.sync import _sync_state
     from fastapi.responses import JSONResponse
     import time
-    
+
     def iso_utc(dt) -> str | None:
         """Converte datetime para ISO 8601 UTC com sufixo Z."""
         return dt.isoformat() + 'Z' if dt else None
-    
+
+    def _extract_operator(user_val: Any, workcenter_val: Any = None) -> str:
+        """
+        Extrai o nome do operador do campo user_id ou workcenter_id do Odoo.
+        No Odoo desta empresa, workcenter_id[1] contém o nome do operador
+        (ex: [28, 'CASSIO HENRIQUE']).
+        """
+        # Tenta user_id primeiro
+        if user_val and user_val is not False:
+            if isinstance(user_val, (list, tuple)) and len(user_val) >= 2:
+                name = normalize_label(str(user_val[1]))
+                if name:
+                    return name
+            elif isinstance(user_val, str) and user_val.strip():
+                return normalize_label(user_val)
+
+        # Fallback: workcenter_id[1] contém o nome do operador neste Odoo
+        if workcenter_val and workcenter_val is not False:
+            if isinstance(workcenter_val, (list, tuple)) and len(workcenter_val) >= 2:
+                name = normalize_label(str(workcenter_val[1]))
+                if name:
+                    return name
+
+        return ""
+
     try:
         # 1. Obter status locais do banco (sem Odoo)
         stmt = select(AndonStatus)
@@ -961,7 +986,85 @@ async def get_tv_data(
         for c in all_active_calls:
             wc_calls_map.setdefault(c.workcenter_id, []).append(c)
 
-        # 3. Montar workcenters a partir do AndonStatus (sem Odoo)
+        # 3. Buscar nomes de operadores via Odoo (WOs ativas nos workcenters conhecidos)
+        #    Mesma lógica do /workcenters e /calls/pending-justification.
+        #    Falha silenciosa — fallback para updated_by do AndonStatus.
+        wc_ids = list(local_statuses.keys())
+        odoo_operator_map: dict[int, str] = {}  # wc_id → nome do operador
+        odoo_fabrication_map: dict[int, str] = {}  # wc_id → código de fabricação
+        odoo_obra_map: dict[int, str] = {}  # wc_id → nome da obra
+        odoo_started_at_map: dict[int, str | None] = {}  # wc_id → data de início
+
+        if wc_ids:
+            try:
+                wos = await odoo.search_read(
+                    'mrp.workorder',
+                    domain=[
+                        ['workcenter_id', 'in', wc_ids],
+                        ['state', 'in', ['progress', 'ready', 'waiting', 'pending']],
+                    ],
+                    fields=['workcenter_id', 'user_id', 'production_id', 'name', 'date_start', 'state'],
+                    limit=500,
+                    order='write_date desc',
+                )
+
+                # Coletar production_ids para buscar obra
+                prod_ids = []
+                for wo in wos:
+                    p_val = wo.get('production_id')
+                    if p_val and isinstance(p_val, (list, tuple)) and len(p_val) > 0:
+                        prod_ids.append(p_val[0])
+                    elif isinstance(p_val, int):
+                        prod_ids.append(p_val)
+
+                production_map: dict = {}
+                if prod_ids:
+                    try:
+                        prods = await odoo.search_read(
+                            'mrp.production',
+                            domain=[['id', 'in', list(set(prod_ids))]],
+                            fields=['x_studio_nome_da_obra', 'name'],
+                        )
+                        production_map = {p['id']: p for p in prods}
+                    except Exception as pe:
+                        logger.warning(f"[TV] Falha ao buscar produções do Odoo: {pe}")
+
+                # Processar WOs — prioriza estado 'progress'
+                for wo in wos:
+                    wc_val = wo.get('workcenter_id')
+                    if not wc_val:
+                        continue
+                    wc_id_int = wc_val[0] if isinstance(wc_val, (list, tuple)) else wc_val
+
+                    # Só sobrescreve se ainda não tem info OU esta WO está em progresso
+                    already_has_progress = wc_id_int in odoo_operator_map and wo.get('state') != 'progress'
+                    if already_has_progress:
+                        continue
+
+                    operator = _extract_operator(wo.get('user_id'), wo.get('workcenter_id'))
+                    if operator:
+                        odoo_operator_map[wc_id_int] = operator
+
+                    p_val = wo.get('production_id')
+                    p_id = p_val[0] if isinstance(p_val, (list, tuple)) else p_val
+                    p_info = production_map.get(p_id, {}) if p_id else {}
+
+                    fab_code = normalize_label(p_info.get('name') or '')
+                    obra = normalize_label(p_info.get('x_studio_nome_da_obra') or '')
+                    if fab_code:
+                        odoo_fabrication_map[wc_id_int] = fab_code
+                    if obra:
+                        odoo_obra_map[wc_id_int] = obra
+
+                    date_start = wo.get('date_start')
+                    if date_start and isinstance(date_start, str):
+                        date_start = date_start.replace(' ', 'T') + 'Z'
+                    odoo_started_at_map[wc_id_int] = date_start or None
+
+            except Exception as e:
+                logger.warning(f"[TV] Falha ao buscar operadores do Odoo (usando fallback): {e}")
+
+        # 4. Montar workcenters combinando dados locais + Odoo
         workcenters_data = []
         for wc_id, status_rec in local_statuses.items():
             active_calls = wc_calls_map.get(wc_id, [])
@@ -972,6 +1075,21 @@ async def get_tv_data(
             else:
                 status_color = status_rec.status
 
+            # Nome do operador: Odoo (user_id ou workcenter_id[1]) → updated_by → "---"
+            operator_name = odoo_operator_map.get(wc_id, "")
+            if not operator_name:
+                # Fallback: quem acionou a mesa por último (excluindo sistema e ESP32)
+                ub = status_rec.updated_by or ""
+                if ub and ub not in ("System", "system:reset") and not ub.startswith("ESP32"):
+                    operator_name = normalize_label(ub)
+            if not operator_name:
+                operator_name = "---"
+
+            fabrication_code = odoo_fabrication_map.get(wc_id, "---")
+            obra_name = odoo_obra_map.get(wc_id, "---")
+            started_at = odoo_started_at_map.get(wc_id)
+            has_active = status_color in ["verde", "amarelo_suave"] or bool(odoo_started_at_map.get(wc_id))
+
             workcenters_data.append({
                 "id": wc_id,
                 "name": normalize_label(status_rec.workcenter_name),
@@ -979,12 +1097,12 @@ async def get_tv_data(
                 "status": status_color,
                 "active_calls_count": len(active_calls),
                 "operational_status": "PRODUÇÃO LIGADA" if status_color == "verde" else "PARADO",
-                "has_active_production": status_color in ["verde", "amarelo_suave"],
-                "operator_name": normalize_label(status_rec.updated_by) if status_rec.updated_by and status_rec.updated_by not in ("System", "system:reset") and not status_rec.updated_by.startswith("ESP32") else "---",
-                "fabrication_code": "---",
-                "obra_name": "---",
+                "has_active_production": has_active,
+                "operator_name": operator_name,
+                "fabrication_code": fabrication_code,
+                "obra_name": obra_name,
                 "stage": "Livre",
-                "started_at": None,
+                "started_at": started_at,
                 "is_online": True,
                 "sync_pending": False
             })
