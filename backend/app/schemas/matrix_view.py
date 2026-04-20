@@ -28,6 +28,7 @@ class MatrixRow(BaseModel):
     request_id: UUID
     odoo_mo_id: Optional[int] = None
     mo_number: str
+    product_name: Optional[str] = None  # Nome do produto (sem código AX)
     obra_nome: Optional[str] = None
     package_code: Optional[str] = None
     sla_text: Optional[str] = None
