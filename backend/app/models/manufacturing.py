@@ -11,6 +11,7 @@ class ManufacturingOrderBase(SQLModel):
     odoo_id: int = Field(unique=True, index=True)
     name: str = Field(index=True)
     x_studio_nome_da_obra: Optional[str] = None
+    product_name: Optional[str] = Field(default=None, index=True)  # Nome do produto (sem código AX)
     product_qty: float
     date_start: Optional[datetime] = Field(default=None, index=True)
     state: str = Field(index=True)
