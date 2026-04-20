@@ -1130,14 +1130,27 @@ async def get_tv_data(
         id_reqs_data = []
         recent_events = []
 
+        # Helper: resolve nome do operador para um workcenter_id
+        def _op_name_for(wc_id: int, wc_name: str) -> str:
+            name = odoo_operator_map.get(wc_id, "")
+            if not name:
+                rec = local_statuses.get(wc_id)
+                if rec:
+                    ub = rec.updated_by or ""
+                    if ub and ub not in ("System", "system:reset") and not ub.startswith("ESP32"):
+                        name = normalize_label(ub)
+            return name or wc_name
+
         # Build Call Events
         for c in recent_calls:
+            op = _op_name_for(c.workcenter_id, c.workcenter_name)
             recent_events.append({
                 "event_type": "CALL_OPENED",
                 "entity_id": c.id,
                 "color": c.color,
                 "reason": c.reason,
                 "workcenter_name": c.workcenter_name,
+                "operator_name": op,
                 "triggered_by": c.triggered_by,
                 "created_at": iso_utc(c.created_at)
             })
@@ -1147,6 +1160,7 @@ async def get_tv_data(
                     "entity_id": c.id,
                     "reason": c.reason,
                     "workcenter_name": c.workcenter_name,
+                    "operator_name": op,
                     "triggered_by": c.triggered_by,
                     "created_at": iso_utc(c.updated_at)
                 })
@@ -1156,6 +1170,7 @@ async def get_tv_data(
                     "event_type": "CALL_RESOLVED",
                     "entity_id": c.id,
                     "workcenter_name": c.workcenter_name,
+                    "operator_name": op,
                     "triggered_by": c.triggered_by,
                     "duration_minutes": dur,
                     "resolved_note": c.resolved_note,

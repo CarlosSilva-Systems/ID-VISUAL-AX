@@ -111,7 +111,7 @@ const AndonTVContext = createContext<AndonTVState>({
 
 // ── localStorage helpers ─────────────────────────────────────────
 
-const LOGS_KEY = 'andon_tv_logs';
+const LOGS_KEY = 'andon_tv_logs_v2'; // v2: logs agora usam operator_name em vez de workcenter_name
 const MAX_LOGS = 30;
 
 function loadLogsFromStorage(): TVLog[] {
@@ -217,30 +217,33 @@ export function eventToLog(ev: Record<string, unknown>): TVLog | null {
     switch (ev.event_type) {
         case 'CALL_OPENED': {
             const type: LogType = ev.color === 'RED' ? 'VERMELHO' : 'AMARELO';
+            const label = (ev.operator_name as string) || (ev.workcenter_name as string) || 'Mesa';
             log = {
                 id: makeLogId(), timestamp: ts, type,
-                source: (ev.workcenter_name as string) || 'Mesa',
-                text: `[${time}] ${type} — ${ev.workcenter_name} — ${ev.reason}`,
+                source: label,
+                text: `[${time}] ${type} — ${label} — ${ev.reason}`,
                 requester: ev.triggered_by as string | undefined,
                 highlight: true,
             };
             break;
         }
         case 'CALL_IN_PROGRESS': {
+            const label = (ev.operator_name as string) || (ev.workcenter_name as string) || 'Mesa';
             log = {
                 id: makeLogId(), timestamp: ts, type: 'INFO',
-                source: (ev.workcenter_name as string) || 'Mesa',
-                text: `[${time}] EM ATENDIMENTO — ${ev.workcenter_name} — ${ev.reason}`,
+                source: label,
+                text: `[${time}] EM ATENDIMENTO — ${label} — ${ev.reason}`,
                 requester: ev.triggered_by as string | undefined,
             };
             break;
         }
         case 'CALL_RESOLVED': {
+            const label = (ev.operator_name as string) || (ev.workcenter_name as string) || 'Mesa';
             const dur = formatDuration(ev.duration_minutes as number | undefined);
             log = {
                 id: makeLogId(), timestamp: ts, type: 'RESOLVIDO',
-                source: (ev.workcenter_name as string) || 'Mesa',
-                text: `[${time}] RESOLVIDO — ${ev.workcenter_name}${dur ? ` — Tempo: ${dur}` : ''}${ev.resolved_note ? ` — ${ev.resolved_note}` : ''}`,
+                source: label,
+                text: `[${time}] RESOLVIDO — ${label}${dur ? ` — Tempo: ${dur}` : ''}${ev.resolved_note ? ` — ${ev.resolved_note}` : ''}`,
                 requester: ev.triggered_by as string | undefined,
                 highlight: false,
             };
