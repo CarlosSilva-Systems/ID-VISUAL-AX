@@ -128,6 +128,9 @@ function DashboardRow({ item, isSelected, onToggle, onViewDocs, isMobile, isDocs
           <div className="flex items-center gap-2 flex-wrap min-w-0">
             <StatusChip status={item.status} />
             <span className="font-bold text-slate-900 text-sm">{item.mo_number}</span>
+            {item.product_name && (
+              <span className="text-xs text-slate-600">• {item.product_name}</span>
+            )}
             {item.source === 'producao' ? (
               <span className="px-1.5 py-0.5 bg-purple-600 text-white rounded text-[9px] font-black tracking-widest">
                 PROD

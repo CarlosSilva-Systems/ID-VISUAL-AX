@@ -50,6 +50,7 @@ export interface TVCall {
 export interface TVIDRequest {
     id: string;
     mo_number: string;
+    product_name?: string; // Nome do produto (sem código AX)
     obra: string;
     package_code: string;
     status: string;

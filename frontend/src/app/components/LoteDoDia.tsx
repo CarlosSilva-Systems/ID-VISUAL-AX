@@ -264,6 +264,9 @@ export function LoteDoDia({ initialFabrications, onBack }: LoteDoDiaProps) {
               <div key={item.id} className="p-4 flex items-center gap-6 group hover:bg-slate-50 transition-colors">
                 <div className="w-24">
                   <span className="font-bold text-slate-900">{item.mo_number}</span>
+                  {item.product_name && (
+                    <div className="text-xs text-slate-600 mt-0.5">{item.product_name}</div>
+                  )}
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-medium text-slate-800 truncate">{item.obra}</div>

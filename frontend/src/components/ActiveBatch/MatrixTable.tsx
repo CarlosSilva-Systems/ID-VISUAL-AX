@@ -95,6 +95,9 @@ export const MatrixTable: React.FC<MatrixTableProps> = ({
                                         <div className="flex items-center gap-2">
                                             <span className="font-mono text-xs font-bold text-slate-400">#{row.request_id.slice(0, 4)}</span>
                                             <h3 className="font-black text-slate-800 text-lg">{row.mo_number}</h3>
+                                            {row.product_name && (
+                                                <span className="text-sm font-medium text-slate-600">• {row.product_name}</span>
+                                            )}
                                             <button
                                                 onClick={() => row.odoo_mo_id && openDocs(row.odoo_mo_id, row.mo_number)}
                                                 disabled={docsLoading(row.odoo_mo_id ?? '')}

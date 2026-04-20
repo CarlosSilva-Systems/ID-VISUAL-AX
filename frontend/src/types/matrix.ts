@@ -24,6 +24,7 @@ export interface MatrixRow {
     request_id: string; // UUID
     odoo_mo_id?: number; // Odoo MO ID for document fetching
     mo_number: string;
+    product_name?: string; // Nome do produto (sem código AX)
     obra_nome?: string;
     package_code?: string;
     sla_text?: string;

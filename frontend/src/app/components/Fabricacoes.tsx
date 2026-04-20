@@ -136,7 +136,12 @@ export function Fabricacoes() {
                     />
                   </td>
                   <td className="p-4">
-                    <span className="font-bold text-slate-900">{item.mo_number}</span>
+                    <div>
+                      <span className="font-bold text-slate-900">{item.mo_number}</span>
+                      {item.product_name && (
+                        <div className="text-xs text-slate-600 mt-0.5">{item.product_name}</div>
+                      )}
+                    </div>
                   </td>
                   <td className="p-4">
                     <div className="text-sm font-bold text-slate-700 truncate max-w-[180px]">{item.obra}</div>

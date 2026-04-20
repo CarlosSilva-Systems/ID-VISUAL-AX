@@ -80,6 +80,7 @@ export interface Caixinha {
 export interface Fabrication {
   id: string;
   mo_number: string;
+  product_name?: string; // Nome do produto (sem código AX)
   obra: string;
   product_qty: number;
   date_start: string;

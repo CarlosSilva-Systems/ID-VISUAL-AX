@@ -538,6 +538,9 @@ function IDVisualCard({ req, variant }: { req: TVIDRequest; variant: 'waiting' |
 
             <div className={`font-black text-base leading-tight ${isDone ? 'text-emerald-200' : 'text-slate-100'}`}>
                 {normalizeLabel(req.mo_number)}
+                {req.product_name && (
+                    <span className="text-sm font-medium ml-2">• {normalizeLabel(req.product_name)}</span>
+                )}
             </div>
             {req.obra && req.obra !== 'Sem Obra' && (
                 <div className="text-xs text-slate-400 mt-0.5 truncate">{normalizeLabel(req.obra)}</div>
