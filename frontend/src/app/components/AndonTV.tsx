@@ -291,8 +291,13 @@ function PanelResumo({ workcenters, calls, idRequests }: {
 
 // ── Panel B: Mesas Paradas ────────────────────────────────────────
 
-function PanelMesasParadas({ calls }: { calls: TVCall[] }) {
+function PanelMesasParadas({ calls, workcenters }: { calls: TVCall[]; workcenters: TVWorkcenter[] }) {
     const normalizedCalls = Array.isArray(calls) ? calls : [];
+    // Mapa rápido wc_id → operator_name para lookup O(1)
+    const operatorMap = Object.fromEntries(
+        (Array.isArray(workcenters) ? workcenters : []).map(wc => [wc.id, wc.operator_name])
+    );
+
     const sorted = [...normalizedCalls].sort((a, b) => {
         if (a?.color === 'RED' && b?.color !== 'RED') return -1;
         if (b?.color === 'RED' && a?.color !== 'RED') return 1;
@@ -321,6 +326,14 @@ function PanelMesasParadas({ calls }: { calls: TVCall[] }) {
                 )}
                 {sorted.map(call => {
                     const isRed = call.color === 'RED';
+                    // Prioridade: operator_name do workcenter (Odoo) → triggered_by (se não for ESP32) → workcenter_name
+                    const isEsp32 = call.triggered_by?.startsWith('ESP32');
+                    const operatorName = operatorMap[call.workcenter_id];
+                    const displayName = (operatorName && operatorName !== '---')
+                        ? operatorName
+                        : (!isEsp32 && call.triggered_by)
+                            ? call.triggered_by
+                            : call.workcenter_name;
                     return (
                         <div
                             key={call.id}
@@ -342,9 +355,9 @@ function PanelMesasParadas({ calls }: { calls: TVCall[] }) {
                             <div className="flex-1 min-w-0">
                                 <div className="flex items-center gap-3 flex-wrap">
                                     <span className={`text-xl font-black ${isRed ? 'text-red-200' : 'text-amber-200'}`}>
-                                        {normalizeLabel(call.triggered_by) || normalizeLabel(call.workcenter_name)}
+                                        {normalizeLabel(displayName)}
                                     </span>
-                                    {call.triggered_by && (
+                                    {displayName !== call.workcenter_name && (
                                         <span className={`text-xs font-medium opacity-60 ${isRed ? 'text-red-300' : 'text-amber-300'}`}>
                                             {normalizeLabel(call.workcenter_name)}
                                         </span>
@@ -748,7 +761,7 @@ function AndonTVInner() {
             case 'summary':
                 return <PanelResumo workcenters={workcenters} calls={calls} idRequests={idRequests} />;
             case 'stopped':
-                return <PanelMesasParadas calls={calls} />;
+                return <PanelMesasParadas calls={calls} workcenters={workcenters} />;
             case 'production':
                 return <PanelProducao workcenters={workcenters} />;
             case 'idvisual':
