@@ -980,7 +980,7 @@ async def get_tv_data(
                 "active_calls_count": len(active_calls),
                 "operational_status": "PRODUÇÃO LIGADA" if status_color == "verde" else "PARADO",
                 "has_active_production": status_color in ["verde", "amarelo_suave"],
-                "operator_name": "---",
+                "operator_name": normalize_label(status_rec.updated_by) if status_rec.updated_by and status_rec.updated_by not in ("System", "system:reset") and not status_rec.updated_by.startswith("ESP32") else "---",
                 "fabrication_code": "---",
                 "obra_name": "---",
                 "stage": "Livre",
