@@ -73,6 +73,7 @@ export function LoteDoDia({ initialFabrications, onBack }: LoteDoDiaProps) {
               id: row.request_id, // THIS IS THE CRUCIAL PART: using backend UUID instead of Odoo ID
               odoo_mo_id: row.odoo_mo_id ? String(row.odoo_mo_id) : undefined,
               mo_number: row.mo_number,
+              product_name: row.product_name ?? undefined,
               obra: row.obra_nome || 'Sem Obra',
               product_qty: row.quantity,
               date_start: row.date_start ? new Date(row.date_start).toLocaleDateString('pt-BR') : '-',
@@ -366,6 +367,9 @@ export function LoteDoDia({ initialFabrications, onBack }: LoteDoDiaProps) {
                     <div className="space-y-1">
                       <div className="flex items-center gap-2">
                         <span className="font-bold text-slate-900">{fab.mo_number}</span>
+                        {fab.product_name && (
+                          <span className="text-xs text-slate-600">• {fab.product_name}</span>
+                        )}
                         <span className="px-1.5 py-0.5 bg-indigo-100 text-indigo-700 rounded text-[9px] font-black uppercase tracking-tighter">
                           {fab.packageType}
                         </span>

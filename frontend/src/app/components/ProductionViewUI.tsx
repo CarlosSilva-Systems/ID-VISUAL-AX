@@ -438,6 +438,9 @@ export const ProductionViewUI: React.FC<ProductionViewUIProps> = ({
                                         <div className="flex-1 min-w-0">
                                             <div className="flex items-center gap-2 flex-wrap mb-0.5">
                                                 <span className="font-black text-slate-900 text-sm">{req.mo_number}</span>
+                                                {req.product_name && (
+                                                    <span className="text-xs text-slate-600">• {req.product_name}</span>
+                                                )}
                                                 <span className={cn("text-[10px] font-bold px-2 py-0.5 rounded-full border", cfg.color)}>
                                                     {cfg.label}
                                                 </span>

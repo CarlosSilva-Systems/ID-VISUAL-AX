@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 interface MO {
   id: string;       // Odoo ID como string (para compatibilidade com Fabrication)
   mo_number: string;
+  product_name?: string; // Nome do produto (sem código AX)
   obra: string;
   status: string;
   source: string;
@@ -139,6 +140,9 @@ export const AddFabricationsModal: React.FC<Props> = ({ batchId, onClose, onAdde
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-0.5">
                       <span className="font-bold text-slate-900 text-sm">{mo.mo_number}</span>
+                      {mo.product_name && (
+                        <span className="text-xs text-slate-600">• {mo.product_name}</span>
+                      )}
                       <span
                         className={`px-1.5 py-0.5 rounded text-[9px] font-black tracking-widest ${
                           mo.source === 'producao'

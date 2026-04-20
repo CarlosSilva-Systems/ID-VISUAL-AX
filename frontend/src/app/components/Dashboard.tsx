@@ -238,6 +238,9 @@ function DashboardRow({ item, isSelected, onToggle, onViewDocs, isMobile, isDocs
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-3 mb-1">
           <span className="font-bold text-slate-900">{item.mo_number}</span>
+          {item.product_name && (
+            <span className="text-xs text-slate-600">• {item.product_name}</span>
+          )}
 
           {/* Origin Badge */}
           {item.source === 'producao' ? (

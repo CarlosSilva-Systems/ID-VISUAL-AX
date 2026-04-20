@@ -104,6 +104,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 return {
                     id: String(mo.odoo_mo_id),
                     mo_number: mo.mo_number,
+                    product_name: mo.product_name ?? undefined,
                     obra: obraStr,
                     status: statusID,
                     priority: 'Normal',
@@ -146,6 +147,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 return {
                     id: req.request_id,
                     mo_number: req.mo_number,
+                    product_name: req.product_name ?? undefined,
                     obra: req.obra_nome,
                     product_qty: req.product_qty,
                     date_start: formatDate(req.date_start),
