@@ -1,4 +1,6 @@
-const API_URL = (import.meta as any).env.VITE_API_URL || 'http://localhost:8000/api/v1';
+// Usa URL relativa para passar pelo proxy do Vite (Docker) e funcionar em qualquer host.
+// VITE_API_URL pode ser definido para ambientes sem proxy (ex: produção com Nginx).
+const API_URL = (import.meta as any).env.VITE_API_URL || '/api/v1';
 
 // ── Andon OEE Dashboard — Tipos ──
 
