@@ -1,6 +1,7 @@
 from typing import List, Dict, Any, Optional as Opt
 import uuid
 import logging
+import re
 from uuid import UUID
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -23,6 +24,18 @@ from app.services.task_service import initialize_request_tasks
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+def extract_product_name(product_val: Any) -> Opt[str]:
+    """Extrai o nome do produto do campo product_id, removendo código AX entre colchetes."""
+    if not product_val or product_val is False:
+        return None
+    if isinstance(product_val, (list, tuple)) and len(product_val) >= 2:
+        name = str(product_val[1])
+        # Remove código AX entre colchetes (ex: "[AX0003578]")
+        name = re.sub(r'\[AX\d+\]', '', name).strip()
+        return name if name else None
+    return None
 
 
 
@@ -233,6 +246,7 @@ async def get_batch_matrix(
             request_id=req.id,
             odoo_mo_id=mo.odoo_id,
             mo_number=mo.name,
+            product_name=mo.product_name,
             obra_nome=mo.x_studio_nome_da_obra,
             package_code=req.package_code,
             sla_text="24h", # Placeholder or calculated
@@ -409,7 +423,7 @@ async def create_batch(
         mos_data = await client.search_read(
             "mrp.production",
             domain=[["id", "in", payload.mo_ids]],
-            fields=["id", "name", "product_qty", "date_start", "state", "origin", "x_studio_nome_da_obra"],
+            fields=["id", "name", "product_qty", "date_start", "state", "origin", "x_studio_nome_da_obra", "product_id"],
         )
         await client.close()
     except Exception as e:
@@ -461,6 +475,7 @@ async def create_batch(
                 odoo_id=mo_data["id"],
                 name=mo_data["name"],
                 x_studio_nome_da_obra=obra_name,
+                product_name=extract_product_name(mo_data.get("product_id")),
                 product_qty=mo_data["product_qty"],
                 date_start=date_start or now,
                 state=mo_data["state"],
@@ -794,7 +809,7 @@ async def add_items_to_batch(
         mos_data = await client.search_read(
             "mrp.production",
             domain=[["id", "in", payload.mo_ids]],
-            fields=["id", "name", "product_qty", "date_start", "state", "x_studio_nome_da_obra"],
+            fields=["id", "name", "product_qty", "date_start", "state", "x_studio_nome_da_obra", "product_id"],
         )
         await client.close()
     except Exception as e:
@@ -831,6 +846,7 @@ async def add_items_to_batch(
                 odoo_id=mo_data["id"],
                 name=mo_data["name"],
                 x_studio_nome_da_obra=obra_name,
+                product_name=extract_product_name(mo_data.get("product_id")),
                 product_qty=mo_data["product_qty"],
                 date_start=date_start or datetime.now(timezone.utc).replace(tzinfo=None),
                 state=mo_data["state"],

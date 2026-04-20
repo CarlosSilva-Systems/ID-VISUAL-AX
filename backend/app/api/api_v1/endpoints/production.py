@@ -302,7 +302,7 @@ async def create_manual_request(
         odoo_mos = await client.search_read(
             "mrp.production",
             domain=[["id", "=", payload.odoo_mo_id]],
-            fields=["id", "name", "product_qty", "date_start", "state", "x_studio_nome_da_obra", "company_id"],
+            fields=["id", "name", "product_qty", "date_start", "state", "x_studio_nome_da_obra", "company_id", "product_id"],
             limit=1,
         )
     finally:
@@ -341,12 +341,25 @@ async def create_manual_request(
         except (ValueError, TypeError):
             return None
 
+    def extract_product_name(product_val: Any) -> Optional[str]:
+        """Extrai o nome do produto do campo product_id, removendo código AX entre colchetes."""
+        if not product_val or product_val is False:
+            return None
+        if isinstance(product_val, (list, tuple)) and len(product_val) >= 2:
+            name = str(product_val[1])
+            # Remove código AX entre colchetes (ex: "[AX0003578]")
+            import re
+            name = re.sub(r'\[AX\d+\]', '', name).strip()
+            return name if name else None
+        return None
+
     try:
         # ── 4. Upsert ManufacturingOrder locally ──
         if existing_mo:
             mo = existing_mo
             mo.name = safe_str(odoo_mo.get("name")) or mo.name
             mo.x_studio_nome_da_obra = normalize_many2one_display(odoo_mo.get("x_studio_nome_da_obra")) or mo.x_studio_nome_da_obra
+            mo.product_name = extract_product_name(odoo_mo.get("product_id")) or mo.product_name
             mo.product_qty = safe_float(odoo_mo.get("product_qty"))
             mo.state = safe_str(odoo_mo.get("state")) or mo.state
             mo.last_sync_at = datetime.now(timezone.utc).replace(tzinfo=None)
@@ -364,6 +377,7 @@ async def create_manual_request(
                 odoo_id=odoo_mo['id'],
                 name=odoo_mo['name'],
                 x_studio_nome_da_obra=obra_clean,
+                product_name=extract_product_name(odoo_mo.get('product_id')),
                 product_qty=odoo_mo.get('product_qty', 0),
                 date_start=parse_date(odoo_mo.get('date_start')),
                 state=odoo_mo.get('state', 'unknown'),
