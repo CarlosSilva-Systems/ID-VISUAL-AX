@@ -293,10 +293,6 @@ function PanelResumo({ workcenters, calls, idRequests }: {
 
 function PanelMesasParadas({ calls, workcenters }: { calls: TVCall[]; workcenters: TVWorkcenter[] }) {
     const normalizedCalls = Array.isArray(calls) ? calls : [];
-    // Mapa rápido wc_id → operator_name para lookup O(1)
-    const operatorMap = Object.fromEntries(
-        (Array.isArray(workcenters) ? workcenters : []).map(wc => [wc.id, wc.operator_name])
-    );
 
     const sorted = [...normalizedCalls].sort((a, b) => {
         if (a?.color === 'RED' && b?.color !== 'RED') return -1;
@@ -326,14 +322,9 @@ function PanelMesasParadas({ calls, workcenters }: { calls: TVCall[]; workcenter
                 )}
                 {sorted.map(call => {
                     const isRed = call.color === 'RED';
-                    // Prioridade: operator_name do workcenter (Odoo) → triggered_by (se não for ESP32) → workcenter_name
-                    const isEsp32 = call.triggered_by?.startsWith('ESP32');
-                    const operatorName = operatorMap[call.workcenter_id];
-                    const displayName = (operatorName && operatorName !== '---')
-                        ? operatorName
-                        : (!isEsp32 && call.triggered_by)
-                            ? call.triggered_by
-                            : call.workcenter_name;
+                    // operator_name já vem resolvido pelo backend
+                    const displayName = call.operator_name || call.workcenter_name;
+                    const showMesaLabel = displayName !== call.workcenter_name;
                     return (
                         <div
                             key={call.id}

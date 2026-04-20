@@ -39,6 +39,7 @@ export interface TVCall {
     description?: string;
     workcenter_id: number;
     workcenter_name: string;
+    operator_name: string;
     mo_id?: number;
     status: 'OPEN' | 'IN_PROGRESS' | 'RESOLVED';
     triggered_by: string;

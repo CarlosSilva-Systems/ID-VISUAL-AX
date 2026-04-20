@@ -1236,11 +1236,21 @@ async def get_tv_data(
             
         calls_data = []
         for c in all_active_calls:
+            # Inclui operator_name diretamente no call para o frontend não precisar cruzar dados
+            op_name = odoo_operator_map.get(c.workcenter_id, "")
+            if not op_name:
+                ub = ""
+                status_rec = local_statuses.get(c.workcenter_id)
+                if status_rec:
+                    ub = status_rec.updated_by or ""
+                if ub and ub not in ("System", "system:reset") and not ub.startswith("ESP32"):
+                    op_name = normalize_label(ub)
             calls_data.append({
                 "id": c.id, "color": c.color, "category": c.category, "reason": c.reason,
                 "description": c.description, "workcenter_id": c.workcenter_id,
                 "workcenter_name": c.workcenter_name, "mo_id": c.mo_id, "status": c.status,
                 "triggered_by": c.triggered_by, "assigned_team": c.assigned_team,
+                "operator_name": op_name or c.workcenter_name,
                 "created_at": iso_utc(c.created_at),
                 "updated_at": iso_utc(c.updated_at)
             })
