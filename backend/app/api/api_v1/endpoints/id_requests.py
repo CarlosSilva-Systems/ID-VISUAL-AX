@@ -97,6 +97,7 @@ async def get_manual_requests(
             "request_id": req.id,
             "odoo_mo_id": mo.odoo_id,
             "mo_number": str(mo.name),
+            "product_name": mo.product_name,
             "obra_nome": normalize_many2one_display(mo.x_studio_nome_da_obra),
             "product_qty": float(mo.product_qty),
             "date_start": mo.date_start,

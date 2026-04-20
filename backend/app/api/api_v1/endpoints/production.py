@@ -65,6 +65,7 @@ OPEN_STATUSES = [
 class MOSearchResult(BaseModel):
     odoo_mo_id: int
     mo_number: str
+    product_name: Optional[str] = None  # Nome do produto (sem código AX)
     obra: Optional[str] = None
     product_qty: float = 0
     date_start: Optional[str] = None
@@ -117,7 +118,7 @@ async def search_mos(
             ["name", "ilike", q],
             ["state", "not in", ["cancel", "done"]],
         ]
-        mo_fields = ["id", "name", "product_qty", "date_start", "state", "x_studio_nome_da_obra"]
+        mo_fields = ["id", "name", "product_qty", "date_start", "state", "x_studio_nome_da_obra", "product_id"]
 
         mos = await client.search_read(
             "mrp.production",
@@ -165,6 +166,7 @@ async def search_mos(
                 final_list.append(MOSearchResult(
                     odoo_mo_id=mid,
                     mo_number=mo['name'],
+                    product_name=extract_product_name(mo.get('product_id')),
                     obra=obra_clean,
                     product_qty=mo.get('product_qty', 0.0),
                     date_start=mo.get('date_start'),

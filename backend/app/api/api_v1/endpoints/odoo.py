@@ -1,5 +1,6 @@
 from typing import Any, List
 import uuid
+import re
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Request
 from slowapi import Limiter
@@ -19,6 +20,17 @@ import logging
 logger = logging.getLogger(__name__)
 router = APIRouter()
 limiter = Limiter(key_func=get_remote_address)
+
+
+def _extract_product_name(product_val: Any) -> str | None:
+    """Extrai o nome do produto do campo product_id, removendo código AX entre colchetes."""
+    if not product_val or product_val is False:
+        return None
+    if isinstance(product_val, (list, tuple)) and len(product_val) >= 2:
+        name = str(product_val[1])
+        name = re.sub(r'\[AX\d+\]', '', name).strip()
+        return name if name else None
+    return None
 
 @router.get("/mos", response_model=List[dict])
 @limiter.limit("6/minute")
@@ -92,7 +104,7 @@ async def get_odoo_mos(
                 activity_map[rid] = act
 
         # ── Step 3: Fetch MO Details (Robust) ──
-        safe_fields = ['id', 'name', 'state', 'product_qty', 'x_studio_nome_da_obra', 'origin']
+        safe_fields = ['id', 'name', 'state', 'product_qty', 'x_studio_nome_da_obra', 'origin', 'product_id']
         mo_domain = [['id', 'in', odoo_res_ids]]
         
         odoo_mos = []
@@ -138,6 +150,7 @@ async def get_odoo_mos(
             item = {
                 "odoo_mo_id": mo.get('id'),
                 "mo_number": mo.get('name', 'N/A'),
+                "product_name": _extract_product_name(mo.get('product_id')),
                 "obra": obra_clean,
                 "product_qty": mo.get('product_qty', 0),
                 "date_start": mo.get('date_start'),
