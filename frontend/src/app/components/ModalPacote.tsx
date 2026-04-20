@@ -122,7 +122,11 @@ export function ModalPacote({ fabrication, onClose, onSave }: ModalPacoteProps) 
         <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-slate-50">
           <div>
             <h3 className="text-lg font-bold text-slate-800">Tipo de Quadro / Pacote</h3>
-            <p className="text-sm text-slate-500">{fabrication.mo_number} • {fabrication.obra}</p>
+            <p className="text-sm text-slate-500">
+              {fabrication.mo_number}
+              {fabrication.product_name && ` • ${fabrication.product_name}`}
+              {' • '}{fabrication.obra}
+            </p>
           </div>
           <button onClick={onClose} className="p-2 hover:bg-white rounded-full transition-colors text-slate-400">
             <X size={20} />

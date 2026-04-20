@@ -65,7 +65,9 @@ export function DrawerCaixinha({ fabrication, task, onClose, onUpdateStatus }: D
         <div className="p-6 border-b border-gray-100 flex items-center justify-between bg-slate-50">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">
-              <span>{fabrication.mo_number}</span> <ChevronRight size={10} /> <span>{task.label}</span>
+              <span>{fabrication.mo_number}</span>
+              {fabrication.product_name && <><ChevronRight size={10} /> <span>{fabrication.product_name}</span></>}
+              <ChevronRight size={10} /> <span>{task.label}</span>
             </div>
             <div className="flex items-center gap-2">
               <h3 className="text-xl font-bold text-slate-900 truncate">

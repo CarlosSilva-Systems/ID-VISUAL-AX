@@ -40,6 +40,7 @@ import { useBreakpoint } from "@/hooks/useBreakpoint";
 interface MOResult {
     odoo_mo_id: number;
     mo_number: string;
+    product_name?: string; // Nome do produto (sem código AX)
     obra: string | null;
     product_qty: number;
     date_start: string | null;
@@ -338,6 +339,9 @@ export const ProductionViewUI: React.FC<ProductionViewUIProps> = ({
                                         >
                                             <div className="flex items-center gap-2 flex-wrap mb-1">
                                                 <span className="font-black text-slate-900">{mo.mo_number}</span>
+                                                {mo.product_name && (
+                                                    <span className="text-xs text-slate-600">• {mo.product_name}</span>
+                                                )}
                                                 <Badge variant={
                                                     mo.state === "confirmed" ? "info" :
                                                     mo.state === "progress"  ? "warning" :
