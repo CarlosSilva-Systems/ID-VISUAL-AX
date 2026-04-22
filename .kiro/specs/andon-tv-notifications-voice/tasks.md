@@ -143,3 +143,4 @@ Para testar a correção:
 4. TTS deve disparar automaticamente
 5. Log deve aparecer no painel lateral com badge verde piscante por 5 minutos
 6. Após 24h, o log deve ser removido automaticamente
+'
