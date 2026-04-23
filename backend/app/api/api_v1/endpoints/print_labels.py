@@ -35,8 +35,8 @@ router = APIRouter()
 async def _get_system_setting(session: AsyncSession, key: str) -> str | None:
     """Busca um valor de SystemSetting pelo key. Retorna None se não existir."""
     stmt = select(SystemSetting).where(SystemSetting.key == key)
-    result = await session.execute(stmt)
-    setting = result.scalars().first()
+    result = await session.exec(stmt)
+    setting = result.first()
     return setting.value.strip() if setting and setting.value else None
 
 
