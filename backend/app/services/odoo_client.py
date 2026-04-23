@@ -461,6 +461,50 @@ class OdooClient:
 
         return unique_docs
 
+    async def get_document_share_urls(self, attachment_ids: List[int]) -> Dict[int, Optional[str]]:
+        """
+        Busca os links de compartilhamento público do módulo Documents do Odoo
+        para uma lista de ir.attachment IDs.
+
+        O módulo documents.document gera tokens de acesso público no formato:
+            {ODOO_URL}/odoo/documents/{access_token}
+
+        Args:
+            attachment_ids: Lista de IDs de ir.attachment
+
+        Returns:
+            Dict mapeando attachment_id → URL pública (ou None se não encontrado)
+        """
+        if not attachment_ids:
+            return {}
+
+        try:
+            docs = await self.search_read(
+                "documents.document",
+                domain=[["attachment_id", "in", attachment_ids]],
+                fields=["id", "attachment_id", "access_token"],
+            )
+        except Exception as e:
+            logger.warning(f"get_document_share_urls: documents.document não disponível: {e}")
+            return {}
+
+        result: Dict[int, Optional[str]] = {}
+        base_url = self.url.rstrip("/")
+
+        for doc in docs:
+            raw_att = doc.get("attachment_id")
+            att_id: Optional[int] = None
+            if isinstance(raw_att, (list, tuple)) and len(raw_att) >= 1:
+                att_id = int(raw_att[0])
+            elif isinstance(raw_att, int):
+                att_id = raw_att
+
+            token = doc.get("access_token")
+            if att_id and token:
+                result[att_id] = f"{base_url}/odoo/documents/{token}"
+
+        return result
+
     async def get_attachment_data(self, model: str, record_id: int) -> Optional[Dict[str, Any]]:
         """
         Fetch binary data and metadata for a document/attachment.

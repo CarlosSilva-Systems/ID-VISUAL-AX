@@ -136,19 +136,41 @@ async def list_mo_documents(
             docs = await client.get_product_documents(product_id)
 
             # Normaliza sem URLs (serão adicionadas dinamicamente)
+            # Coleta attachment_ids para buscar share URLs do módulo Documents
             base_docs = []
+            att_ids_to_fetch: List[int] = []
             for d in docs:
                 doc_id = f"{d['model']}_{d['odoo_id']}"
+                raw_att = d.get('ir_attachment_id')
+                att_id: Optional[int] = None
+                if isinstance(raw_att, (list, tuple)) and len(raw_att) >= 1:
+                    att_id = int(raw_att[0])
+                elif isinstance(raw_att, int):
+                    att_id = raw_att
+
+                if att_id:
+                    att_ids_to_fetch.append(att_id)
+
                 base_docs.append({
                     "id": doc_id,
                     "odoo_document_id": d['odoo_id'],
                     "attachment_id": d.get('ir_attachment_id'),
+                    "attachment_id_int": att_id,
                     "name": d['name'],
                     "mimetype": d['mimetype'],
                     "size": d['size'],
                     "checksum": d['checksum'],
                     "is_previewable": is_previewable(d['mimetype']),
+                    "odoo_share_url": None,  # preenchido abaixo
                 })
+
+            # Busca share URLs do módulo Documents (silencioso se não disponível)
+            if att_ids_to_fetch:
+                share_map = await client.get_document_share_urls(att_ids_to_fetch)
+                for doc in base_docs:
+                    att_id_int = doc.get("attachment_id_int")
+                    if att_id_int and att_id_int in share_map:
+                        doc["odoo_share_url"] = share_map[att_id_int]
 
             _cache_set(product_id, base_docs)
 
@@ -175,35 +197,18 @@ def _rewrite_urls(base_docs: List[Dict[str, Any]], odoo_mo_id: int) -> List[Dict
     """
     Adiciona view_url, download_url e odoo_public_url ao snapshot do cache.
 
-    odoo_public_url: URL pública do Odoo para o ir.attachment — acessível por
-    qualquer pessoa com o link, sem autenticação (Odoo SaaS expõe /web/content
-    publicamente para documentos de produto).
-    Formato: {ODOO_URL}/web/content/{ir_attachment_id}
+    odoo_public_url: URL pública do módulo Documents do Odoo (access_token).
+    Formato: {ODOO_URL}/odoo/documents/{access_token}
+    Retorna None se o documento não tiver link de compartilhamento configurado.
     """
-    from app.core.config import settings
-
     result = []
     for d in base_docs:
         doc_id = d["id"]
-
-        # Extrai o ID numérico do ir.attachment (pode ser [id, name] ou int)
-        raw_att = d.get("attachment_id")
-        att_id: int | None = None
-        if isinstance(raw_att, (list, tuple)) and len(raw_att) >= 1:
-            att_id = int(raw_att[0])
-        elif isinstance(raw_att, int):
-            att_id = raw_att
-
-        odoo_public_url: str | None = None
-        if att_id:
-            odoo_base = settings.ODOO_URL.rstrip("/")
-            odoo_public_url = f"{odoo_base}/web/content/{att_id}"
-
         result.append({
             **d,
             "view_url": f"/api/v1/odoo/mos/{odoo_mo_id}/documents/{doc_id}/view",
             "download_url": f"/api/v1/odoo/mos/{odoo_mo_id}/documents/{doc_id}/download",
-            "odoo_public_url": odoo_public_url,
+            "odoo_public_url": d.get("odoo_share_url"),
         })
     return result
 
