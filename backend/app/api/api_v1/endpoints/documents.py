@@ -172,14 +172,38 @@ async def list_mo_documents(
 
 
 def _rewrite_urls(base_docs: List[Dict[str, Any]], odoo_mo_id: int) -> List[Dict[str, Any]]:
-    """Adiciona view_url e download_url ao snapshot do cache com o odoo_mo_id correto."""
+    """
+    Adiciona view_url, download_url e odoo_public_url ao snapshot do cache.
+
+    odoo_public_url: URL pública do Odoo para o ir.attachment — acessível por
+    qualquer pessoa com o link, sem autenticação (Odoo SaaS expõe /web/content
+    publicamente para documentos de produto).
+    Formato: {ODOO_URL}/web/content/{ir_attachment_id}
+    """
+    from app.core.config import settings
+
     result = []
     for d in base_docs:
         doc_id = d["id"]
+
+        # Extrai o ID numérico do ir.attachment (pode ser [id, name] ou int)
+        raw_att = d.get("attachment_id")
+        att_id: int | None = None
+        if isinstance(raw_att, (list, tuple)) and len(raw_att) >= 1:
+            att_id = int(raw_att[0])
+        elif isinstance(raw_att, int):
+            att_id = raw_att
+
+        odoo_public_url: str | None = None
+        if att_id:
+            odoo_base = settings.ODOO_URL.rstrip("/")
+            odoo_public_url = f"{odoo_base}/web/content/{att_id}"
+
         result.append({
             **d,
             "view_url": f"/api/v1/odoo/mos/{odoo_mo_id}/documents/{doc_id}/view",
             "download_url": f"/api/v1/odoo/mos/{odoo_mo_id}/documents/{doc_id}/download",
+            "odoo_public_url": odoo_public_url,
         })
     return result
 

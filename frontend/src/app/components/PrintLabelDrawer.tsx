@@ -138,9 +138,12 @@ export function PrintLabelDrawer({ fabrication, open, onClose }: PrintLabelDrawe
       .then((res: any) => {
         if (cancelled) return;
         const docs: any[] = res?.documents ?? [];
-        const pdf = docs.find((d) => d.mimetype === 'application/pdf' && d.view_url);
+        // Prioriza a URL pública do Odoo (acessível externamente via QR code)
+        // Fallback para view_url local se odoo_public_url não estiver disponível
+        const pdf = docs.find((d) => d.mimetype === 'application/pdf');
         if (pdf) {
-          setQrUrl(buildPublicUrl(pdf.view_url));
+          const url = pdf.odoo_public_url || (pdf.view_url ? buildPublicUrl(pdf.view_url) : '');
+          if (url) setQrUrl(url);
         }
       })
       .catch(() => { /* silencioso — campo fica vazio para preenchimento manual */ })
