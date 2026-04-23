@@ -952,3 +952,123 @@ async def add_items_to_batch(
         "message": f"{added_count} fabricação(ões) adicionada(s), {skipped_count} já presente(s) no lote.",
     }
 
+
+@router.post("/resync-mo-fields", response_model=dict)
+async def resync_mo_fields(
+    session: AsyncSession = Depends(deps.get_session),
+) -> Any:
+    """
+    Re-sincroniza product_name e ax_code de todas as ManufacturingOrders
+    que têm esses campos nulos no banco local.
+
+    Útil para MOs criadas antes da implementação do sync de ax_code.
+    Operação idempotente — seguro para executar múltiplas vezes.
+    """
+    from app.services.odoo_client import OdooClient
+    from app.services.odoo_utils import get_active_odoo_db
+    from app.core.config import settings
+    from sqlalchemy import or_
+
+    # Busca MOs com product_name ou ax_code nulos
+    stmt = select(ManufacturingOrder).where(
+        or_(
+            ManufacturingOrder.product_name.is_(None),
+            ManufacturingOrder.ax_code.is_(None),
+        )
+    )
+    result = await session.execute(stmt)
+    mos = result.scalars().all()
+
+    if not mos:
+        return {"updated": 0, "message": "Nenhuma MO com campos pendentes encontrada."}
+
+    odoo_ids = [mo.odoo_id for mo in mos]
+
+    active_db = await get_active_odoo_db(session)
+    try:
+        client = OdooClient(
+            url=settings.ODOO_URL,
+            db=active_db,
+            auth_type=settings.ODOO_AUTH_TYPE,
+            login=settings.ODOO_SERVICE_LOGIN,
+            secret=settings.ODOO_SERVICE_PASSWORD,
+        )
+        mos_data = await client.search_read(
+            "mrp.production",
+            domain=[["id", "in", odoo_ids]],
+            fields=["id", "product_id"],
+        )
+    except Exception as e:
+        req_id = str(uuid.uuid4())[:8]
+        logger.exception(f"resync_mo_fields: Odoo fetch error [ref:{req_id}]: {e}")
+        raise HTTPException(status_code=500, detail=f"Erro ao buscar dados no Odoo [ref: {req_id}]")
+
+    # Mapeia odoo_id → product_id
+    odoo_product_map: dict[int, int] = {}
+    for mo_data in mos_data:
+        raw = mo_data.get("product_id")
+        if raw and isinstance(raw, (list, tuple)) and len(raw) >= 1:
+            odoo_product_map[mo_data["id"]] = raw[0]
+
+    # Busca default_code de todos os product_ids únicos em paralelo
+    import asyncio as _asyncio
+    unique_product_ids = list(set(odoo_product_map.values()))
+
+    async def _fetch_one(pid: int) -> tuple[int, str | None, str | None]:
+        try:
+            res = await client.search_read(
+                "product.product",
+                domain=[["id", "=", pid]],
+                fields=["default_code", "name"],
+                limit=1,
+            )
+            if res:
+                return pid, res[0].get("default_code") or None, res[0].get("name") or None
+        except Exception:
+            pass
+        return pid, None, None
+
+    results = await _asyncio.gather(*[_fetch_one(pid) for pid in unique_product_ids])
+    product_info: dict[int, tuple[str | None, str | None]] = {
+        pid: (ax, name) for pid, ax, name in results
+    }
+
+    await client.close()
+
+    # Atualiza as MOs locais
+    updated = 0
+    mo_by_odoo_id = {mo.odoo_id: mo for mo in mos}
+
+    for odoo_id, product_id in odoo_product_map.items():
+        mo = mo_by_odoo_id.get(odoo_id)
+        if not mo:
+            continue
+        ax_code, product_name_raw = product_info.get(product_id, (None, None))
+
+        # Remove código AX entre colchetes do nome (ex: "[AX0003578] QDC-01" → "QDC-01")
+        import re as _re
+        clean_name: str | None = None
+        if product_name_raw:
+            clean_name = _re.sub(r'\[AX\d+\]', '', product_name_raw).strip() or None
+
+        changed = False
+        if mo.ax_code is None and ax_code:
+            mo.ax_code = ax_code
+            changed = True
+        if mo.product_name is None and clean_name:
+            mo.product_name = clean_name
+            changed = True
+
+        if changed:
+            session.add(mo)
+            updated += 1
+
+    if updated:
+        await session.commit()
+        update_sync_version("odoo_version")
+
+    return {
+        "updated": updated,
+        "total_checked": len(mos),
+        "message": f"{updated} MO(s) atualizadas de {len(mos)} verificadas.",
+    }
