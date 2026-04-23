@@ -81,6 +81,8 @@ export interface Fabrication {
   id: string;
   mo_number: string;
   product_name?: string; // Nome do produto (sem código AX)
+  ax_code?: string;      // Código AX do produto (product_id.default_code)
+  fab_code?: string;     // Código FAB derivado de mo_number (ex: FAB01015)
   obra: string;
   product_qty: number;
   date_start: string;

@@ -13,10 +13,12 @@ import {
   FileText,
   Tag,
   Check,
-  Loader2
+  Loader2,
+  Printer,
 } from 'lucide-react';
 import { Fabrication, PACKAGES_CONFIG, TASK_CODE_TO_LABEL, taskCodeToType, Caixinha, PackageType } from '../types';
 import { DrawerCaixinha } from './DrawerCaixinha';
+import { PrintLabelDrawer } from './PrintLabelDrawer';
 import { useDocViewer } from '../../components/DocViewerModal';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -38,6 +40,7 @@ export function LoteDoDia({ initialFabrications, onBack }: LoteDoDiaProps) {
   const [view, setView] = useState<'pre-inicio' | 'matriz'>('pre-inicio');
   const [items, setItems] = useState<Fabrication[]>([]);
   const [selectedTask, setSelectedTask] = useState<{ fabId: string; task: Caixinha } | null>(null);
+  const [printTarget, setPrintTarget] = useState<Fabrication | null>(null);
   const { openDocs, isLoading: docsLoading, DocViewer } = useDocViewer();
 
   useEffect(() => {
@@ -74,6 +77,8 @@ export function LoteDoDia({ initialFabrications, onBack }: LoteDoDiaProps) {
               odoo_mo_id: row.odoo_mo_id ? String(row.odoo_mo_id) : undefined,
               mo_number: row.mo_number,
               product_name: row.product_name ?? undefined,
+              ax_code: row.ax_code ?? undefined,
+              fab_code: row.fab_code ?? undefined,
               obra: row.obra_nome || 'Sem Obra',
               product_qty: row.quantity,
               date_start: row.date_start ? new Date(row.date_start).toLocaleDateString('pt-BR') : '-',
@@ -385,6 +390,14 @@ export function LoteDoDia({ initialFabrications, onBack }: LoteDoDiaProps) {
                           }
                           Docs
                         </button>
+                        <button
+                          onClick={() => setPrintTarget(fab)}
+                          className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-bold text-violet-600 bg-violet-50 border border-violet-200 rounded hover:bg-violet-100 transition-colors"
+                          title="Imprimir etiquetas"
+                        >
+                          <Printer size={11} />
+                          Imprimir
+                        </button>
                       </div>
                       <div className="text-[11px] font-bold text-slate-700 truncate w-56">{fab.obra}</div>
                       <div className="flex items-center gap-3 text-[10px] text-slate-500">
@@ -440,13 +453,22 @@ export function LoteDoDia({ initialFabrications, onBack }: LoteDoDiaProps) {
         </div>
       </div>
 
-      {/* Drawer */}
+      {/* Drawer de tarefa */}
       {selectedTask && (
         <DrawerCaixinha
           fabrication={items.find(f => f.id === selectedTask.fabId)!}
           task={selectedTask.task}
           onClose={() => setSelectedTask(null)}
           onUpdateStatus={(status, reason) => handleUpdateTaskStatus(selectedTask.fabId, selectedTask.task.id, status, reason)}
+        />
+      )}
+
+      {/* Drawer de impressão de etiquetas */}
+      {printTarget && (
+        <PrintLabelDrawer
+          fabrication={printTarget}
+          open={true}
+          onClose={() => setPrintTarget(null)}
         />
       )}
 
