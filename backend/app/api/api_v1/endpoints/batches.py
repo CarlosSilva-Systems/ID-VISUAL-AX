@@ -38,6 +38,41 @@ def extract_product_name(product_val: Any) -> Opt[str]:
     return None
 
 
+def extract_product_id(product_val: Any) -> Opt[int]:
+    """Extrai o ID do produto do campo product_id."""
+    if not product_val or product_val is False:
+        return None
+    if isinstance(product_val, (list, tuple)) and len(product_val) >= 1:
+        return int(product_val[0])
+    return None
+
+
+async def fetch_product_default_code(client: "OdooClient", product_id: int) -> Opt[str]:
+    """
+    Busca o default_code (código AX) de um produto no Odoo.
+    
+    Args:
+        client: Cliente Odoo autenticado
+        product_id: ID do produto no Odoo
+        
+    Returns:
+        Optional[str]: Código AX do produto ou None se não encontrado
+    """
+    try:
+        product_data = await client.search_read(
+            "product.product",
+            domain=[["id", "=", product_id]],
+            fields=["default_code"],
+            limit=1
+        )
+        if product_data and product_data[0].get("default_code"):
+            return product_data[0]["default_code"]
+        return None
+    except Exception as e:
+        logger.warning(f"Erro ao buscar default_code do produto {product_id}: {e}")
+        return None
+
+
 
 
 # --- Active Batches ---
@@ -471,11 +506,18 @@ async def create_batch(
             else:
                 obra_name = raw_obra
 
+            # Buscar ax_code do produto
+            product_id = extract_product_id(mo_data.get("product_id"))
+            ax_code = None
+            if product_id:
+                ax_code = await fetch_product_default_code(client, product_id)
+
             local_mo = ManufacturingOrder(
                 odoo_id=mo_data["id"],
                 name=mo_data["name"],
                 x_studio_nome_da_obra=obra_name,
                 product_name=extract_product_name(mo_data.get("product_id")),
+                ax_code=ax_code,
                 product_qty=mo_data["product_qty"],
                 date_start=date_start or now,
                 state=mo_data["state"],
@@ -842,11 +884,18 @@ async def add_items_to_batch(
                     except Exception:
                         date_start = datetime.now(timezone.utc).replace(tzinfo=None)
 
+            # Buscar ax_code do produto
+            product_id = extract_product_id(mo_data.get("product_id"))
+            ax_code = None
+            if product_id:
+                ax_code = await fetch_product_default_code(client, product_id)
+
             local_mo = ManufacturingOrder(
                 odoo_id=mo_data["id"],
                 name=mo_data["name"],
                 x_studio_nome_da_obra=obra_name,
                 product_name=extract_product_name(mo_data.get("product_id")),
+                ax_code=ax_code,
                 product_qty=mo_data["product_qty"],
                 date_start=date_start or datetime.now(timezone.utc).replace(tzinfo=None),
                 state=mo_data["state"],
