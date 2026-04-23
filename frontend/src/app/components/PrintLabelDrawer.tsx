@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Fabrication } from '../types';
+import { api } from '../../services/api';
 import { printLabels } from '../../services/printApi';
 import { LabelType } from '../../types/print';
 
@@ -35,6 +36,19 @@ function deriveFabCode(moNumber: string): string {
   return `FAB${last}`;
 }
 
+/**
+ * Constrói URL absoluta pública a partir de um path relativo da API.
+ * Usa a origem de VITE_API_URL se definido, senão usa window.location.origin.
+ */
+function buildPublicUrl(path: string): string {
+  const apiUrl = (import.meta as any).env.VITE_API_URL as string | undefined;
+  let origin = window.location.origin;
+  if (apiUrl) {
+    try { origin = new URL(apiUrl).origin; } catch { /* mantém window.location.origin */ }
+  }
+  return `${origin}${path.startsWith('/') ? '' : '/'}${path}`;
+}
+
 // ---------------------------------------------------------------------------
 // Field sub-component
 // ---------------------------------------------------------------------------
@@ -46,9 +60,10 @@ interface FieldProps {
   placeholder?: string;
   onChange?: (v: string) => void;
   hint?: string;
+  loading?: boolean;
 }
 
-function Field({ label, value, readOnly, placeholder, onChange, hint }: FieldProps) {
+function Field({ label, value, readOnly, placeholder, onChange, hint, loading }: FieldProps) {
   return (
     <div className="space-y-1">
       <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider">
@@ -59,13 +74,18 @@ function Field({ label, value, readOnly, placeholder, onChange, hint }: FieldPro
           {value || <span className="text-slate-400 font-normal">—</span>}
         </div>
       ) : (
-        <input
-          type="text"
-          value={value}
-          placeholder={placeholder}
-          onChange={(e) => onChange?.(e.target.value)}
-          className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition-colors placeholder:text-slate-400"
-        />
+        <div className="relative">
+          <input
+            type="text"
+            value={value}
+            placeholder={placeholder}
+            onChange={(e) => onChange?.(e.target.value)}
+            className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition-colors placeholder:text-slate-400 pr-8"
+          />
+          {loading && (
+            <Loader2 size={13} className="animate-spin text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2" />
+          )}
+        </div>
       )}
       {hint && <p className="text-[10px] text-slate-400">{hint}</p>}
     </div>
@@ -78,36 +98,56 @@ function Field({ label, value, readOnly, placeholder, onChange, hint }: FieldPro
 
 export function PrintLabelDrawer({ fabrication, open, onClose }: PrintLabelDrawerProps) {
   // Campos derivados automaticamente da MO
-  const axCode   = fabrication.ax_code  ?? '';
-  const fabCode  = fabrication.fab_code ?? deriveFabCode(fabrication.mo_number);
-  // Nome do quadro = product_name (campo do produto no Odoo)
+  const axCode     = fabrication.ax_code      ?? '';
+  const fabCode    = fabrication.fab_code     ?? deriveFabCode(fabrication.mo_number);
   const nomeQuadro = fabrication.product_name ?? '';
 
-  // Dados técnicos editáveis — todos opcionais
-  const [correnteNominal, setCorrenteNominal] = useState('');
-  const [frequencia,      setFrequencia]      = useState('60Hz');
-  const [capCorte,        setCapCorte]        = useState('');
-  const [tensao,          setTensao]          = useState('');
-  const [curvaDisparo,    setCurvaDisparo]    = useState('');
-  const [tensaoImpulso,   setTensaoImpulso]   = useState('');
-  const [tensaoIsolamento,setTensaoIsolamento]= useState('');
-  const [qrUrl,           setQrUrl]           = useState('');
-
-  // Limpa os campos editáveis sempre que o drawer abre para uma nova MO
-  useEffect(() => {
-    if (open) {
-      setCorrenteNominal('');
-      setFrequencia('60Hz');
-      setCapCorte('');
-      setTensao('');
-      setCurvaDisparo('');
-      setTensaoImpulso('');
-      setTensaoIsolamento('');
-      setQrUrl('');
-    }
-  }, [open, fabrication.id]);
+  // Dados técnicos editáveis
+  const [correnteNominal,  setCorrenteNominal]  = useState('');
+  const [frequencia,       setFrequencia]       = useState('60Hz');
+  const [capCorte,         setCapCorte]         = useState('');
+  const [tensao,           setTensao]           = useState('');
+  const [curvaDisparo,     setCurvaDisparo]     = useState('');
+  const [tensaoImpulso,    setTensaoImpulso]    = useState('');
+  const [tensaoIsolamento, setTensaoIsolamento] = useState('');
+  const [qrUrl,            setQrUrl]            = useState('');
+  const [qrLoading,        setQrLoading]        = useState(false);
 
   const [loading, setLoading] = useState<LabelType | null>(null);
+
+  // Ao abrir: limpa campos e busca URL do primeiro PDF automaticamente
+  useEffect(() => {
+    if (!open) return;
+
+    setCorrenteNominal('');
+    setFrequencia('60Hz');
+    setCapCorte('');
+    setTensao('');
+    setCurvaDisparo('');
+    setTensaoImpulso('');
+    setTensaoIsolamento('');
+    setQrUrl('');
+
+    const odooMoId = fabrication.odoo_mo_id ? Number(fabrication.odoo_mo_id) : null;
+    if (!odooMoId) return;
+
+    let cancelled = false;
+    setQrLoading(true);
+
+    api.getMODocuments(odooMoId)
+      .then((res: any) => {
+        if (cancelled) return;
+        const docs: any[] = res?.documents ?? [];
+        const pdf = docs.find((d) => d.mimetype === 'application/pdf' && d.view_url);
+        if (pdf) {
+          setQrUrl(buildPublicUrl(pdf.view_url));
+        }
+      })
+      .catch(() => { /* silencioso — campo fica vazio para preenchimento manual */ })
+      .finally(() => { if (!cancelled) setQrLoading(false); });
+
+    return () => { cancelled = true; };
+  }, [open, fabrication.id, fabrication.odoo_mo_id]);
 
   if (!open) return null;
 
@@ -121,16 +161,16 @@ export function PrintLabelDrawer({ fabrication, open, onClose }: PrintLabelDrawe
     setLoading(labelType);
     try {
       await printLabels({
-        id_request_id: idRequestId,
-        label_type:    labelType,
-        corrente_nominal:   correnteNominal  || undefined,
-        frequencia:         frequencia       || '60Hz',
-        cap_corte:          capCorte         || undefined,
-        tensao:             tensao           || undefined,
-        curva_disparo:      curvaDisparo     || undefined,
-        tensao_impulso:     tensaoImpulso    || undefined,
-        tensao_isolamento:  tensaoIsolamento || undefined,
-        qr_url:             qrUrl            || undefined,
+        id_request_id:     idRequestId,
+        label_type:        labelType,
+        corrente_nominal:  correnteNominal  || undefined,
+        frequencia:        frequencia       || '60Hz',
+        cap_corte:         capCorte         || undefined,
+        tensao:            tensao           || undefined,
+        curva_disparo:     curvaDisparo     || undefined,
+        tensao_impulso:    tensaoImpulso    || undefined,
+        tensao_isolamento: tensaoIsolamento || undefined,
+        qr_url:            qrUrl            || undefined,
       });
       toast.success('Etiqueta enviada para impressão!');
     } catch (err) {
@@ -164,10 +204,7 @@ export function PrintLabelDrawer({ fabrication, open, onClose }: PrintLabelDrawe
               <p className="text-xs text-slate-500 truncate mt-0.5">{fabrication.obra}</p>
             )}
           </div>
-          <button
-            onClick={onClose}
-            className="p-2 hover:bg-white rounded-full transition-colors text-slate-400 ml-2 shrink-0"
-          >
+          <button onClick={onClose} className="p-2 hover:bg-white rounded-full transition-colors text-slate-400 ml-2 shrink-0">
             <X size={22} />
           </button>
         </div>
@@ -175,13 +212,13 @@ export function PrintLabelDrawer({ fabrication, open, onClose }: PrintLabelDrawe
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
 
-          {/* Dados da MO — preenchidos automaticamente, read-only */}
+          {/* Dados da MO — preenchidos automaticamente */}
           <section>
             <div className="flex items-center gap-2 text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">
               <FileText size={13} />
               Dados da Ordem
               <span className="text-[10px] font-normal text-emerald-600 normal-case tracking-normal bg-emerald-50 px-1.5 py-0.5 rounded">
-                preenchido automaticamente
+                automático
               </span>
             </div>
             <div className="grid grid-cols-2 gap-3">
@@ -196,43 +233,46 @@ export function PrintLabelDrawer({ fabrication, open, onClose }: PrintLabelDrawe
             </div>
           </section>
 
-          {/* Dados técnicos — editáveis pelo operador */}
+          {/* Dados técnicos — editáveis */}
           <section>
             <div className="flex items-center gap-2 text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">
               <Tag size={13} />
               Dados Técnicos
-              <span className="text-[10px] font-normal text-slate-400 normal-case tracking-normal">
-                (etiqueta técnica interna)
-              </span>
+              <span className="text-[10px] font-normal text-slate-400 normal-case tracking-normal">(etiqueta técnica)</span>
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Corrente Nominal (In)" value={correnteNominal} placeholder="ex: 40A"     onChange={setCorrenteNominal} />
-              <Field label="Frequência"             value={frequencia}      placeholder="ex: 60Hz"    onChange={setFrequencia} />
-              <Field label="Cap. de Corte (Icu)"    value={capCorte}        placeholder="ex: 6kA"     onChange={setCapCorte} />
-              <Field label="Tensão"                 value={tensao}          placeholder="ex: 380V"    onChange={setTensao} />
+              <Field label="Corrente Nominal (In)"      value={correnteNominal}  placeholder="ex: 40A"     onChange={setCorrenteNominal} />
+              <Field label="Frequência"                 value={frequencia}       placeholder="ex: 60Hz"    onChange={setFrequencia} />
+              <Field label="Cap. de Corte (Icu)"        value={capCorte}         placeholder="ex: 6kA"     onChange={setCapCorte} />
+              <Field label="Tensão"                     value={tensao}           placeholder="ex: 380V"    onChange={setTensao} />
               <div className="col-span-2">
-                <Field label="Curva de Disparo"     value={curvaDisparo}    placeholder="ex: Curva C" onChange={setCurvaDisparo} />
+                <Field label="Curva de Disparo"         value={curvaDisparo}     placeholder="ex: Curva C" onChange={setCurvaDisparo} />
               </div>
-              <Field label="Tensão de Impulso (Uimp)"    value={tensaoImpulso}    placeholder="ex: 4kV"   onChange={setTensaoImpulso} />
-              <Field label="Tensão de Isolamento (Ui)"   value={tensaoIsolamento} placeholder="ex: 415V"  onChange={setTensaoIsolamento} />
+              <Field label="Tensão de Impulso (Uimp)"  value={tensaoImpulso}    placeholder="ex: 4kV"     onChange={setTensaoImpulso} />
+              <Field label="Tensão de Isolamento (Ui)" value={tensaoIsolamento} placeholder="ex: 415V"    onChange={setTensaoIsolamento} />
             </div>
           </section>
 
-          {/* QR code URL */}
+          {/* QR code URL — preenchido automaticamente com o primeiro PDF */}
           <section>
             <div className="flex items-center gap-2 text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">
               <QrCode size={13} />
               QR Code
-              <span className="text-[10px] font-normal text-slate-400 normal-case tracking-normal">
-                (etiqueta externa)
-              </span>
+              <span className="text-[10px] font-normal text-slate-400 normal-case tracking-normal">(etiqueta externa)</span>
+              {qrLoading && <Loader2 size={11} className="animate-spin text-slate-400" />}
+              {!qrLoading && qrUrl && (
+                <span className="text-[10px] font-normal text-emerald-600 normal-case tracking-normal bg-emerald-50 px-1.5 py-0.5 rounded">
+                  automático
+                </span>
+              )}
             </div>
             <Field
               label="URL do Documento"
               value={qrUrl}
-              placeholder="https://odoo.ax.com.br/..."
+              placeholder={qrLoading ? 'Buscando documento...' : 'https://odoo.ax.com.br/...'}
               onChange={setQrUrl}
-              hint="Preencha com o link do documento para o QR code."
+              hint="Preenchido automaticamente com o primeiro PDF da MO. Edite se necessário."
+              loading={qrLoading}
             />
           </section>
         </div>
