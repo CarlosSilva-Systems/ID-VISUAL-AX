@@ -384,6 +384,7 @@ export const ActiveBatch: React.FC<ActiveBatchProps> = ({ onBack, onNavigateFina
                         ax_code: printRow.ax_code,
                         fab_code: printRow.fab_code,
                         obra: printRow.obra_nome || '',
+                        odoo_mo_id: printRow.odoo_mo_id ? String(printRow.odoo_mo_id) : undefined,
                         product_qty: printRow.quantity,
                         date_start: printRow.date_start || '',
                         sla: printRow.sla_text || '24h',
