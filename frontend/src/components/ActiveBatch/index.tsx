@@ -4,7 +4,8 @@ import { api } from '../../services/api';
 import {
     BatchMatrixResponse,
     TaskStatusEnum,
-    MatrixCell
+    MatrixCell,
+    MatrixRow,
 } from '../../types/matrix';
 import { BatchHeader } from './BatchHeader';
 import { BatchKPIs } from './BatchKPIs';
@@ -12,6 +13,7 @@ import { MatrixTable } from './MatrixTable';
 import { QADrawer } from './QADrawer';
 import { ConfirmModal } from '../../app/components/ConfirmModal';
 import { AddFabricationsModal } from './AddFabricationsModal';
+import { PrintLabelDrawer } from '../../app/components/PrintLabelDrawer';
 import { toast } from 'sonner';
 import { Loader2, AlertTriangle, RefreshCw, Box, X, ShieldAlert } from 'lucide-react';
 
@@ -54,6 +56,9 @@ export const ActiveBatch: React.FC<ActiveBatchProps> = ({ onBack, onNavigateFina
         currentCell: MatrixCell;
         nextStatus: TaskStatusEnum;
     } | null>(null);
+
+    // Print Drawer State
+    const [printRow, setPrintRow] = useState<MatrixRow | null>(null);
 
     const fetchMatrix = useCallback(async () => {
         setLoading(true);
@@ -263,6 +268,7 @@ export const ActiveBatch: React.FC<ActiveBatchProps> = ({ onBack, onNavigateFina
                         rows={data.rows}
                         onTaskClick={(reqId, code, cell, next) => handleTaskUpdate(reqId, code, cell, next)}
                         onOpenDrawer={() => toast.info('Drawer de detalhes em breve')}
+                        onPrint={(row) => setPrintRow(row)}
                     />
                 </div>
             </div>
@@ -367,6 +373,29 @@ export const ActiveBatch: React.FC<ActiveBatchProps> = ({ onBack, onNavigateFina
                         </div>
                     </div>
                 </div>
+            )}
+            {/* Print Label Drawer */}
+            {printRow && (
+                <PrintLabelDrawer
+                    fabrication={{
+                        id: printRow.request_id,
+                        mo_number: printRow.mo_number,
+                        product_name: printRow.product_name,
+                        ax_code: printRow.ax_code,
+                        fab_code: printRow.fab_code,
+                        obra: printRow.obra_nome || '',
+                        product_qty: printRow.quantity,
+                        date_start: printRow.date_start || '',
+                        sla: printRow.sla_text || '24h',
+                        status: 'Em Lote',
+                        mrp_state: 'Em Produção',
+                        tasks: [],
+                        docs: { diagrama: false, legenda: false },
+                        request_id: printRow.request_id,
+                    }}
+                    open={true}
+                    onClose={() => setPrintRow(null)}
+                />
             )}
         </div>
     );

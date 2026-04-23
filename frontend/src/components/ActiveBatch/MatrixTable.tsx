@@ -6,7 +6,7 @@ import {
     TaskStatusEnum
 } from '../../types/matrix';
 import { StatusCell } from './StatusCell';
-import { MoreHorizontal, Clock, Box, FileText, Loader2 } from 'lucide-react';
+import { MoreHorizontal, Clock, Box, FileText, Loader2, Printer } from 'lucide-react';
 import { useDocViewer } from '../DocViewerModal';
 
 interface MatrixTableProps {
@@ -19,13 +19,15 @@ interface MatrixTableProps {
         nextStatus: TaskStatusEnum
     ) => void;
     onOpenDrawer: (requestId: string, taskCode: string, cell: MatrixCellType) => void;
+    onPrint: (row: MatrixRow) => void;
 }
 
 export const MatrixTable: React.FC<MatrixTableProps> = ({
     columns,
     rows,
     onTaskClick,
-    onOpenDrawer
+    onOpenDrawer,
+    onPrint,
 }) => {
     const [undoConfirm, setUndoConfirm] = useState<{
         requestId: string;
@@ -109,6 +111,14 @@ export const MatrixTable: React.FC<MatrixTableProps> = ({
                                                     : <FileText size={11} />
                                                 }
                                                 Docs
+                                            </button>
+                                            <button
+                                                onClick={() => onPrint(row)}
+                                                title="Imprimir etiquetas"
+                                                className="flex items-center gap-1 px-2 py-0.5 text-[11px] font-bold text-violet-600 bg-violet-50 border border-violet-200 rounded hover:bg-violet-100 transition-colors shrink-0"
+                                            >
+                                                <Printer size={11} />
+                                                Imprimir
                                             </button>
                                         </div>
                                         <p className="text-sm font-medium text-slate-600 max-w-[280px]">{row.obra_nome}</p>
