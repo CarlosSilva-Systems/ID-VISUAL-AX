@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   X,
   Printer,
@@ -18,7 +18,6 @@ import { LabelType } from '../../types/print';
 // ---------------------------------------------------------------------------
 
 interface PrintLabelDrawerProps {
-  /** Fabrication selecionada (contém IDRequest + dados da MO) */
   fabrication: Fabrication;
   open: boolean;
   onClose: () => void;
@@ -28,13 +27,17 @@ interface PrintLabelDrawerProps {
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Extrai o código FAB do mo_number: "WH/MO/01015" → "FAB01015" */
-function deriveFabCode(moNumber: string): string | null {
+/** Extrai o código FAB do mo_number: "WH/FAB/01015" → "FAB01015" */
+function deriveFabCode(moNumber: string): string {
   const parts = moNumber.split('/');
   const last = parts[parts.length - 1]?.trim();
-  if (!last || !/^\d+$/.test(last)) return null;
+  if (!last || !/^\d+$/.test(last)) return '';
   return `FAB${last}`;
 }
+
+// ---------------------------------------------------------------------------
+// Field sub-component
+// ---------------------------------------------------------------------------
 
 interface FieldProps {
   label: string;
@@ -42,9 +45,10 @@ interface FieldProps {
   readOnly?: boolean;
   placeholder?: string;
   onChange?: (v: string) => void;
+  hint?: string;
 }
 
-function Field({ label, value, readOnly, placeholder, onChange }: FieldProps) {
+function Field({ label, value, readOnly, placeholder, onChange, hint }: FieldProps) {
   return (
     <div className="space-y-1">
       <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider">
@@ -63,6 +67,7 @@ function Field({ label, value, readOnly, placeholder, onChange }: FieldProps) {
           className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition-colors placeholder:text-slate-400"
         />
       )}
+      {hint && <p className="text-[10px] text-slate-400">{hint}</p>}
     </div>
   );
 }
@@ -72,25 +77,39 @@ function Field({ label, value, readOnly, placeholder, onChange }: FieldProps) {
 // ---------------------------------------------------------------------------
 
 export function PrintLabelDrawer({ fabrication, open, onClose }: PrintLabelDrawerProps) {
-  // Dados técnicos editáveis
-  const [correnteNominal, setCorrenteNominal] = useState('');
-  const [frequencia, setFrequencia] = useState('60Hz');
-  const [capCorte, setCapCorte] = useState('');
-  const [tensao, setTensao] = useState('');
-  const [curvaDisparo, setCurvaDisparo] = useState('');
-  const [tensaoImpulso, setTensaoImpulso] = useState('');
-  const [tensaoIsolamento, setTensaoIsolamento] = useState('');
-  const [qrUrl, setQrUrl] = useState('');
+  // Campos derivados automaticamente da MO
+  const axCode   = fabrication.ax_code  ?? '';
+  const fabCode  = fabrication.fab_code ?? deriveFabCode(fabrication.mo_number);
+  // Nome do quadro = product_name (campo do produto no Odoo)
+  const nomeQuadro = fabrication.product_name ?? '';
 
-  // Estado de loading por botão
+  // Dados técnicos editáveis — todos opcionais
+  const [correnteNominal, setCorrenteNominal] = useState('');
+  const [frequencia,      setFrequencia]      = useState('60Hz');
+  const [capCorte,        setCapCorte]        = useState('');
+  const [tensao,          setTensao]          = useState('');
+  const [curvaDisparo,    setCurvaDisparo]    = useState('');
+  const [tensaoImpulso,   setTensaoImpulso]   = useState('');
+  const [tensaoIsolamento,setTensaoIsolamento]= useState('');
+  const [qrUrl,           setQrUrl]           = useState('');
+
+  // Limpa os campos editáveis sempre que o drawer abre para uma nova MO
+  useEffect(() => {
+    if (open) {
+      setCorrenteNominal('');
+      setFrequencia('60Hz');
+      setCapCorte('');
+      setTensao('');
+      setCurvaDisparo('');
+      setTensaoImpulso('');
+      setTensaoIsolamento('');
+      setQrUrl('');
+    }
+  }, [open, fabrication.id]);
+
   const [loading, setLoading] = useState<LabelType | null>(null);
 
   if (!open) return null;
-
-  const fabCode = deriveFabCode(fabrication.mo_number);
-  // ax_code não está no tipo Fabrication atual — será adicionado quando o backend
-  // retornar o campo. Por ora, exibimos o que estiver disponível.
-  const axCode = (fabrication as any).ax_code ?? null;
 
   const idRequestId = fabrication.request_id ?? '';
 
@@ -99,20 +118,19 @@ export function PrintLabelDrawer({ fabrication, open, onClose }: PrintLabelDrawe
       toast.error('IDRequest não encontrada para esta fabricação.');
       return;
     }
-
     setLoading(labelType);
     try {
       await printLabels({
         id_request_id: idRequestId,
-        label_type: labelType,
-        corrente_nominal: correnteNominal || undefined,
-        frequencia: frequencia || '60Hz',
-        cap_corte: capCorte || undefined,
-        tensao: tensao || undefined,
-        curva_disparo: curvaDisparo || undefined,
-        tensao_impulso: tensaoImpulso || undefined,
-        tensao_isolamento: tensaoIsolamento || undefined,
-        qr_url: qrUrl || undefined,
+        label_type:    labelType,
+        corrente_nominal:   correnteNominal  || undefined,
+        frequencia:         frequencia       || '60Hz',
+        cap_corte:          capCorte         || undefined,
+        tensao:             tensao           || undefined,
+        curva_disparo:      curvaDisparo     || undefined,
+        tensao_impulso:     tensaoImpulso    || undefined,
+        tensao_isolamento:  tensaoIsolamento || undefined,
+        qr_url:             qrUrl            || undefined,
       });
       toast.success('Etiqueta enviada para impressão!');
     } catch (err) {
@@ -141,9 +159,7 @@ export function PrintLabelDrawer({ fabrication, open, onClose }: PrintLabelDrawe
               <Printer size={10} />
               <span>Impressão de Etiquetas</span>
             </div>
-            <h3 className="text-lg font-bold text-slate-900 truncate">
-              {fabrication.mo_number}
-            </h3>
+            <h3 className="text-lg font-bold text-slate-900 truncate">{fabrication.mo_number}</h3>
             {fabrication.obra && (
               <p className="text-xs text-slate-500 truncate mt-0.5">{fabrication.obra}</p>
             )}
@@ -159,21 +175,28 @@ export function PrintLabelDrawer({ fabrication, open, onClose }: PrintLabelDrawe
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
 
-          {/* Dados da MO — read-only */}
+          {/* Dados da MO — preenchidos automaticamente, read-only */}
           <section>
             <div className="flex items-center gap-2 text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">
               <FileText size={13} />
               Dados da Ordem
+              <span className="text-[10px] font-normal text-emerald-600 normal-case tracking-normal bg-emerald-50 px-1.5 py-0.5 rounded">
+                preenchido automaticamente
+              </span>
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Nome da Obra" value={fabrication.obra ?? ''} readOnly />
-              <Field label="Nome do Quadro" value={fabrication.product_name ?? ''} readOnly />
-              <Field label="Código AX" value={axCode ?? ''} readOnly />
-              <Field label="Código FAB" value={fabCode ?? ''} readOnly />
+              <div className="col-span-2">
+                <Field label="Nome da Obra"   value={fabrication.obra ?? ''} readOnly />
+              </div>
+              <div className="col-span-2">
+                <Field label="Nome do Quadro" value={nomeQuadro}             readOnly />
+              </div>
+              <Field label="Código AX"  value={axCode}  readOnly />
+              <Field label="Código FAB" value={fabCode} readOnly />
             </div>
           </section>
 
-          {/* Dados técnicos — editáveis */}
+          {/* Dados técnicos — editáveis pelo operador */}
           <section>
             <div className="flex items-center gap-2 text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">
               <Tag size={13} />
@@ -183,50 +206,15 @@ export function PrintLabelDrawer({ fabrication, open, onClose }: PrintLabelDrawe
               </span>
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <Field
-                label="Corrente Nominal (In)"
-                value={correnteNominal}
-                placeholder="ex: 40A"
-                onChange={setCorrenteNominal}
-              />
-              <Field
-                label="Frequência"
-                value={frequencia}
-                placeholder="ex: 60Hz"
-                onChange={setFrequencia}
-              />
-              <Field
-                label="Cap. de Corte (Icu)"
-                value={capCorte}
-                placeholder="ex: 6kA"
-                onChange={setCapCorte}
-              />
-              <Field
-                label="Tensão"
-                value={tensao}
-                placeholder="ex: 380V"
-                onChange={setTensao}
-              />
+              <Field label="Corrente Nominal (In)" value={correnteNominal} placeholder="ex: 40A"     onChange={setCorrenteNominal} />
+              <Field label="Frequência"             value={frequencia}      placeholder="ex: 60Hz"    onChange={setFrequencia} />
+              <Field label="Cap. de Corte (Icu)"    value={capCorte}        placeholder="ex: 6kA"     onChange={setCapCorte} />
+              <Field label="Tensão"                 value={tensao}          placeholder="ex: 380V"    onChange={setTensao} />
               <div className="col-span-2">
-                <Field
-                  label="Curva de Disparo"
-                  value={curvaDisparo}
-                  placeholder="ex: Curva C"
-                  onChange={setCurvaDisparo}
-                />
+                <Field label="Curva de Disparo"     value={curvaDisparo}    placeholder="ex: Curva C" onChange={setCurvaDisparo} />
               </div>
-              <Field
-                label="Tensão de Impulso (Uimp)"
-                value={tensaoImpulso}
-                placeholder="ex: 4kV"
-                onChange={setTensaoImpulso}
-              />
-              <Field
-                label="Tensão de Isolamento (Ui)"
-                value={tensaoIsolamento}
-                placeholder="ex: 415V"
-                onChange={setTensaoIsolamento}
-              />
+              <Field label="Tensão de Impulso (Uimp)"    value={tensaoImpulso}    placeholder="ex: 4kV"   onChange={setTensaoImpulso} />
+              <Field label="Tensão de Isolamento (Ui)"   value={tensaoIsolamento} placeholder="ex: 415V"  onChange={setTensaoIsolamento} />
             </div>
           </section>
 
@@ -244,36 +232,16 @@ export function PrintLabelDrawer({ fabrication, open, onClose }: PrintLabelDrawe
               value={qrUrl}
               placeholder="https://odoo.ax.com.br/..."
               onChange={setQrUrl}
+              hint="Preencha com o link do documento para o QR code."
             />
           </section>
         </div>
 
-        {/* Footer — botões de ação */}
+        {/* Footer */}
         <div className="p-5 border-t border-slate-100 bg-slate-50 flex flex-col gap-2.5">
-          <PrintButton
-            label="Imprimir Etiqueta Técnica"
-            icon={<Tag size={16} />}
-            loading={loading === 'technical'}
-            disabled={loading !== null}
-            onClick={() => handlePrint('technical')}
-            variant="blue"
-          />
-          <PrintButton
-            label="Imprimir Etiqueta Externa"
-            icon={<QrCode size={16} />}
-            loading={loading === 'external'}
-            disabled={loading !== null}
-            onClick={() => handlePrint('external')}
-            variant="violet"
-          />
-          <PrintButton
-            label="Imprimir Ambas"
-            icon={<Layers size={16} />}
-            loading={loading === 'both'}
-            disabled={loading !== null}
-            onClick={() => handlePrint('both')}
-            variant="emerald"
-          />
+          <PrintButton label="Imprimir Etiqueta Técnica" icon={<Tag size={16} />}    loading={loading === 'technical'} disabled={loading !== null} onClick={() => handlePrint('technical')} variant="blue" />
+          <PrintButton label="Imprimir Etiqueta Externa" icon={<QrCode size={16} />} loading={loading === 'external'}  disabled={loading !== null} onClick={() => handlePrint('external')}  variant="violet" />
+          <PrintButton label="Imprimir Ambas"            icon={<Layers size={16} />} loading={loading === 'both'}      disabled={loading !== null} onClick={() => handlePrint('both')}      variant="emerald" />
         </div>
       </div>
     </div>
@@ -281,7 +249,7 @@ export function PrintLabelDrawer({ fabrication, open, onClose }: PrintLabelDrawe
 }
 
 // ---------------------------------------------------------------------------
-// PrintButton sub-component
+// PrintButton
 // ---------------------------------------------------------------------------
 
 interface PrintButtonProps {
@@ -304,12 +272,7 @@ function PrintButton({ label, icon, loading, disabled, onClick, variant }: Print
     <button
       onClick={onClick}
       disabled={disabled}
-      className={`
-        w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl
-        text-white font-bold text-sm shadow-lg transition-all active:scale-95
-        disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100
-        ${VARIANT_CLASSES[variant]}
-      `}
+      className={`w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-white font-bold text-sm shadow-lg transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100 ${VARIANT_CLASSES[variant]}`}
     >
       {loading ? <Loader2 size={16} className="animate-spin" /> : icon}
       {label}
