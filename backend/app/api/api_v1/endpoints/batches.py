@@ -282,6 +282,8 @@ async def get_batch_matrix(
             odoo_mo_id=mo.odoo_id,
             mo_number=mo.name,
             product_name=mo.product_name,
+            ax_code=mo.ax_code,
+            fab_code=mo.fab_code,
             obra_nome=mo.x_studio_nome_da_obra,
             package_code=req.package_code,
             sla_text="24h", # Placeholder or calculated

@@ -29,6 +29,8 @@ class MatrixRow(BaseModel):
     odoo_mo_id: Optional[int] = None
     mo_number: str
     product_name: Optional[str] = None  # Nome do produto (sem código AX)
+    ax_code: Optional[str] = None       # Código AX do produto (product_id.default_code)
+    fab_code: Optional[str] = None      # Código FAB derivado de mo_number (ex: FAB01015)
     obra_nome: Optional[str] = None
     package_code: Optional[str] = None
     sla_text: Optional[str] = None
