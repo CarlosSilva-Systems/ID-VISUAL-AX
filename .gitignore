@@ -48,6 +48,8 @@ htmlcov/
 dist/
 build/
 .mypy_cache/
+uv.lock
+backend/uv.lock
 
 # ============================================================
 # Node / Frontend
