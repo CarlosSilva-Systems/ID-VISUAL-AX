@@ -14,6 +14,7 @@ import { QADrawer } from './QADrawer';
 import { ConfirmModal } from '../../app/components/ConfirmModal';
 import { AddFabricationsModal } from './AddFabricationsModal';
 import { PrintLabelDrawer } from '../../app/components/PrintLabelDrawer';
+import { LabelsDrawer } from '../../app/components/LabelsDrawer';
 import { toast } from 'sonner';
 import { Loader2, AlertTriangle, RefreshCw, Box, X, ShieldAlert } from 'lucide-react';
 
@@ -374,9 +375,9 @@ export const ActiveBatch: React.FC<ActiveBatchProps> = ({ onBack, onNavigateFina
                     </div>
                 </div>
             )}
-            {/* Print Label Drawer */}
+            {/* Labels Drawer — 4 abas de impressão */}
             {printRow && (
-                <PrintLabelDrawer
+                <LabelsDrawer
                     fabrication={{
                         id: printRow.request_id,
                         mo_number: printRow.mo_number,
