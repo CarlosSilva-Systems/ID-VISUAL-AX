@@ -13,7 +13,7 @@ from enum import Enum
 from typing import Optional
 
 from sqlalchemy import Index, Text
-from sqlmodel import Field, SQLModel
+from sqlmodel import Field, SQLModel, Column
 
 _now = lambda: datetime.now(timezone.utc).replace(tzinfo=None)
 
@@ -55,7 +55,7 @@ class PrintJob(SQLModel, table=True):
     )
 
     label_type: str                                        # "technical" | "external" | "both"
-    zpl_payload: str = Field(sa_column_kwargs={"type_": Text})  # ZPL completo renderizado
+    zpl_payload: str = Field(sa_column=Column(Text, nullable=False))  # ZPL completo renderizado
 
     status: PrintJobStatus = Field(default=PrintJobStatus.pending, index=True)
 
