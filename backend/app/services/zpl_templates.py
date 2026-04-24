@@ -411,3 +411,53 @@ def render_terminal_labels(terminals: list[dict]) -> list[str]:
         jobs.append("".join(lines))
 
     return jobs
+
+
+# ---------------------------------------------------------------------------
+# Dispatcher
+# ---------------------------------------------------------------------------
+
+def render_label(label_type: str, data: dict) -> str | list[str]:
+    """
+    Dispatcher de templates ZPL por tipo de etiqueta.
+
+    Tipos suportados:
+        "technical" → render_technical_label(**data)          → str
+        "external"  → render_external_label(**data)           → str
+        "device"    → render_device_labels(data["devices"])   → list[str]
+        "door"      → render_door_label(...)                  → str
+        "terminal"  → render_terminal_labels(data["terminals"])→ list[str]
+        "both"      → technical + external concatenados       → str
+
+    Args:
+        label_type: Tipo de etiqueta.
+        data: Dicionário com os parâmetros necessários para o template.
+
+    Returns:
+        str ou list[str] dependendo do tipo.
+
+    Raises:
+        ValueError: Se label_type não for reconhecido.
+    """
+    if label_type == "technical":
+        return render_technical_label(**data)
+
+    if label_type == "external":
+        return render_external_label(**data)
+
+    if label_type == "both":
+        return render_technical_label(**data) + "\n" + render_external_label(**data)
+
+    if label_type == "device":
+        return render_device_labels(data["devices"])
+
+    if label_type == "door":
+        return render_door_label(
+            equipment_name=data["equipment_name"],
+            columns=data["columns"],
+        )
+
+    if label_type == "terminal":
+        return render_terminal_labels(data["terminals"])
+
+    raise ValueError(f"Tipo de etiqueta desconhecido: {label_type!r}")
