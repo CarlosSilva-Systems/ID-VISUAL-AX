@@ -216,3 +216,198 @@ def render_external_label(
     )
 
     return zpl
+
+
+# ---------------------------------------------------------------------------
+# WAGO 210-805 — Etiqueta de dispositivo (régua de componentes)
+# ---------------------------------------------------------------------------
+
+_DEVICE_BATCH = 20   # máximo de etiquetas por job ZPL
+_CELL_W = 136        # largura da célula: 17mm × 8 dots/mm = 136 dots
+_CELL_H = 44         # altura da célula: 5.5mm × 8 dots/mm = 44 dots
+
+
+def render_device_labels(devices: list[dict]) -> list[str]:
+    """
+    Gera ZPL para etiquetas de dispositivo WAGO 210-805 (régua de componentes).
+
+    Cada etiqueta: 17mm × 5.5mm (136 × 44 dots).
+    Um único job imprime toda a régua em sequência vertical.
+    Listas com mais de 20 dispositivos são divididas em múltiplos jobs.
+
+    Args:
+        devices: Lista de dicts com chaves 'device_tag' e 'description'.
+
+    Returns:
+        list[str]: Lista de payloads ZPL, um por job (máx. 20 etiquetas cada).
+    """
+    def _s(val: str) -> str:
+        return (val or "").replace("^", "").replace("~", "").strip()
+
+    if not devices:
+        return []
+
+    jobs: list[str] = []
+
+    for batch_start in range(0, len(devices), _DEVICE_BATCH):
+        batch = devices[batch_start: batch_start + _DEVICE_BATCH]
+        total_h = _CELL_H * len(batch)
+
+        lines = [
+            "^XA\n",
+            f"^PW{_CELL_W}\n",
+            f"^LL{total_h}\n",
+            "^CI28\n",
+        ]
+
+        for i, dev in enumerate(batch):
+            tag  = _s(dev.get("device_tag", ""))
+            desc = _s(dev.get("description", ""))
+            y0 = i * _CELL_H
+
+            # Separador horizontal superior (exceto na primeira célula)
+            if i > 0:
+                lines.append(f"^FO0,{y0}^GB{_CELL_W},1,1^FS\n")
+
+            # device_tag centralizado (linha superior da célula)
+            lines.append(f"^FO2,{y0 + 2}^A0N,20,18^FH^FD{tag}^FS\n")
+
+            # description abaixo em fonte menor
+            lines.append(f"^FO2,{y0 + 24}^A0N,14,12^FH^FD{desc}^FS\n")
+
+        lines.append("^XZ\n")
+        jobs.append("".join(lines))
+
+    return jobs
+
+
+# ---------------------------------------------------------------------------
+# WAGO 210-855 — Etiqueta de porta (painel de botões)
+# ---------------------------------------------------------------------------
+
+def render_door_label(equipment_name: str, columns: list[str]) -> str:
+    """
+    Gera ZPL para etiqueta de porta WAGO 210-855.
+
+    Dimensão: 72mm × 24mm = 576 × 192 dots @ 203dpi.
+    Layout:
+        - Borda externa
+        - Linha superior (80 dots): equipment_name centralizado
+        - Separador horizontal em y=82
+        - Linha inferior dividida em N colunas iguais com texto centralizado
+
+    Args:
+        equipment_name: Nome do equipamento (ex: "Bomba 1").
+        columns: Lista de descrições de cada posição (ex: ["Automático", "Manual"]).
+
+    Returns:
+        str: Payload ZPL completo.
+    """
+    def _s(val: str) -> str:
+        return (val or "").replace("^", "").replace("~", "").strip()
+
+    equipment_name = _s(equipment_name)
+    cols = [_s(c) for c in (columns or [])]
+    n = max(len(cols), 1)
+
+    PW = 576
+    LL = 192
+    SEP_Y = 82          # y do separador horizontal
+    COL_W = PW // n     # largura de cada coluna (inteiro)
+    COL_AREA_H = LL - SEP_Y - 2  # altura disponível para as colunas
+
+    # Centro vertical da área de colunas para o texto
+    col_text_y = SEP_Y + (COL_AREA_H - 22) // 2
+
+    lines = [
+        "^XA\n",
+        f"^PW{PW}\n",
+        f"^LL{LL}\n",
+        "^CI28\n",
+        # Borda externa
+        "^FO2,2^GB572,188,2^FS\n",
+        # equipment_name centralizado na linha superior
+        f"^FO0,20^A0N,40,34^FB{PW},1,,C^FH^FD{equipment_name}^FS\n",
+        # Separador horizontal
+        f"^FO2,{SEP_Y}^GB572,1,1^FS\n",
+    ]
+
+    for i, col_text in enumerate(cols):
+        x0 = i * COL_W
+
+        # Separador vertical à esquerda de cada coluna (exceto a primeira)
+        if i > 0:
+            lines.append(f"^FO{x0},{SEP_Y}^GB1,{COL_AREA_H},1^FS\n")
+
+        # Texto centralizado horizontalmente na célula
+        lines.append(
+            f"^FO{x0},{col_text_y}^A0N,22,18^FB{COL_W},1,,C^FH^FD{col_text}^FS\n"
+        )
+
+    lines.append("^XZ\n")
+    return "".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# WAGO 2009-110 — Marcador de borne
+# ---------------------------------------------------------------------------
+
+_TERMINAL_BATCH = 50  # máximo de marcadores por job ZPL
+_TERM_W = 48          # largura: 6mm × 8 dots/mm = 48 dots
+_TERM_H = 48          # altura: 6mm × 8 dots/mm = 48 dots
+
+
+def render_terminal_labels(terminals: list[dict]) -> list[str]:
+    """
+    Gera ZPL para marcadores de borne WAGO 2009-110.
+
+    Cada marcador: 6mm × 6mm (48 × 48 dots).
+    Impressão contínua — sem espaço entre marcadores.
+    Listas com mais de 50 bornes são divididas em múltiplos jobs.
+
+    Args:
+        terminals: Lista de dicts com chaves 'terminal_number', 'wire_number' (opt),
+                   'group_name' (opt).
+
+    Returns:
+        list[str]: Lista de payloads ZPL, um por job (máx. 50 marcadores cada).
+    """
+    def _s(val: str) -> str:
+        return (val or "").replace("^", "").replace("~", "").strip()
+
+    if not terminals:
+        return []
+
+    jobs: list[str] = []
+
+    for batch_start in range(0, len(terminals), _TERMINAL_BATCH):
+        batch = terminals[batch_start: batch_start + _TERMINAL_BATCH]
+        total_h = _TERM_H * len(batch)
+
+        lines = [
+            "^XA\n",
+            f"^PW{_TERM_W}\n",
+            f"^LL{total_h}\n",
+            "^CI28\n",
+        ]
+
+        for i, term in enumerate(batch):
+            num  = _s(term.get("terminal_number", ""))
+            wire = _s(term.get("wire_number", ""))
+            y0 = i * _TERM_H
+
+            # terminal_number em destaque (centralizado)
+            lines.append(
+                f"^FO0,{y0 + 4}^A0N,28,24^FB{_TERM_W},1,,C^FH^FD{num}^FS\n"
+            )
+
+            # wire_number abaixo em fonte menor, se existir
+            if wire:
+                lines.append(
+                    f"^FO0,{y0 + 32}^A0N,14,12^FB{_TERM_W},1,,C^FH^FD{wire}^FS\n"
+                )
+
+        lines.append("^XZ\n")
+        jobs.append("".join(lines))
+
+    return jobs
