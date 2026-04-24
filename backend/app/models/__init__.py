@@ -16,3 +16,4 @@ from app.models.printer import Printer
 from app.models.print_job import PrintJob, PrintJobStatus
 from app.models.label_device import DeviceLabel
 from app.models.label_door import DoorLabel
+from app.models.label_terminal import TerminalLabel
