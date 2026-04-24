@@ -76,3 +76,118 @@ export async function fetchJobStatus(jobId: number): Promise<JobStatusResponse> 
   const res = await fetch(`${API_URL}/print/jobs/${jobId}/status`, { headers: getHeaders() });
   return _handleResponse<JobStatusResponse>(res);
 }
+
+// ---------------------------------------------------------------------------
+// EPLAN — dispositivos e bornes
+// ---------------------------------------------------------------------------
+
+export interface DeviceLabelItem {
+  id: number;
+  mo_id: number;
+  device_tag: string;
+  description: string;
+  location: string | null;
+  order_index: number;
+}
+
+export interface TerminalLabelItem {
+  id: number;
+  mo_id: number;
+  terminal_number: string;
+  wire_number: string | null;
+  group_name: string | null;
+  order_index: number;
+}
+
+export interface EplanImportSummary {
+  imported: number;
+  updated: number;
+  skipped: number;
+  errors: string[];
+}
+
+export interface PrintDevicesResponse {
+  jobs_created: number;
+  job_ids: number[];
+}
+
+export interface PrintDoorResponse {
+  job_id: number;
+}
+
+function getUploadHeaders(): Record<string, string> {
+  const token = localStorage.getItem('id_visual_token');
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+export async function fetchDeviceLabels(moId: number): Promise<DeviceLabelItem[]> {
+  const res = await fetch(`${API_URL}/id-visual/eplan/${moId}/devices`, { headers: getHeaders() });
+  return _handleResponse<DeviceLabelItem[]>(res);
+}
+
+export async function fetchTerminalLabels(moId: number): Promise<TerminalLabelItem[]> {
+  const res = await fetch(`${API_URL}/id-visual/eplan/${moId}/terminals`, { headers: getHeaders() });
+  return _handleResponse<TerminalLabelItem[]>(res);
+}
+
+export async function importDevicesExcel(moId: number, file: File): Promise<EplanImportSummary> {
+  const form = new FormData();
+  form.append('file', file);
+  const res = await fetch(`${API_URL}/id-visual/eplan/import/devices?mo_id=${moId}`, {
+    method: 'POST',
+    headers: getUploadHeaders(),
+    body: form,
+  });
+  return _handleResponse<EplanImportSummary>(res);
+}
+
+export async function importTerminalsExcel(moId: number, file: File): Promise<EplanImportSummary> {
+  const form = new FormData();
+  form.append('file', file);
+  const res = await fetch(`${API_URL}/id-visual/eplan/import/terminals?mo_id=${moId}`, {
+    method: 'POST',
+    headers: getUploadHeaders(),
+    body: form,
+  });
+  return _handleResponse<EplanImportSummary>(res);
+}
+
+export async function printDevices(
+  moId: number,
+  printerId: number,
+  deviceIds?: number[],
+): Promise<PrintDevicesResponse> {
+  const res = await fetch(`${API_URL}/id-visual/print/devices`, {
+    method: 'POST',
+    headers: getHeaders(),
+    body: JSON.stringify({ mo_id: moId, printer_id: printerId, device_ids: deviceIds ?? null }),
+  });
+  return _handleResponse<PrintDevicesResponse>(res);
+}
+
+export async function printDoorInline(
+  moId: number,
+  printerId: number,
+  equipmentName: string,
+  columns: string[],
+): Promise<PrintDoorResponse> {
+  const res = await fetch(`${API_URL}/id-visual/print/door/inline`, {
+    method: 'POST',
+    headers: getHeaders(),
+    body: JSON.stringify({ mo_id: moId, printer_id: printerId, equipment_name: equipmentName, columns }),
+  });
+  return _handleResponse<PrintDoorResponse>(res);
+}
+
+export async function printTerminals(
+  moId: number,
+  printerId: number,
+  terminalIds?: number[],
+): Promise<PrintDevicesResponse> {
+  const res = await fetch(`${API_URL}/id-visual/print/terminals`, {
+    method: 'POST',
+    headers: getHeaders(),
+    body: JSON.stringify({ mo_id: moId, printer_id: printerId, terminal_ids: terminalIds ?? null }),
+  });
+  return _handleResponse<PrintDevicesResponse>(res);
+}
