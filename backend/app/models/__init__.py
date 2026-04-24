@@ -14,3 +14,4 @@ from app.models.firmware_version import FirmwareVersion
 from app.models.andon_settings import AndonSettings
 from app.models.printer import Printer
 from app.models.print_job import PrintJob, PrintJobStatus
+from app.models.label_device import DeviceLabel
