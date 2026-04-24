@@ -12,3 +12,4 @@ from app.models.esp_device import ESPDevice, ESPDeviceLog
 from app.models.ota import FirmwareRelease, OTAUpdateLog
 from app.models.firmware_version import FirmwareVersion
 from app.models.andon_settings import AndonSettings
+from app.models.printer import Printer
