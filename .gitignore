@@ -21,6 +21,7 @@ backend/test_*.py
 backend/verify_*.py
 *.log
 *.txt
+!agents/print_agent/requirements.txt
 
 # Relatórios temporários
 RELATORIO_*.md
