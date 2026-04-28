@@ -20,6 +20,8 @@ import { Fabrication, PACKAGES_CONFIG, TASK_CODE_TO_LABEL, taskCodeToType, Caixi
 import { DrawerCaixinha } from './DrawerCaixinha';
 import { PrintLabelDrawer } from './PrintLabelDrawer';
 import { useDocViewer } from '../../components/DocViewerModal';
+import { FloatingDocViewer } from '../../components/FloatingDocViewer';
+import { useFloatingViewer } from '../../hooks/useFloatingViewer';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { toast } from 'sonner';
@@ -42,6 +44,7 @@ export function LoteDoDia({ initialFabrications, onBack }: LoteDoDiaProps) {
   const [selectedTask, setSelectedTask] = useState<{ fabId: string; task: Caixinha } | null>(null);
   const [printTarget, setPrintTarget] = useState<Fabrication | null>(null);
   const { openDocs, isLoading: docsLoading, DocViewer } = useDocViewer();
+  const floatingViewer = useFloatingViewer();
 
   useEffect(() => {
     const initialize = async () => {
@@ -343,6 +346,21 @@ export function LoteDoDia({ initialFabrications, onBack }: LoteDoDiaProps) {
         <div className="flex items-center gap-3 shrink-0">
           <div className="h-8 w-[1px] bg-gray-200 mx-2" />
           <button
+            onClick={() => {
+              // Abre floating viewer com primeira fabricação disponível
+              const firstFab = items[0];
+              if (firstFab && firstFab.odoo_mo_id) {
+                floatingViewer.toggle(firstFab.odoo_mo_id, firstFab.mo_number, 'diagrama');
+              } else {
+                toast.warning('Nenhuma fabricação disponível para visualizar');
+              }
+            }}
+            className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg text-sm font-bold hover:bg-purple-700 transition-colors"
+            title="Fixar diagrama para visualização contínua"
+          >
+            📌 Fixar Diagrama
+          </button>
+          <button
             onClick={() => { toast.success('Lote salvo automaticamente. Retome pelo Dashboard quando quiser.'); onBack(); }}
             className="px-4 py-2 text-xs font-bold text-slate-500 hover:text-slate-800 transition-colors"
           >
@@ -379,8 +397,8 @@ export function LoteDoDia({ initialFabrications, onBack }: LoteDoDiaProps) {
                           {fab.packageType}
                         </span>
                         <button
-                          onClick={() => openDocs(fab.odoo_mo_id || fab.id, fab.mo_number)}
-                          disabled={docsLoading(fab.odoo_mo_id || fab.id)}
+                          onClick={() => floatingViewer.toggle(fab.odoo_mo_id || fab.id, fab.mo_number, 'diagrama')}
+                          disabled={!fab.odoo_mo_id}
                           className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-bold text-blue-600 bg-blue-50 border border-blue-200 rounded hover:bg-blue-100 transition-colors disabled:opacity-60"
                           title="Abrir documentos da MO"
                         >
@@ -473,6 +491,16 @@ export function LoteDoDia({ initialFabrications, onBack }: LoteDoDiaProps) {
       )}
 
       <DocViewer />
+
+      {/* Floating Document Viewer */}
+      {floatingViewer.isOpen && floatingViewer.moId && floatingViewer.moNumber && (
+        <FloatingDocViewer
+          moId={floatingViewer.moId}
+          moNumber={floatingViewer.moNumber}
+          documentType={floatingViewer.documentType}
+          onClose={floatingViewer.close}
+        />
+      )}
     </div>
   );
 }
