@@ -23,7 +23,14 @@ from app.api import deps
 from app.models.audit import HistoryLog
 from app.models.label_device import DeviceLabel
 from app.models.label_terminal import TerminalLabel
-from app.schemas.eplan import DeviceLabelOut, EplanImportSummary, TerminalLabelOut
+from app.schemas.eplan import (
+    DeviceLabelOut,
+    DeviceLabelCreate,
+    DeviceLabelUpdate,
+    DeviceReorderPayload,
+    EplanImportSummary,
+    TerminalLabelOut,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -363,3 +370,171 @@ async def delete_terminals(
 
     logger.info(f"[eplan] delete/terminals mo_id={mo_id} removed={len(records)}")
     return {"deleted": len(records)}
+
+
+# ---------------------------------------------------------------------------
+# POST /eplan/{mo_id}/devices/manual — Criação manual de dispositivo
+# ---------------------------------------------------------------------------
+
+@router.post("/{mo_id}/devices/manual", response_model=DeviceLabelOut)
+async def create_device_manual(
+    mo_id: int,
+    payload: DeviceLabelCreate,
+    session: AsyncSession = Depends(deps.get_session),
+    current_user: Any = Depends(deps.get_current_user),
+) -> Any:
+    """
+    Cria um DeviceLabel manualmente (sem importação EPLAN).
+    
+    Valida que device_tag é único para a MO.
+    """
+    # Verifica se já existe device_tag para esta MO
+    stmt = select(DeviceLabel).where(
+        DeviceLabel.mo_id == mo_id,
+        DeviceLabel.device_tag == payload.device_tag
+    )
+    result = await session.exec(stmt)
+    existing = result.first()
+    
+    if existing:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Tag '{payload.device_tag}' já existe para esta MO."
+        )
+    
+    # Calcula próximo order_index
+    stmt_max = select(DeviceLabel).where(DeviceLabel.mo_id == mo_id)
+    result_max = await session.exec(stmt_max)
+    all_devices = result_max.all()
+    next_order = max([d.order_index for d in all_devices], default=-1) + 1
+    
+    # Cria novo dispositivo
+    device = DeviceLabel(
+        mo_id=mo_id,
+        device_tag=payload.device_tag,
+        description=payload.description,
+        location=payload.location,
+        order_index=next_order,
+    )
+    session.add(device)
+    await session.commit()
+    await session.refresh(device)
+    
+    logger.info(f"[eplan] create_device_manual mo_id={mo_id} tag={payload.device_tag}")
+    return device
+
+
+# ---------------------------------------------------------------------------
+# PATCH /eplan/devices/{device_id} — Edição de dispositivo
+# ---------------------------------------------------------------------------
+
+@router.patch("/devices/{device_id}", response_model=DeviceLabelOut)
+async def update_device(
+    device_id: int,
+    payload: DeviceLabelUpdate,
+    session: AsyncSession = Depends(deps.get_session),
+    current_user: Any = Depends(deps.get_current_user),
+) -> Any:
+    """
+    Atualiza um DeviceLabel existente.
+    
+    Permite editar: device_tag, description, location.
+    """
+    stmt = select(DeviceLabel).where(DeviceLabel.id == device_id)
+    result = await session.exec(stmt)
+    device = result.first()
+    
+    if not device:
+        raise HTTPException(status_code=404, detail="Dispositivo não encontrado.")
+    
+    # Verifica se novo device_tag já existe (se mudou)
+    if payload.device_tag and payload.device_tag != device.device_tag:
+        stmt_check = select(DeviceLabel).where(
+            DeviceLabel.mo_id == device.mo_id,
+            DeviceLabel.device_tag == payload.device_tag
+        )
+        result_check = await session.exec(stmt_check)
+        if result_check.first():
+            raise HTTPException(
+                status_code=409,
+                detail=f"Tag '{payload.device_tag}' já existe para esta MO."
+            )
+        device.device_tag = payload.device_tag
+    
+    if payload.description is not None:
+        device.description = payload.description
+    if payload.location is not None:
+        device.location = payload.location
+    
+    session.add(device)
+    await session.commit()
+    await session.refresh(device)
+    
+    logger.info(f"[eplan] update_device device_id={device_id}")
+    return device
+
+
+# ---------------------------------------------------------------------------
+# POST /eplan/{mo_id}/devices/reorder — Reordenação de dispositivos
+# ---------------------------------------------------------------------------
+
+@router.post("/{mo_id}/devices/reorder", response_model=dict)
+async def reorder_devices(
+    mo_id: int,
+    payload: DeviceReorderPayload,
+    session: AsyncSession = Depends(deps.get_session),
+    current_user: Any = Depends(deps.get_current_user),
+) -> Any:
+    """
+    Reordena dispositivos de uma MO.
+    
+    Recebe array de IDs na nova ordem e atualiza order_index.
+    """
+    # Carrega todos os dispositivos da MO
+    stmt = select(DeviceLabel).where(DeviceLabel.mo_id == mo_id)
+    result = await session.exec(stmt)
+    devices_map = {d.id: d for d in result.all()}
+    
+    # Valida que todos os IDs pertencem à MO
+    for device_id in payload.device_ids:
+        if device_id not in devices_map:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Dispositivo ID {device_id} não pertence à MO {mo_id}."
+            )
+    
+    # Atualiza order_index
+    for new_index, device_id in enumerate(payload.device_ids):
+        device = devices_map[device_id]
+        device.order_index = new_index
+        session.add(device)
+    
+    await session.commit()
+    
+    logger.info(f"[eplan] reorder_devices mo_id={mo_id} count={len(payload.device_ids)}")
+    return {"reordered": len(payload.device_ids)}
+
+
+# ---------------------------------------------------------------------------
+# DELETE /eplan/devices/{device_id} — Deletar dispositivo individual
+# ---------------------------------------------------------------------------
+
+@router.delete("/devices/{device_id}", response_model=dict)
+async def delete_device(
+    device_id: int,
+    session: AsyncSession = Depends(deps.get_session),
+    current_user: Any = Depends(deps.get_current_user),
+) -> Any:
+    """Remove um DeviceLabel específico."""
+    stmt = select(DeviceLabel).where(DeviceLabel.id == device_id)
+    result = await session.exec(stmt)
+    device = result.first()
+    
+    if not device:
+        raise HTTPException(status_code=404, detail="Dispositivo não encontrado.")
+    
+    await session.delete(device)
+    await session.commit()
+    
+    logger.info(f"[eplan] delete_device device_id={device_id}")
+    return {"deleted": 1}
