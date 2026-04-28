@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   X, Printer, Loader2, Tag, DoorOpen, Terminal, FileSpreadsheet,
-  CheckCircle2, AlertCircle, Plus, Trash2, Upload, Eye,
+  CheckCircle2, AlertCircle, Plus, Trash2, Upload,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Fabrication } from '../types';
@@ -26,8 +26,6 @@ import {
   CreatePresetPayload,
   PresetFilterType,
 } from '../../services/doorPresetsApi';
-import { useFloatingViewer } from '../../hooks/useFloatingViewer';
-import { FloatingDocViewer } from '../../components/FloatingDocViewer';
 
 // Re-export PrintLabelDrawer content inline (aba Quadro)
 import { PrintLabelDrawer } from './PrintLabelDrawer';
@@ -105,11 +103,8 @@ function ImportSummaryBanner({ summary }: { summary: EplanImportSummary }) {
 // Tab: Quadro (210-804) — reutiliza PrintLabelDrawer como conteúdo inline
 // ---------------------------------------------------------------------------
 
-function TabQuadro({ fabrication, moId, moNumber, floatingViewer, printers, printersLoading }: {
+function TabQuadro({ fabrication, printers, printersLoading }: {
   fabrication: Fabrication;
-  moId: string;
-  moNumber: string;
-  floatingViewer: ReturnType<typeof useFloatingViewer>;
   printers: PrinterInfo[];
   printersLoading: boolean;
 }) {
@@ -121,17 +116,6 @@ function TabQuadro({ fabrication, moId, moNumber, floatingViewer, printers, prin
       <p className="text-sm text-slate-600">
         Etiqueta técnica interna (210-804) com dados elétricos do quadro e etiqueta externa com QR code.
       </p>
-      
-      {/* Botão para abrir diagrama em floating viewer */}
-      {moId && (
-        <button
-          onClick={() => floatingViewer.open(moId, moNumber, 'diagrama')}
-          className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-purple-600 to-purple-700 text-white rounded-xl font-bold text-sm hover:from-purple-700 hover:to-purple-800 transition-all shadow-sm"
-        >
-          <Eye size={16} />
-          📌 Ver Diagrama (Pop-up)
-        </button>
-      )}
       
       <button
         onClick={() => setOpen(true)}
@@ -154,10 +138,8 @@ function TabQuadro({ fabrication, moId, moNumber, floatingViewer, printers, prin
 // Componente: ManualDeviceForm
 // ---------------------------------------------------------------------------
 
-function ManualDeviceForm({ moId, moNumber, floatingViewer, onSuccess, onCancel }: {
+function ManualDeviceForm({ moId, onSuccess, onCancel }: {
   moId: string;  // UUID como string
-  moNumber: string;
-  floatingViewer: ReturnType<typeof useFloatingViewer>;
   onSuccess: () => void;
   onCancel: () => void;
 }) {
@@ -196,17 +178,7 @@ function ManualDeviceForm({ moId, moNumber, floatingViewer, onSuccess, onCancel 
   }
 
   return (
-    <form onSubmit={handleSubmit} className="border border-blue-200 rounded-lg p-4 bg-blue-50 space-y-3">
-      {/* Botão para abrir diagrama */}
-      <button
-        type="button"
-        onClick={() => floatingViewer.open(moId, moNumber, 'diagrama')}
-        className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-gradient-to-r from-purple-600 to-purple-700 text-white rounded-lg text-sm font-bold hover:from-purple-700 hover:to-purple-800 transition-all shadow-sm"
-      >
-        <Eye size={14} />
-        📌 Ver Diagrama (Pop-up)
-      </button>
-      
+    <form onSubmit={handleSubmit} className="border border-blue-200 rounded-lg p-4 bg-blue-50">
       <div className="flex items-center gap-3">
         <div className="flex-1">
           <label className="block text-[10px] font-bold text-slate-600 mb-1.5">Tag do Dispositivo</label>
@@ -248,10 +220,8 @@ function ManualDeviceForm({ moId, moNumber, floatingViewer, onSuccess, onCancel 
 // Tab: Dispositivos (210-805)
 // ---------------------------------------------------------------------------
 
-function TabDevices({ moId, moNumber, floatingViewer, printers, printersLoading }: {
+function TabDevices({ moId, printers, printersLoading }: {
   moId: string;  // UUID como string
-  moNumber: string;
-  floatingViewer: ReturnType<typeof useFloatingViewer>;
   printers: PrinterInfo[];
   printersLoading: boolean;
 }) {
@@ -357,8 +327,6 @@ function TabDevices({ moId, moNumber, floatingViewer, printers, printersLoading 
       {showManualForm && (
         <ManualDeviceForm
           moId={moId}
-          moNumber={moNumber}
-          floatingViewer={floatingViewer}
           onSuccess={() => {
             loadDevices();
             setShowManualForm(false);
@@ -1136,14 +1104,12 @@ export function LabelsDrawer({ fabrication, open, onClose }: LabelsDrawerProps) 
   const [activeTab, setActiveTab] = useState<TabId>('quadro');
   const [printers, setPrinters] = useState<PrinterInfo[]>([]);
   const [printersLoading, setPLoading] = useState(false);
-  const floatingViewer = useFloatingViewer();
 
   // Contadores para badges
   const [deviceCount, setDeviceCount] = useState(0);
   const [terminalCount, setTerminalCount] = useState(0);
 
   const moId = fabrication.odoo_mo_id || '';  // UUID como string
-  const moNumber = fabrication.mo_number || '';
 
   useEffect(() => {
     if (!open) return;
@@ -1165,8 +1131,7 @@ export function LabelsDrawer({ fabrication, open, onClose }: LabelsDrawerProps) 
   if (!open) return null;
 
   return (
-    <>
-      <div className="fixed inset-0 z-50 flex justify-end">
+    <div className="fixed inset-0 z-50 flex justify-end">
       <div
         className="absolute inset-0 bg-slate-900/40 backdrop-blur-[2px] animate-in fade-in duration-300"
         onClick={onClose}
@@ -1223,9 +1188,6 @@ export function LabelsDrawer({ fabrication, open, onClose }: LabelsDrawerProps) 
           {activeTab === 'quadro' && (
             <TabQuadro 
               fabrication={fabrication} 
-              moId={moId}
-              moNumber={moNumber}
-              floatingViewer={floatingViewer}
               printers={printers} 
               printersLoading={printersLoading} 
             />
@@ -1233,8 +1195,6 @@ export function LabelsDrawer({ fabrication, open, onClose }: LabelsDrawerProps) 
           {activeTab === 'devices' && moId && (
             <TabDevices 
               moId={moId} 
-              moNumber={moNumber}
-              floatingViewer={floatingViewer}
               printers={printers} 
               printersLoading={printersLoading} 
             />
@@ -1251,16 +1211,5 @@ export function LabelsDrawer({ fabrication, open, onClose }: LabelsDrawerProps) 
         </div>
       </div>
     </div>
-
-    {/* Floating Document Viewer */}
-    {floatingViewer.isOpen && floatingViewer.moId && floatingViewer.moNumber && (
-      <FloatingDocViewer
-        moId={floatingViewer.moId}
-        moNumber={floatingViewer.moNumber}
-        documentType={floatingViewer.documentType}
-        onClose={floatingViewer.close}
-      />
-    )}
-    </>
   );
 }

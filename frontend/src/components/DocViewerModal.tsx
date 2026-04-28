@@ -18,7 +18,7 @@ import React, { useState, useCallback } from 'react';
 import {
     X, Download, Maximize2, Minimize2, ExternalLink,
     FileText, Loader2, AlertTriangle, ChevronLeft, File,
-    FileImage, FileType2,
+    FileImage, FileType2, Pin,
 } from 'lucide-react';
 import { api } from '../services/api';
 import { toast } from 'sonner';
@@ -150,9 +150,11 @@ interface DocViewerModalProps {
     onClose: () => void;
     /** Exibido quando o viewer foi aberto a partir de uma lista de múltiplos docs */
     onBack?: () => void;
+    /** Callback para abrir em floating viewer */
+    onOpenFloating?: () => void;
 }
 
-export function DocViewerModal({ viewUrl, downloadUrl, title, onClose, onBack }: DocViewerModalProps) {
+export function DocViewerModal({ viewUrl, downloadUrl, title, onClose, onBack, onOpenFloating }: DocViewerModalProps) {
     const [fullscreen, setFullscreen] = useState(false);
 
     return (
@@ -178,6 +180,20 @@ export function DocViewerModal({ viewUrl, downloadUrl, title, onClose, onBack }:
                         <span className="text-sm font-bold text-slate-800 truncate">{title}</span>
                     </div>
                     <div className="flex items-center gap-1 shrink-0 ml-3">
+                        {onOpenFloating && (
+                            <button
+                                onClick={() => {
+                                    onOpenFloating();
+                                    onClose();
+                                    toast.success('Documento aberto em janela flutuante');
+                                }}
+                                className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-bold text-purple-700 bg-purple-50 border border-purple-200 rounded-lg hover:bg-purple-100 transition-colors"
+                                title="Abrir em janela flutuante (sempre visível)"
+                            >
+                                <Pin size={13} />
+                                <span className="hidden sm:inline">Pop-up</span>
+                            </button>
+                        )}
                         <a
                             href={viewUrl}
                             target="_blank"
@@ -233,10 +249,10 @@ const DOCS_FETCH_TIMEOUT_MS = 15_000; // 15 segundos
  * 'Voltar' restaure a lista sem uma nova chamada a API.
  */
 type ModalState =
-    | { type: 'list'; moNumber: string; docs: DocMeta[] }
-    | { type: 'viewer'; viewUrl: string; downloadUrl: string; title: string; docs: DocMeta[]; moNumber: string };
+    | { type: 'list'; moNumber: string; docs: DocMeta[]; odooMoId: number }
+    | { type: 'viewer'; viewUrl: string; downloadUrl: string; title: string; docs: DocMeta[]; moNumber: string; odooMoId: number; documentType: 'diagrama' | 'legenda' };
 
-export function useDocViewer() {
+export function useDocViewer(options?: { onOpenFloating?: (moId: string, moNumber: string, documentType: 'diagrama' | 'legenda') => void }) {
     const [loading, setLoading] = useState<string | null>(null);
     const [modal, setModal] = useState<ModalState | null>(null);
 
@@ -287,6 +303,7 @@ export function useDocViewer() {
             // desnecessaria para o caso mais comum.
             if (res.documents.length === 1 && previewable.length === 1) {
                 const doc = previewable[0];
+                const documentType = doc.name.toLowerCase().includes('diagrama') ? 'diagrama' : 'legenda';
                 setModal({
                     type: 'viewer',
                     viewUrl: buildFullUrl(doc.view_url),
@@ -294,6 +311,8 @@ export function useDocViewer() {
                     title: `${doc.name} — ${moNumber}`,
                     docs: res.documents,
                     moNumber,
+                    odooMoId: id,
+                    documentType,
                 });
                 return;
             }
@@ -301,7 +320,7 @@ export function useDocViewer() {
             // Caso geral: exibe lista para o usuario escolher qual documento abrir.
             // O binario so e carregado (via iframe) quando o usuario seleciona um doc,
             // eliminando o tempo de espera percebido ao clicar no botao.
-            setModal({ type: 'list', moNumber, docs: res.documents });
+            setModal({ type: 'list', moNumber, docs: res.documents, odooMoId: id });
         } catch (err: any) {
             // AbortError pode ser: timeout interno OU cancelamento por novo clique.
             // Distinguimos pelo estado do controller para dar a mensagem certa.
@@ -326,7 +345,8 @@ export function useDocViewer() {
         }
     }, []);
 
-    const handleSelectDoc = useCallback((doc: DocMeta, moNumber: string, allDocs: DocMeta[]) => {
+    const handleSelectDoc = useCallback((doc: DocMeta, moNumber: string, allDocs: DocMeta[], odooMoId: number) => {
+        const documentType = doc.name.toLowerCase().includes('diagrama') ? 'diagrama' : 'legenda';
         setModal({
             type: 'viewer',
             viewUrl: buildFullUrl(doc.view_url),
@@ -334,13 +354,15 @@ export function useDocViewer() {
             title: `${doc.name} — ${moNumber}`,
             docs: allDocs,
             moNumber,
+            odooMoId,
+            documentType,
         });
     }, []);
 
     const handleBack = useCallback(() => {
         setModal(prev =>
             prev?.type === 'viewer'
-                ? { type: 'list', moNumber: prev.moNumber, docs: prev.docs }
+                ? { type: 'list', moNumber: prev.moNumber, docs: prev.docs, odooMoId: prev.odooMoId }
                 : null
         );
     }, []);
@@ -355,11 +377,15 @@ export function useDocViewer() {
                 <DocListModal
                     moNumber={modal.moNumber}
                     docs={modal.docs}
-                    onSelectDoc={(doc) => handleSelectDoc(doc, modal.moNumber, modal.docs)}
+                    onSelectDoc={(doc) => handleSelectDoc(doc, modal.moNumber, modal.docs, modal.odooMoId)}
                     onClose={() => setModal(null)}
                 />
             );
         }
+
+        const handleOpenFloating = options?.onOpenFloating
+            ? () => options.onOpenFloating!(String(modal.odooMoId), modal.moNumber, modal.documentType)
+            : undefined;
 
         return (
             <DocViewerModal
@@ -368,9 +394,10 @@ export function useDocViewer() {
                 title={modal.title}
                 onClose={() => setModal(null)}
                 onBack={modal.docs.length > 1 ? handleBack : undefined}
+                onOpenFloating={handleOpenFloating}
             />
         );
-    }, [modal, handleSelectDoc, handleBack]);
+    }, [modal, handleSelectDoc, handleBack, options]);
 
     // 'docsLoading' exportado como alias de 'isLoading' para retrocompatibilidade
     // com componentes que ja usavam a desestruturacao: { isLoading: docsLoading }

@@ -43,8 +43,12 @@ export function LoteDoDia({ initialFabrications, onBack }: LoteDoDiaProps) {
   const [items, setItems] = useState<Fabrication[]>([]);
   const [selectedTask, setSelectedTask] = useState<{ fabId: string; task: Caixinha } | null>(null);
   const [printTarget, setPrintTarget] = useState<Fabrication | null>(null);
-  const { openDocs, isLoading: docsLoading, DocViewer } = useDocViewer();
   const floatingViewer = useFloatingViewer();
+  const { openDocs, isLoading: docsLoading, DocViewer } = useDocViewer({
+    onOpenFloating: (moId, moNumber, documentType) => {
+      floatingViewer.open(moId, moNumber, documentType);
+    }
+  });
 
   useEffect(() => {
     const initialize = async () => {
