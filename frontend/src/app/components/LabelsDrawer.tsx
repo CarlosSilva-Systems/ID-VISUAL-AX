@@ -327,10 +327,7 @@ function TabDevices({ moId, printers, printersLoading }: {
       {showManualForm && (
         <ManualDeviceForm
           moId={moId}
-          onSuccess={() => {
-            loadDevices();
-            setShowManualForm(false);
-          }}
+          onSuccess={() => loadDevices()}
           onCancel={() => setShowManualForm(false)}
         />
       )}
@@ -437,18 +434,22 @@ function PresetCard({ preset, isSelected, onSelect, onToggleFavorite }: {
   };
 
   return (
-    <button
+    <div
+      role="button"
+      tabIndex={0}
       onClick={onSelect}
-      className={`relative p-3 rounded-lg border-2 transition-all text-left ${
+      onKeyDown={e => e.key === 'Enter' && onSelect()}
+      className={`relative p-3 rounded-lg border-2 transition-all text-left cursor-pointer select-none ${
         isSelected
           ? 'border-blue-600 bg-blue-50'
           : 'border-slate-200 bg-white hover:border-slate-300 hover:shadow-sm'
       }`}
     >
-      {/* Badge de favorito */}
+      {/* Botão de favorito — separado do card */}
       <button
+        type="button"
         onClick={onToggleFavorite}
-        className={`absolute top-2 right-2 p-1 rounded transition-colors ${
+        className={`absolute top-2 right-2 p-1 rounded transition-colors z-10 ${
           preset.is_favorite
             ? 'text-yellow-500 hover:text-yellow-600'
             : 'text-slate-300 hover:text-slate-400'
@@ -502,7 +503,7 @@ function PresetCard({ preset, isSelected, onSelect, onToggleFavorite }: {
           </span>
         )}
       </div>
-    </button>
+    </div>
   );
 }
 
