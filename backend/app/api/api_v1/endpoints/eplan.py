@@ -97,7 +97,7 @@ def _cell_str(row: list, idx: int | None) -> str | None:
 
 @router.post("/import/devices", response_model=EplanImportSummary)
 async def import_devices(
-    mo_id: int = Query(..., description="ID local da ManufacturingOrder"),
+    mo_id: str = Query(..., description="UUID da ManufacturingOrder"),
     file: UploadFile = File(...),
     session: AsyncSession = Depends(deps.get_session),
     current_user: Any = Depends(deps.get_current_user),
@@ -112,6 +112,11 @@ async def import_devices(
 
     Upsert por (mo_id, device_tag).
     """
+    try:
+        mo_uuid = uuid.UUID(mo_id)
+    except ValueError:
+        raise HTTPException(status_code=422, detail="mo_id deve ser um UUID válido")
+    
     content = await file.read()
     headers, data_rows = _parse_excel(content)
 
@@ -131,7 +136,7 @@ async def import_devices(
         )
 
     # Carrega existentes para upsert eficiente
-    stmt = select(DeviceLabel).where(DeviceLabel.mo_id == mo_id)
+    stmt = select(DeviceLabel).where(DeviceLabel.mo_id == mo_uuid)
     result = await session.exec(stmt)
     existing: dict[str, DeviceLabel] = {d.device_tag: d for d in result.all()}
 
@@ -161,7 +166,7 @@ async def import_devices(
             updated += 1
         else:
             rec = DeviceLabel(
-                mo_id=mo_id,
+                mo_id=mo_uuid,
                 device_tag=tag,
                 description=desc,
                 location=loc,
@@ -177,7 +182,7 @@ async def import_devices(
     if imported + updated > 0:
         log = HistoryLog(
             entity_type="manufacturing_order",
-            entity_id=uuid.UUID(int=mo_id) if mo_id < 2**128 else uuid.uuid4(),
+            entity_id=mo_uuid,
             action=f"EPLAN import: {imported} dispositivos importados para MO {mo_id}",
             after_json={"imported": imported, "updated": updated, "skipped": skipped},
             user_id=current_user.id if current_user else None,
@@ -200,7 +205,7 @@ async def import_devices(
 
 @router.post("/import/terminals", response_model=EplanImportSummary)
 async def import_terminals(
-    mo_id: int = Query(..., description="ID local da ManufacturingOrder"),
+    mo_id: str = Query(..., description="UUID da ManufacturingOrder"),
     file: UploadFile = File(...),
     session: AsyncSession = Depends(deps.get_session),
     current_user: Any = Depends(deps.get_current_user),
@@ -215,6 +220,11 @@ async def import_terminals(
 
     Upsert por (mo_id, terminal_number).
     """
+    try:
+        mo_uuid = uuid.UUID(mo_id)
+    except ValueError:
+        raise HTTPException(status_code=422, detail="mo_id deve ser um UUID válido")
+    
     content = await file.read()
     headers, data_rows = _parse_excel(content)
 
@@ -228,7 +238,7 @@ async def import_terminals(
             detail="Coluna 'Borne' ou 'Terminal' não encontrada no Excel.",
         )
 
-    stmt = select(TerminalLabel).where(TerminalLabel.mo_id == mo_id)
+    stmt = select(TerminalLabel).where(TerminalLabel.mo_id == mo_uuid)
     result = await session.exec(stmt)
     existing: dict[str, TerminalLabel] = {t.terminal_number: t for t in result.all()}
 
@@ -254,7 +264,7 @@ async def import_terminals(
             updated += 1
         else:
             rec = TerminalLabel(
-                mo_id=mo_id,
+                mo_id=mo_uuid,
                 terminal_number=num,
                 wire_number=wire,
                 group_name=group,
@@ -269,7 +279,7 @@ async def import_terminals(
     if imported + updated > 0:
         log = HistoryLog(
             entity_type="manufacturing_order",
-            entity_id=uuid.UUID(int=mo_id) if mo_id < 2**128 else uuid.uuid4(),
+            entity_id=mo_uuid,
             action=f"EPLAN import: {imported} bornes importados para MO {mo_id}",
             after_json={"imported": imported, "updated": updated, "skipped": skipped},
             user_id=current_user.id if current_user else None,
@@ -292,14 +302,19 @@ async def import_terminals(
 
 @router.get("/{mo_id}/devices", response_model=List[DeviceLabelOut])
 async def list_devices(
-    mo_id: int,
+    mo_id: str,  # UUID como string
     session: AsyncSession = Depends(deps.get_session),
     current_user: Any = Depends(deps.get_current_user),
 ) -> Any:
     """Lista todos os DeviceLabel de uma MO ordenados por order_index."""
+    try:
+        mo_uuid = uuid.UUID(mo_id)
+    except ValueError:
+        raise HTTPException(status_code=422, detail="mo_id deve ser um UUID válido")
+    
     stmt = (
         select(DeviceLabel)
-        .where(DeviceLabel.mo_id == mo_id)
+        .where(DeviceLabel.mo_id == mo_uuid)
         .order_by(DeviceLabel.order_index)
     )
     result = await session.exec(stmt)
@@ -312,14 +327,19 @@ async def list_devices(
 
 @router.get("/{mo_id}/terminals", response_model=List[TerminalLabelOut])
 async def list_terminals(
-    mo_id: int,
+    mo_id: str,  # UUID como string
     session: AsyncSession = Depends(deps.get_session),
     current_user: Any = Depends(deps.get_current_user),
 ) -> Any:
     """Lista todos os TerminalLabel de uma MO ordenados por order_index."""
+    try:
+        mo_uuid = uuid.UUID(mo_id)
+    except ValueError:
+        raise HTTPException(status_code=422, detail="mo_id deve ser um UUID válido")
+    
     stmt = (
         select(TerminalLabel)
-        .where(TerminalLabel.mo_id == mo_id)
+        .where(TerminalLabel.mo_id == mo_uuid)
         .order_by(TerminalLabel.order_index)
     )
     result = await session.exec(stmt)
@@ -332,12 +352,17 @@ async def list_terminals(
 
 @router.delete("/{mo_id}/devices", response_model=dict)
 async def delete_devices(
-    mo_id: int,
+    mo_id: str,  # UUID como string
     session: AsyncSession = Depends(deps.get_session),
     current_user: Any = Depends(deps.get_current_user),
 ) -> Any:
     """Remove todos os DeviceLabel de uma MO (para reimportar do zero)."""
-    stmt = select(DeviceLabel).where(DeviceLabel.mo_id == mo_id)
+    try:
+        mo_uuid = uuid.UUID(mo_id)
+    except ValueError:
+        raise HTTPException(status_code=422, detail="mo_id deve ser um UUID válido")
+    
+    stmt = select(DeviceLabel).where(DeviceLabel.mo_id == mo_uuid)
     result = await session.exec(stmt)
     records = result.all()
 
@@ -355,12 +380,17 @@ async def delete_devices(
 
 @router.delete("/{mo_id}/terminals", response_model=dict)
 async def delete_terminals(
-    mo_id: int,
+    mo_id: str,  # UUID como string
     session: AsyncSession = Depends(deps.get_session),
     current_user: Any = Depends(deps.get_current_user),
 ) -> Any:
     """Remove todos os TerminalLabel de uma MO (para reimportar do zero)."""
-    stmt = select(TerminalLabel).where(TerminalLabel.mo_id == mo_id)
+    try:
+        mo_uuid = uuid.UUID(mo_id)
+    except ValueError:
+        raise HTTPException(status_code=422, detail="mo_id deve ser um UUID válido")
+    
+    stmt = select(TerminalLabel).where(TerminalLabel.mo_id == mo_uuid)
     result = await session.exec(stmt)
     records = result.all()
 
@@ -378,7 +408,7 @@ async def delete_terminals(
 
 @router.post("/{mo_id}/devices/manual", response_model=DeviceLabelOut)
 async def create_device_manual(
-    mo_id: int,
+    mo_id: str,  # UUID como string
     payload: DeviceLabelCreate,
     session: AsyncSession = Depends(deps.get_session),
     current_user: Any = Depends(deps.get_current_user),
@@ -388,9 +418,14 @@ async def create_device_manual(
     
     Valida que device_tag é único para a MO.
     """
+    try:
+        mo_uuid = uuid.UUID(mo_id)
+    except ValueError:
+        raise HTTPException(status_code=422, detail="mo_id deve ser um UUID válido")
+    
     # Verifica se já existe device_tag para esta MO
     stmt = select(DeviceLabel).where(
-        DeviceLabel.mo_id == mo_id,
+        DeviceLabel.mo_id == mo_uuid,
         DeviceLabel.device_tag == payload.device_tag
     )
     result = await session.exec(stmt)
@@ -403,14 +438,14 @@ async def create_device_manual(
         )
     
     # Calcula próximo order_index
-    stmt_max = select(DeviceLabel).where(DeviceLabel.mo_id == mo_id)
+    stmt_max = select(DeviceLabel).where(DeviceLabel.mo_id == mo_uuid)
     result_max = await session.exec(stmt_max)
     all_devices = result_max.all()
     next_order = max([d.order_index for d in all_devices], default=-1) + 1
     
     # Cria novo dispositivo
     device = DeviceLabel(
-        mo_id=mo_id,
+        mo_id=mo_uuid,
         device_tag=payload.device_tag,
         description=payload.description or payload.device_tag,  # Usa tag como descrição se não fornecida
         location=payload.location,
@@ -480,7 +515,7 @@ async def update_device(
 
 @router.post("/{mo_id}/devices/reorder", response_model=dict)
 async def reorder_devices(
-    mo_id: int,
+    mo_id: str,  # UUID como string
     payload: DeviceReorderPayload,
     session: AsyncSession = Depends(deps.get_session),
     current_user: Any = Depends(deps.get_current_user),
@@ -490,8 +525,13 @@ async def reorder_devices(
     
     Recebe array de IDs na nova ordem e atualiza order_index.
     """
+    try:
+        mo_uuid = uuid.UUID(mo_id)
+    except ValueError:
+        raise HTTPException(status_code=422, detail="mo_id deve ser um UUID válido")
+    
     # Carrega todos os dispositivos da MO
-    stmt = select(DeviceLabel).where(DeviceLabel.mo_id == mo_id)
+    stmt = select(DeviceLabel).where(DeviceLabel.mo_id == mo_uuid)
     result = await session.exec(stmt)
     devices_map = {d.id: d for d in result.all()}
     
