@@ -6,6 +6,7 @@ com a tag do EPLAN e descrição funcional.
 """
 from __future__ import annotations
 
+import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -21,7 +22,7 @@ class DeviceLabel(SQLModel, table=True):
 
     id: Optional[int] = Field(default=None, primary_key=True)
 
-    mo_id: int = Field(foreign_key="manufacturing_order.id", index=True)
+    mo_id: uuid.UUID = Field(foreign_key="manufacturing_order.id", index=True)
 
     device_tag: str = Field(index=True)        # ex: "K1", "DJ1", "KA1" — tag do EPLAN
     description: str                           # ex: "Contator principal bomba 1"

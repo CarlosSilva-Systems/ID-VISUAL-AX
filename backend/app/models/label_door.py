@@ -6,6 +6,7 @@ e lista de colunas (posições dos botões/seletores).
 """
 from __future__ import annotations
 
+import uuid
 from datetime import datetime, timezone
 from typing import List, Optional
 
@@ -22,7 +23,7 @@ class DoorLabel(SQLModel, table=True):
 
     id: Optional[int] = Field(default=None, primary_key=True)
 
-    mo_id: int = Field(foreign_key="manufacturing_order.id", index=True)
+    mo_id: uuid.UUID = Field(foreign_key="manufacturing_order.id", index=True)
 
     equipment_name: str                        # ex: "Bomba 1"
 

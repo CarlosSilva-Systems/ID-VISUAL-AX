@@ -6,6 +6,7 @@ e grupo/circuito ao qual pertence.
 """
 from __future__ import annotations
 
+import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -21,7 +22,7 @@ class TerminalLabel(SQLModel, table=True):
 
     id: Optional[int] = Field(default=None, primary_key=True)
 
-    mo_id: int = Field(foreign_key="manufacturing_order.id", index=True)
+    mo_id: uuid.UUID = Field(foreign_key="manufacturing_order.id", index=True)
 
     terminal_number: str = Field(index=True)   # ex: "1", "2", "PE"
     wire_number: Optional[str] = Field(default=None)   # ex: "L1", "24VCC"
