@@ -39,6 +39,19 @@ export default defineConfig({
         timeout: 30000,
         proxyTimeout: 30000,
         ws: true,  // habilita proxy de WebSocket (necessário para /api/v1/andon/ws)
+        // Reescreve Location header em redirects para evitar que o browser
+        // tente acessar o hostname interno do Docker (api:8000) diretamente.
+        configure: (proxy) => {
+          proxy.on('proxyRes', (proxyRes, req) => {
+            const location = proxyRes.headers['location'];
+            if (location && location.includes('api:8000')) {
+              proxyRes.headers['location'] = location.replace(
+                /https?:\/\/api:8000/g,
+                ''
+              );
+            }
+          });
+        },
       },
     },
   },
