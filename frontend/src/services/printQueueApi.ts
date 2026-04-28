@@ -191,3 +191,63 @@ export async function printTerminals(
   });
   return _handleResponse<PrintDevicesResponse>(res);
 }
+
+// ---------------------------------------------------------------------------
+// EPLAN — Criação manual, edição e reordenação de dispositivos
+// ---------------------------------------------------------------------------
+
+export interface CreateDevicePayload {
+  device_tag: string;
+  description: string;
+  location?: string;
+}
+
+export interface UpdateDevicePayload {
+  device_tag?: string;
+  description?: string;
+  location?: string;
+}
+
+export async function createDeviceManual(
+  moId: number,
+  payload: CreateDevicePayload,
+): Promise<DeviceLabelItem> {
+  const res = await fetch(`${API_URL}/id-visual/eplan/${moId}/devices/manual`, {
+    method: 'POST',
+    headers: getHeaders(),
+    body: JSON.stringify(payload),
+  });
+  return _handleResponse<DeviceLabelItem>(res);
+}
+
+export async function updateDevice(
+  deviceId: number,
+  payload: UpdateDevicePayload,
+): Promise<DeviceLabelItem> {
+  const res = await fetch(`${API_URL}/id-visual/eplan/devices/${deviceId}`, {
+    method: 'PATCH',
+    headers: getHeaders(),
+    body: JSON.stringify(payload),
+  });
+  return _handleResponse<DeviceLabelItem>(res);
+}
+
+export async function reorderDevices(
+  moId: number,
+  deviceIds: number[],
+): Promise<{ reordered: number }> {
+  const res = await fetch(`${API_URL}/id-visual/eplan/${moId}/devices/reorder`, {
+    method: 'POST',
+    headers: getHeaders(),
+    body: JSON.stringify({ device_ids: deviceIds }),
+  });
+  return _handleResponse<{ reordered: number }>(res);
+}
+
+export async function deleteDevice(deviceId: number): Promise<{ deleted: number }> {
+  const res = await fetch(`${API_URL}/id-visual/eplan/devices/${deviceId}`, {
+    method: 'DELETE',
+    headers: getHeaders(),
+  });
+  return _handleResponse<{ deleted: number }>(res);
+}

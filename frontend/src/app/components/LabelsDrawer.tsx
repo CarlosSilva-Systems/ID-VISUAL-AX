@@ -12,6 +12,8 @@ import {
   fetchTerminalLabels, TerminalLabelItem,
   importDevicesExcel, importTerminalsExcel,
   printDevices, printDoorInline, printTerminals,
+  createDeviceManual, CreateDevicePayload,
+  deleteDevice,
   EplanImportSummary,
 } from '../../services/printQueueApi';
 
@@ -122,6 +124,119 @@ function TabQuadro({ fabrication, printers, printersLoading }: {
 }
 
 // ---------------------------------------------------------------------------
+// Componente: ManualDeviceForm
+// ---------------------------------------------------------------------------
+
+function ManualDeviceForm({ moId, onSuccess, onCancel }: {
+  moId: number;
+  onSuccess: () => void;
+  onCancel: () => void;
+}) {
+  const [deviceTag, setDeviceTag] = useState('');
+  const [description, setDescription] = useState('');
+  const [location, setLocation] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    
+    if (!deviceTag.trim()) {
+      toast.error('Tag do dispositivo é obrigatória');
+      return;
+    }
+    if (!description.trim()) {
+      toast.error('Descrição é obrigatória');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const payload: CreateDevicePayload = {
+        device_tag: deviceTag.trim(),
+        description: description.trim(),
+        location: location.trim() || undefined,
+      };
+      await createDeviceManual(moId, payload);
+      toast.success('Dispositivo adicionado com sucesso');
+      onSuccess();
+    } catch (err) {
+      toast.error('Erro ao adicionar: ' + (err instanceof Error ? err.message : 'Erro'));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="border border-blue-200 rounded-lg p-4 bg-blue-50 space-y-3">
+      <div className="flex items-center justify-between">
+        <h4 className="font-bold text-sm text-blue-900">Adicionar Dispositivo Manualmente</h4>
+        <button
+          type="button"
+          onClick={onCancel}
+          className="text-xs text-slate-500 hover:text-slate-700"
+        >
+          ✕ Cancelar
+        </button>
+      </div>
+
+      <div className="grid grid-cols-3 gap-3">
+        <div>
+          <label className="block text-[10px] font-bold text-slate-600 mb-1">Tag *</label>
+          <input
+            type="text"
+            value={deviceTag}
+            onChange={e => setDeviceTag(e.target.value)}
+            placeholder="ex: K1, DJ1"
+            className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+            required
+          />
+        </div>
+        <div className="col-span-2">
+          <label className="block text-[10px] font-bold text-slate-600 mb-1">Descrição *</label>
+          <input
+            type="text"
+            value={description}
+            onChange={e => setDescription(e.target.value)}
+            placeholder="ex: Contator principal bomba 1"
+            className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+            required
+          />
+        </div>
+      </div>
+
+      <div>
+        <label className="block text-[10px] font-bold text-slate-600 mb-1">Localização (opcional)</label>
+        <input
+          type="text"
+          value={location}
+          onChange={e => setLocation(e.target.value)}
+          placeholder="ex: QCC-01"
+          className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+        />
+      </div>
+
+      <div className="flex gap-2 pt-2">
+        <button
+          type="submit"
+          disabled={saving}
+          className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold hover:bg-blue-700 disabled:opacity-50 transition-all"
+        >
+          {saving ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
+          Salvar Dispositivo
+        </button>
+        <button
+          type="button"
+          onClick={onCancel}
+          className="px-4 py-2 border border-slate-200 rounded-lg text-sm font-bold text-slate-600 hover:bg-slate-50 transition-colors"
+        >
+          Cancelar
+        </button>
+      </div>
+    </form>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Tab: Dispositivos (210-805)
 // ---------------------------------------------------------------------------
 
@@ -137,15 +252,25 @@ function TabDevices({ moId, printers, printersLoading }: {
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [printer, setPrinter] = useState<number | null>(null);
   const [printing, setPrinting] = useState(false);
+  const [showManualForm, setShowManualForm] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    setLoading(true);
-    fetchDeviceLabels(moId)
-      .then(setItems)
-      .catch(() => {})
-      .finally(() => setLoading(false));
+    loadDevices();
   }, [moId]);
+
+  async function loadDevices() {
+    setLoading(true);
+    try {
+      const data = await fetchDeviceLabels(moId);
+      setItems(data);
+    } catch (err) {
+      toast.error('Erro ao carregar dispositivos');
+    } finally {
+      setLoading(false);
+    }
+  }
 
   async function handleImport(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -155,8 +280,7 @@ function TabDevices({ moId, printers, printersLoading }: {
     try {
       const result = await importDevicesExcel(moId, file);
       setSummary(result);
-      const updated = await fetchDeviceLabels(moId);
-      setItems(updated);
+      await loadDevices();
       setSelected(new Set());
       toast.success(`${result.imported} dispositivos importados`);
     } catch (err) {
@@ -181,6 +305,17 @@ function TabDevices({ moId, printers, printersLoading }: {
     }
   }
 
+  async function handleDelete(deviceId: number) {
+    if (!confirm('Remover este dispositivo?')) return;
+    try {
+      await deleteDevice(deviceId);
+      await loadDevices();
+      toast.success('Dispositivo removido');
+    } catch (err) {
+      toast.error('Erro ao remover: ' + (err instanceof Error ? err.message : 'Erro'));
+    }
+  }
+
   const toggleAll = () => {
     if (selected.size === items.length) setSelected(new Set());
     else setSelected(new Set(items.map(i => i.id)));
@@ -188,8 +323,15 @@ function TabDevices({ moId, printers, printersLoading }: {
 
   return (
     <div className="space-y-4">
-      {/* Import */}
+      {/* Botões de ação */}
       <div className="flex items-center gap-2">
+        <button
+          onClick={() => setShowManualForm(!showManualForm)}
+          className="flex items-center gap-2 px-3 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold hover:bg-blue-700 transition-colors"
+        >
+          <Plus size={14} />
+          Adicionar Manualmente
+        </button>
         <input ref={fileRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleImport} />
         <button
           onClick={() => fileRef.current?.click()}
@@ -200,6 +342,18 @@ function TabDevices({ moId, printers, printersLoading }: {
           Importar Excel EPLAN
         </button>
       </div>
+
+      {/* Formulário Manual */}
+      {showManualForm && (
+        <ManualDeviceForm
+          moId={moId}
+          onSuccess={() => {
+            loadDevices();
+            setShowManualForm(false);
+          }}
+          onCancel={() => setShowManualForm(false)}
+        />
+      )}
 
       {summary && <ImportSummaryBanner summary={summary} />}
 
@@ -219,11 +373,12 @@ function TabDevices({ moId, printers, printersLoading }: {
                 <th className="p-2 text-left font-bold text-slate-500">Tag</th>
                 <th className="p-2 text-left font-bold text-slate-500">Descrição</th>
                 <th className="p-2 text-left font-bold text-slate-500 hidden sm:table-cell">Local</th>
+                <th className="p-2 w-16"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {items.map(item => (
-                <tr key={item.id} className="hover:bg-slate-50">
+                <tr key={item.id} className="hover:bg-slate-50 group">
                   <td className="p-2">
                     <input
                       type="checkbox"
@@ -239,6 +394,15 @@ function TabDevices({ moId, printers, printersLoading }: {
                   <td className="p-2 font-mono font-bold text-slate-800">{item.device_tag}</td>
                   <td className="p-2 text-slate-600">{item.description}</td>
                   <td className="p-2 text-slate-400 hidden sm:table-cell">{item.location ?? '—'}</td>
+                  <td className="p-2">
+                    <button
+                      onClick={() => handleDelete(item.id)}
+                      className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-red-500 transition-all"
+                      title="Remover"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
