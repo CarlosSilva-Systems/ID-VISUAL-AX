@@ -1,210 +1,221 @@
 # Melhorias no Fluxo de Trabalho de Etiquetas
 
-## Visão Geral
+## Resumo das Implementações
 
-Este documento descreve as melhorias implementadas no sistema de etiquetas do ID Visual AX, focadas em otimizar o fluxo de trabalho dos operadores no "Lote do Dia".
+Este documento descreve as melhorias implementadas no sistema de etiquetas do Lote do Dia, conforme solicitado pelo usuário.
 
-## Funcionalidades Implementadas
+## 1. Nomenclatura Descritiva ✅ COMPLETO
 
-### 1. Nomenclatura Descritiva ✅
+**Objetivo**: Substituir códigos técnicos por nomes descritivos nas abas de etiquetas.
 
-**Problema:** Códigos técnicos (210-804, 210-855) não eram intuitivos.
+**Implementação**:
+- Mapeamento de códigos para nomes descritivos:
+  - `210-804` → "Característica Técnica"
+  - `210-805` → "Adesivo de Componente"
+  - `210-855` → "Porta do Quadro"
+  - `2009-110` → "Régua de Borne"
+- Código técnico exibido em segundo plano (sublabel)
+- Interface mais intuitiva para usuários
 
-**Solução:**
-- Exibição de nomes descritivos em destaque
-- Código técnico em segundo plano (fonte menor)
-- Layout vertical nas tabs
-
-**Mapeamento:**
-- `210-804` → "Característica Técnica"
-- `210-805` → "Adesivo de Componente"
-- `210-855` → "Porta do Quadro"
-- `2009-110` → "Régua de Borne"
-
-**Arquivos modificados:**
+**Arquivos modificados**:
 - `frontend/src/app/components/LabelsDrawer.tsx`
-- `frontend/src/app/types.ts`
 
 ---
 
-### 2. Editor Manual de Adesivos de Componente (210-805) ✅
+## 2. Editor Manual de Adesivos (210-805) ✅ COMPLETO
 
-**Problema:** Impossível criar adesivos sem importação EPLAN (ainda em implantação).
+**Objetivo**: Permitir criação manual rápida de adesivos de componente sem depender de importação EPLAN.
 
-**Solução:**
-- Formulário inline simplificado (apenas tag)
-- Entrada rápida com auto-focus
+**Implementação**:
+- Formulário simplificado com apenas campo de tag
+- Auto-focus e suporte a Enter para entrada rápida
 - Normalização automática para maiúsculas
-- Coexiste com importação Excel
+- Validação de tags únicas por MO
+- Botão "📌 Ver Diagrama (Pop-up)" para abrir floating viewer
 
-**Backend:**
-- `POST /api/v1/id-visual/eplan/{mo_id}/devices/manual` - Criação
-- `PATCH /api/v1/id-visual/eplan/devices/{device_id}` - Edição
-- `POST /api/v1/id-visual/eplan/{mo_id}/devices/reorder` - Reordenação
-- `DELETE /api/v1/id-visual/eplan/devices/{device_id}` - Remoção
+**Endpoints Backend**:
+- `POST /api/v1/id-visual/eplan/{mo_id}/devices/manual` - Cria dispositivo manual
+- `PATCH /api/v1/id-visual/eplan/devices/{device_id}` - Edita dispositivo
+- `DELETE /api/v1/id-visual/eplan/devices/{device_id}` - Remove dispositivo
+- `POST /api/v1/id-visual/eplan/{mo_id}/devices/reorder` - Reordena dispositivos
 
-**Frontend:**
-- Componente `ManualDeviceForm`
-- Botão "➕ Adicionar Manualmente"
-- Validação client-side
+**Correções Aplicadas**:
+- ✅ Corrigido tipo de `mo_id` de `int` para `string` (UUID)
+- ✅ Todos os endpoints de EPLAN agora usam UUID como string
+- ✅ Schemas atualizados com conversão automática UUID→string
+- ✅ Frontend atualizado para trabalhar com UUID string
 
-**Arquivos:**
-- Backend: `backend/app/api/api_v1/endpoints/eplan.py`, `backend/app/schemas/eplan.py`
-- Frontend: `frontend/src/app/components/LabelsDrawer.tsx`, `frontend/src/services/printQueueApi.ts`
-
----
-
-### 3. Sistema de Presets para Adesivos de Porta (210-855) ✅
-
-**Problema:** Preenchimento manual repetitivo de padrões comuns.
-
-**Solução:**
-- Biblioteca de templates reutilizáveis
-- Presets do sistema (não editáveis)
-- Presets personalizados (criados pelo usuário)
-- Compartilhamento entre equipe
-- Sistema de favoritos
-- Contador de popularidade
-
-**Categorias de Presets:**
-1. **Sinaleiras:** Comando Energizado, Bomba Incêndio, etc.
-2. **Botoeiras 3 Posições:** MAN | O | AUT (customizável)
-3. **Botoeiras 2 Posições:** MAN | AUT (customizável)
-4. **Personalizado:** Totalmente customizável
-
-**Backend:**
-- Modelos: `DoorLabelPreset`, `DoorLabelPresetFavorite`
-- Migração Alembic com seed de presets do sistema
-- Endpoints:
-  - `GET /api/v1/id-visual/door-presets` - Lista com filtros
-  - `POST /api/v1/id-visual/door-presets` - Cria preset
-  - `PATCH /api/v1/id-visual/door-presets/{id}` - Atualiza
-  - `DELETE /api/v1/id-visual/door-presets/{id}` - Deleta
-  - `POST /api/v1/id-visual/door-presets/{id}/favorite` - Toggle favorito
-  - `POST /api/v1/id-visual/door-presets/{id}/use` - Incrementa uso
-
-**Frontend:**
-- Componente `PresetCard` - Cards visuais com ícones
-- Componente `PresetCreatorModal` - Criação de presets
-- Filtros: Todos, Sistema, Meus, Equipe, Favoritos
-- Preview em tempo real
-- Serviço `doorPresetsApi.ts`
-
-**Validações:**
-- Limite de 50 presets por usuário
-- Nome único por usuário
-- Categoria válida
-
-**Arquivos:**
-- Backend: `backend/app/models/door_label_preset.py`, `backend/app/api/api_v1/endpoints/door_presets.py`, `backend/app/schemas/door_preset.py`, `backend/alembic/versions/h1i2j3k4l5m6_feat_adiciona_door_label_presets.py`
-- Frontend: `frontend/src/services/doorPresetsApi.ts`, `frontend/src/app/components/LabelsDrawer.tsx`
+**Arquivos modificados**:
+- Backend:
+  - `backend/app/api/api_v1/endpoints/eplan.py`
+  - `backend/app/schemas/eplan.py`
+  - `backend/app/models/label_device.py`
+- Frontend:
+  - `frontend/src/app/components/LabelsDrawer.tsx`
+  - `frontend/src/services/printQueueApi.ts`
 
 ---
 
-### 4. Visualizador Flutuante de Documentos (Floating Viewer) ✅
+## 3. Sistema de Presets (210-855) ✅ COMPLETO
 
-**Problema:** Impossível visualizar diagrama enquanto preenche dados técnicos.
+**Objetivo**: Sistema de templates reutilizáveis para etiquetas de porta com presets do sistema e personalizados.
 
-**Solução:**
-- Componente flutuante draggable e resizable
-- Always-on-top (z-index 9999)
-- Renderização de PDF com zoom e navegação
-- Persistência de estado (localStorage)
-- Keyboard shortcuts
+**Implementação**:
 
-**Funcionalidades:**
-- **Draggable:** Arrasta pela barra de título
-- **Resizable:** Redimensiona por bordas/cantos
-- **Minimize:** Colapsa para barra compacta
-- **Pin:** Impede fechamento acidental
-- **Zoom:** Botões + Ctrl+/Ctrl- (0.5x a 3.0x)
-- **Navegação:** Setas + ←/→ para multi-página
-- **Persistência:** Posição, tamanho, zoom salvos
-- **Keyboard:** Esc para fechar, setas para navegar
+### Presets do Sistema (pré-configurados):
+1. **Comando Energizado** (Sinaleira)
+   - Categoria: `sinaleira`
+   - Texto fixo: "COMANDO ENERGIZADO"
+   - Sem colunas (apenas texto)
 
-**Tecnologias:**
-- `react-draggable` - Drag functionality
-- `react-resizable` - Resize functionality
-- `react-pdf` + `pdfjs-dist` - PDF rendering
+2. **Liga Bomba de Incêndio** (Sinaleira)
+   - Categoria: `sinaleira`
+   - Texto fixo: "LIGA BOMBA DE INCÊNDIO"
 
-**Integração:**
-- Botão global "📌 Fixar Diagrama" no header do Lote do Dia
-- Botão "Docs" em cada fabricação abre floating viewer
-- Viewer permanece aberto durante trabalho
+3. **Bomba de Incêndio Ligada** (Sinaleira)
+   - Categoria: `sinaleira`
+   - Texto fixo: "BOMBA DE INCÊNDIO LIGADA"
 
-**Arquivos:**
-- `frontend/src/components/FloatingDocViewer.tsx`
-- `frontend/src/hooks/useFloatingViewer.ts`
-- `frontend/src/app/components/LoteDoDia.tsx`
+4. **Botoeira 3 Posições**
+   - Categoria: `botoeira-3pos`
+   - Colunas: ["MAN", "O", "AUT"]
+   - Nome do equipamento customizável (ex: "RECALQUE")
 
----
+5. **Botoeira 2 Posições**
+   - Categoria: `botoeira-2pos`
+   - Colunas: ["MAN", "AUT"]
+   - Nome do equipamento customizável
 
-## Fluxo de Uso
+### Funcionalidades:
+- ✅ Criação de presets personalizados pelo usuário
+- ✅ Sistema de favoritos (⭐)
+- ✅ Compartilhamento com equipe
+- ✅ Contador de uso (popularidade)
+- ✅ Filtros: Todos, Sistema, Meus, Equipe, Favoritos
+- ✅ Preview em tempo real
+- ✅ Limite de 50 presets por usuário
+- ✅ Categorias: Sinaleira, Botoeira 3P, Botoeira 2P, Personalizado
 
-### Cenário 1: Preencher Características Técnicas com Diagrama Visível
+### Endpoints Backend:
+- `GET /api/v1/id-visual/door-presets` - Lista presets com filtros
+- `POST /api/v1/id-visual/door-presets` - Cria preset
+- `PATCH /api/v1/id-visual/door-presets/{id}` - Atualiza preset
+- `DELETE /api/v1/id-visual/door-presets/{id}` - Deleta preset
+- `POST /api/v1/id-visual/door-presets/{id}/favorite` - Toggle favorito
+- `POST /api/v1/id-visual/door-presets/{id}/use` - Incrementa uso
 
-1. Operador abre Lote do Dia
-2. Clica em "📌 Fixar Diagrama"
-3. Floating Viewer abre com diagrama da primeira MO
-4. Operador arrasta viewer para lado da tela
-5. Clica em "Característica Técnica (210-804)"
-6. Preenche dados técnicos consultando diagrama
-7. Floating Viewer permanece aberto para próximas MOs
+### Banco de Dados:
+- Tabela `door_label_preset` - Armazena presets
+- Tabela `door_label_preset_favorite` - Relação many-to-many de favoritos
+- Migração: `h1i2j3k4l5m6_feat_adiciona_door_label_presets.py`
 
-### Cenário 2: Adicionar Adesivo de Componente Manualmente
-
-1. Operador abre aba "Adesivo de Componente (210-805)"
-2. Clica "➕ Adicionar Manualmente"
-3. Digita tag: "K1" (Enter)
-4. Tag adicionada, foco mantido para próxima entrada
-5. Digita "DJ1" (Enter), "KA1" (Enter)...
-6. Clica "Fechar" quando terminar
-
-### Cenário 3: Criar Adesivo de Porta com Preset
-
-1. Operador abre aba "Porta do Quadro (210-855)"
-2. Clica em card "🎛️ Botoeira 3 Posições"
-3. Sistema preenche automaticamente: MAN | O | AUT
-4. Operador digita nome: "RECALQUE"
-5. Preview atualiza em tempo real
-6. Seleciona impressora
-7. Clica "Imprimir"
-8. Job criado na fila
-
-### Cenário 4: Salvar Preset Personalizado
-
-1. Operador cria adesivo de porta customizado
-2. Clica "Criar Preset"
-3. Preenche:
-   - Nome: "Bomba Recalque 3P"
-   - Categoria: Botoeira 3 Posições
-   - Equipamento: (vazio para customizar)
-   - Colunas: MAN | O | AUT
-4. Marca "Compartilhar com equipe"
-5. Clica "Criar Preset"
-6. Preset aparece em "Meus" e "Equipe"
+**Arquivos criados/modificados**:
+- Backend:
+  - `backend/app/api/api_v1/endpoints/door_presets.py` (novo)
+  - `backend/app/models/door_label_preset.py` (novo)
+  - `backend/app/schemas/door_preset.py` (novo)
+  - `backend/alembic/versions/h1i2j3k4l5m6_feat_adiciona_door_label_presets.py` (novo)
+- Frontend:
+  - `frontend/src/services/doorPresetsApi.ts` (novo)
+  - `frontend/src/app/components/LabelsDrawer.tsx` (atualizado)
 
 ---
 
-## Métricas de Sucesso
+## 4. Floating Document Viewer ✅ COMPLETO
 
-### Objetivos Alcançados:
-- ✅ Redução de 70%+ no tempo de preenchimento de adesivos de porta
-- ✅ Entrada rápida de dispositivos (< 5s por tag)
-- ✅ Visualização simultânea de diagrama e formulários
-- ✅ Compartilhamento de conhecimento via presets
-- ✅ Zero necessidade de treinamento (UI intuitiva)
+**Objetivo**: Visualizador flutuante de diagramas para facilitar preenchimento de dados enquanto visualiza o documento.
 
-### Melhorias Quantitativas:
-- **Antes:** ~5 minutos para criar adesivo de porta manualmente
-- **Depois:** ~30 segundos com preset
-- **Ganho:** 90% de redução de tempo
+**Implementação**:
 
-- **Antes:** Impossível adicionar dispositivos sem EPLAN
-- **Depois:** ~3 segundos por dispositivo (entrada rápida)
+### Funcionalidades:
+- ✅ Draggable (arrastável por toda a tela)
+- ✅ Resizable (redimensionável)
+- ✅ Always-on-top (z-index 9999)
+- ✅ Minimize/Maximize
+- ✅ Pin/Unpin (impede fechamento acidental)
+- ✅ Zoom controls (Ctrl+/Ctrl-)
+- ✅ Multi-page navigation (setas)
+- ✅ Persistent position/size (localStorage)
+- ✅ Suporte a PDF via react-pdf
+- ✅ Atalhos de teclado (Esc para fechar, setas para navegar)
 
-- **Antes:** Alternar entre telas para ver diagrama
-- **Depois:** Diagrama sempre visível (floating viewer)
+### Integração:
+- ✅ Botão "📌 Ver Diagrama (Pop-up)" na aba **Característica Técnica (210-804)**
+- ✅ Botão "📌 Ver Diagrama (Pop-up)" no **formulário manual de dispositivos (210-805)**
+- ✅ Hook global `useFloatingViewer` para gerenciar estado
+- ✅ Componente reutilizável em toda aplicação
+
+**Arquivos criados/modificados**:
+- Frontend:
+  - `frontend/src/components/FloatingDocViewer.tsx` (novo)
+  - `frontend/src/hooks/useFloatingViewer.ts` (novo)
+  - `frontend/src/app/components/LabelsDrawer.tsx` (atualizado)
+
+---
+
+## Correções de Bugs
+
+### Bug 1: Erro ao criar dispositivo manual ✅ CORRIGIDO
+**Problema**: Tipo de `mo_id` incorreto (UUID vs int)
+
+**Solução**:
+- Todos os endpoints de EPLAN agora aceitam `mo_id` como string (UUID)
+- Conversão automática de UUID para string nos schemas de resposta
+- Frontend atualizado para trabalhar com UUID string
+- Validação de UUID nos endpoints
+
+**Commits**:
+- `fix(eplan): corrige tipo de mo_id de int para UUID string em endpoints e schemas`
+- `feat(labels): adiciona botão floating viewer e corrige tipos UUID no frontend`
+
+### Bug 2: Múltiplas heads no Alembic ✅ CORRIGIDO
+**Problema**: Branches divergentes de migrações causando conflitos
+
+**Solução**:
+- Migração de merge criada: `1fdc03c468fd_merge_unifica_branches_de_device_label_.py`
+- Unifica branches de `device_label` e `door_presets`
+- Todas as migrações aplicadas com sucesso
+
+**Commit**:
+- `chore(alembic): merge branches de device_label e door_presets`
+
+---
+
+## Fluxo de Trabalho Recomendado
+
+### Para Adesivos de Componente (210-805):
+
+1. **Abrir Lote do Dia** → Selecionar MO
+2. **Clicar em "Etiquetas"** → Aba "Adesivo de Componente"
+3. **Clicar "📌 Ver Diagrama (Pop-up)"** → Abre floating viewer
+4. **Posicionar viewer** ao lado do formulário
+5. **Clicar "Adicionar Manualmente"**
+6. **Visualizar diagrama** e digitar tags rapidamente
+7. **Pressionar Enter** para cada tag
+8. **Selecionar impressora** e imprimir
+
+### Para Etiquetas de Porta (210-855):
+
+1. **Abrir Lote do Dia** → Selecionar MO
+2. **Clicar em "Etiquetas"** → Aba "Porta do Quadro"
+3. **Filtrar presets** (Sistema, Meus, Equipe, Favoritos)
+4. **Selecionar preset** desejado
+5. **Customizar nome do equipamento** (se necessário)
+6. **Preview em tempo real**
+7. **Selecionar impressora** e imprimir
+8. **Criar novos presets** conforme necessário
+
+---
+
+## Próximos Passos (Sugestões)
+
+1. **Drag & Drop para reordenação** de dispositivos na lista
+2. **Busca/filtro** de dispositivos por tag ou descrição
+3. **Importação em lote** de múltiplos arquivos EPLAN
+4. **Templates de características técnicas** (210-804)
+5. **Histórico de impressões** por MO
+6. **Estatísticas de uso** de presets
+7. **Exportação de presets** para compartilhamento entre instâncias
 
 ---
 
@@ -212,120 +223,35 @@ Este documento descreve as melhorias implementadas no sistema de etiquetas do ID
 
 ### Backend:
 - FastAPI (async/await)
-- SQLModel + Alembic
-- PostgreSQL (JSON columns para arrays)
-- Pydantic (validação estrita)
+- SQLModel + PostgreSQL
+- Alembic (migrações)
+- Pydantic (validação)
 
 ### Frontend:
 - React 18 + TypeScript
+- react-pdf (visualização PDF)
+- react-draggable (drag)
+- react-resizable (resize)
 - Tailwind CSS v4
-- react-draggable
-- react-resizable
-- react-pdf + pdfjs-dist
-- sonner (toasts)
-
----
-
-## Segurança
-
-### Validações Backend:
-- Limite de 50 presets por usuário
-- Nome único por usuário
-- Apenas criador pode editar/deletar
-- Presets do sistema protegidos
-- Sanitização de inputs
-
-### Validações Frontend:
-- Validação client-side antes de enviar
-- Feedback imediato de erros
-- Confirmação antes de deletar
-- Pin impede fechamento acidental do viewer
-
----
-
-## Manutenção
-
-### Adicionar Novo Preset do Sistema:
-
-```sql
-INSERT INTO door_label_preset (name, category, equipment_name, columns, rows, is_system, is_shared, usage_count, created_at, updated_at)
-VALUES ('Novo Preset', 'sinaleira', 'NOME FIXO', '[]', 1, true, true, 0, NOW(), NOW());
-```
-
-### Limpar Presets Não Usados:
-
-```sql
-DELETE FROM door_label_preset
-WHERE is_system = false
-  AND usage_count = 0
-  AND created_at < NOW() - INTERVAL '90 days';
-```
-
-### Backup de Presets:
-
-```bash
-pg_dump -t door_label_preset -t door_label_preset_favorite > presets_backup.sql
-```
-
----
-
-## Troubleshooting
-
-### Floating Viewer não abre:
-- Verificar se `pdfjs-dist` está instalado
-- Verificar worker URL no console
-- Verificar permissões de CORS para documentos
-
-### Preset não salva:
-- Verificar limite de 50 presets
-- Verificar nome único
-- Verificar categoria válida
-
-### Dispositivo não adiciona:
-- Verificar tag única para MO
-- Verificar conexão com backend
-- Verificar logs do servidor
+- Sonner (toasts)
 
 ---
 
 ## Commits Realizados
 
-1. `feat(ui): adiciona nomes descritivos nas abas de etiquetas`
-2. `feat(backend): adiciona endpoints para criação manual de adesivos de componente`
-3. `feat(labels): adiciona editor manual para adesivos de componente (210-805)`
-4. `refactor(labels): simplifica formulário manual para apenas tag do dispositivo`
-5. `feat(backend): implementa sistema de presets para adesivos de porta (210-855)`
-6. `feat(labels): implementa sistema de presets para adesivos de porta (210-855)`
-7. `feat(docs): implementa visualizador flutuante de documentos (Floating Viewer)`
-
----
-
-## Próximos Passos (Futuro)
-
-### Melhorias Sugeridas:
-1. **Drag-and-drop de dispositivos** para reordenação visual
-2. **Histórico de presets usados** por usuário
-3. **Sugestões inteligentes** de presets baseado em padrões
-4. **Exportação de presets** para compartilhar entre instalações
-5. **Templates de lote** com presets pré-selecionados
-6. **Integração com IA** para extração automática de tags do diagrama
-
-### Otimizações:
-1. **Cache de documentos** no IndexedDB
-2. **Lazy loading** de presets (virtual scrolling)
-3. **Compressão de PDFs** para carregamento mais rápido
-4. **Service Worker** para funcionamento offline
+1. `fix(eplan): corrige tipo de mo_id de int para UUID string em endpoints e schemas`
+2. `feat(labels): adiciona botão floating viewer e corrige tipos UUID no frontend`
+3. `chore(alembic): merge branches de device_label e door_presets`
 
 ---
 
 ## Conclusão
 
-As melhorias implementadas transformaram o fluxo de trabalho de etiquetas, tornando-o mais rápido, intuitivo e colaborativo. O sistema agora suporta tanto o fluxo tradicional (importação EPLAN) quanto entrada manual rápida, com visualização simultânea de documentos e reutilização de padrões comuns via presets.
+Todas as 4 melhorias solicitadas foram implementadas com sucesso:
 
-**Resultado:** Operadores mais produtivos, menos erros, melhor experiência de usuário.
+✅ **Nomenclatura Descritiva** - Nomes claros ao invés de códigos  
+✅ **Editor Manual de Adesivos** - Entrada rápida com floating viewer  
+✅ **Sistema de Presets** - Templates reutilizáveis com favoritos  
+✅ **Floating Document Viewer** - Visualização flutuante de diagramas  
 
----
-
-**Documentação criada em:** 28/04/2026  
-**Versão:** 1.0  
-**Autor:** Kiro AI Assistant
+O sistema está robusto, testado e pronto para uso em produção. A working tree do Git está limpa e todos os commits seguem o padrão Conventional Commits em PT-BR.
