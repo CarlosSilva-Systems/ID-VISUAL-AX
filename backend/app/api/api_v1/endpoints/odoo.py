@@ -168,10 +168,14 @@ async def get_odoo_mos(
         return final_list, odoo_res_ids
     
     try:
-        # Buscar dados cacheados (5min TTL)
+        # Buscar banco ativo para usar como chave de cache correta
+        from app.services.odoo_utils import get_active_odoo_db
+        active_db = await get_active_odoo_db(session)
+
+        # Buscar dados cacheados (5min TTL) — chave inclui banco ativo
         final_list, odoo_res_ids = await _fetch_odoo_mos_data(
             settings.ODOO_URL,
-            settings.ODOO_DB
+            active_db
         )
         
         # ── Step 5: Decorate with Transferred Manual Requests (não cacheado) ──
@@ -454,6 +458,10 @@ async def select_odoo_database(
         
         await session.commit()
         logger.info(f"✅ Active Odoo database updated to: {normalized_name} by user {current_user.username if hasattr(current_user, 'username') else 'unknown'}")
+        
+        # Invalida cache de MOs para forçar nova busca no banco correto
+        from app.services.cache_service import invalidate_cache_pattern
+        await invalidate_cache_pattern("odoo_mos:")
         
         return {
             "status": "success",
