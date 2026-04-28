@@ -83,7 +83,7 @@ export async function fetchJobStatus(jobId: number): Promise<JobStatusResponse> 
 
 export interface DeviceLabelItem {
   id: number;
-  mo_id: number;
+  mo_id: string;  // UUID como string
   device_tag: string;
   description: string;
   location: string | null;
@@ -120,17 +120,17 @@ function getUploadHeaders(): Record<string, string> {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
-export async function fetchDeviceLabels(moId: number): Promise<DeviceLabelItem[]> {
+export async function fetchDeviceLabels(moId: string): Promise<DeviceLabelItem[]> {
   const res = await fetch(`${API_URL}/id-visual/eplan/${moId}/devices`, { headers: getHeaders() });
   return _handleResponse<DeviceLabelItem[]>(res);
 }
 
-export async function fetchTerminalLabels(moId: number): Promise<TerminalLabelItem[]> {
+export async function fetchTerminalLabels(moId: string): Promise<TerminalLabelItem[]> {
   const res = await fetch(`${API_URL}/id-visual/eplan/${moId}/terminals`, { headers: getHeaders() });
   return _handleResponse<TerminalLabelItem[]>(res);
 }
 
-export async function importDevicesExcel(moId: number, file: File): Promise<EplanImportSummary> {
+export async function importDevicesExcel(moId: string, file: File): Promise<EplanImportSummary> {
   const form = new FormData();
   form.append('file', file);
   const res = await fetch(`${API_URL}/id-visual/eplan/import/devices?mo_id=${moId}`, {
@@ -141,7 +141,7 @@ export async function importDevicesExcel(moId: number, file: File): Promise<Epla
   return _handleResponse<EplanImportSummary>(res);
 }
 
-export async function importTerminalsExcel(moId: number, file: File): Promise<EplanImportSummary> {
+export async function importTerminalsExcel(moId: string, file: File): Promise<EplanImportSummary> {
   const form = new FormData();
   form.append('file', file);
   const res = await fetch(`${API_URL}/id-visual/eplan/import/terminals?mo_id=${moId}`, {
@@ -153,7 +153,7 @@ export async function importTerminalsExcel(moId: number, file: File): Promise<Ep
 }
 
 export async function printDevices(
-  moId: number,
+  moId: string,
   printerId: number,
   deviceIds?: number[],
 ): Promise<PrintDevicesResponse> {
@@ -166,7 +166,7 @@ export async function printDevices(
 }
 
 export async function printDoorInline(
-  moId: number,
+  moId: string,
   printerId: number,
   equipmentName: string,
   columns: string[],
@@ -180,7 +180,7 @@ export async function printDoorInline(
 }
 
 export async function printTerminals(
-  moId: number,
+  moId: string,
   printerId: number,
   terminalIds?: number[],
 ): Promise<PrintDevicesResponse> {
@@ -209,7 +209,7 @@ export interface UpdateDevicePayload {
 }
 
 export async function createDeviceManual(
-  moId: number,
+  moId: string,
   payload: CreateDevicePayload,
 ): Promise<DeviceLabelItem> {
   const res = await fetch(`${API_URL}/id-visual/eplan/${moId}/devices/manual`, {
@@ -233,7 +233,7 @@ export async function updateDevice(
 }
 
 export async function reorderDevices(
-  moId: number,
+  moId: string,
   deviceIds: number[],
 ): Promise<{ reordered: number }> {
   const res = await fetch(`${API_URL}/id-visual/eplan/${moId}/devices/reorder`, {
