@@ -133,9 +133,13 @@ function ManualDeviceForm({ moId, onSuccess, onCancel }: {
   onCancel: () => void;
 }) {
   const [deviceTag, setDeviceTag] = useState('');
-  const [description, setDescription] = useState('');
-  const [location, setLocation] = useState('');
   const [saving, setSaving] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    // Auto-focus no input ao abrir
+    inputRef.current?.focus();
+  }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -144,20 +148,16 @@ function ManualDeviceForm({ moId, onSuccess, onCancel }: {
       toast.error('Tag do dispositivo é obrigatória');
       return;
     }
-    if (!description.trim()) {
-      toast.error('Descrição é obrigatória');
-      return;
-    }
 
     setSaving(true);
     try {
       const payload: CreateDevicePayload = {
-        device_tag: deviceTag.trim(),
-        description: description.trim(),
-        location: location.trim() || undefined,
+        device_tag: deviceTag.trim().toUpperCase(), // Normaliza para maiúsculas
       };
       await createDeviceManual(moId, payload);
-      toast.success('Dispositivo adicionado com sucesso');
+      toast.success(`Tag ${deviceTag.trim().toUpperCase()} adicionada`);
+      setDeviceTag(''); // Limpa para próxima entrada
+      inputRef.current?.focus(); // Mantém foco para entrada rápida
       onSuccess();
     } catch (err) {
       toast.error('Erro ao adicionar: ' + (err instanceof Error ? err.message : 'Erro'));
@@ -167,70 +167,39 @@ function ManualDeviceForm({ moId, onSuccess, onCancel }: {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="border border-blue-200 rounded-lg p-4 bg-blue-50 space-y-3">
-      <div className="flex items-center justify-between">
-        <h4 className="font-bold text-sm text-blue-900">Adicionar Dispositivo Manualmente</h4>
-        <button
-          type="button"
-          onClick={onCancel}
-          className="text-xs text-slate-500 hover:text-slate-700"
-        >
-          ✕ Cancelar
-        </button>
-      </div>
-
-      <div className="grid grid-cols-3 gap-3">
-        <div>
-          <label className="block text-[10px] font-bold text-slate-600 mb-1">Tag *</label>
+    <form onSubmit={handleSubmit} className="border border-blue-200 rounded-lg p-4 bg-blue-50">
+      <div className="flex items-center gap-3">
+        <div className="flex-1">
+          <label className="block text-[10px] font-bold text-slate-600 mb-1.5">Tag do Dispositivo</label>
           <input
+            ref={inputRef}
             type="text"
             value={deviceTag}
             onChange={e => setDeviceTag(e.target.value)}
-            placeholder="ex: K1, DJ1"
-            className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+            placeholder="ex: K1, DJ1, KA1..."
+            className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm font-mono font-bold uppercase focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             required
+            disabled={saving}
           />
+          <p className="text-[10px] text-slate-500 mt-1">Pressione Enter para adicionar rapidamente</p>
         </div>
-        <div className="col-span-2">
-          <label className="block text-[10px] font-bold text-slate-600 mb-1">Descrição *</label>
-          <input
-            type="text"
-            value={description}
-            onChange={e => setDescription(e.target.value)}
-            placeholder="ex: Contator principal bomba 1"
-            className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30"
-            required
-          />
+        <div className="flex gap-2 pt-5">
+          <button
+            type="submit"
+            disabled={saving || !deviceTag.trim()}
+            className="flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+          >
+            {saving ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
+            Adicionar
+          </button>
+          <button
+            type="button"
+            onClick={onCancel}
+            className="px-4 py-2 border border-slate-300 rounded-lg text-sm font-bold text-slate-600 hover:bg-white transition-colors"
+          >
+            Fechar
+          </button>
         </div>
-      </div>
-
-      <div>
-        <label className="block text-[10px] font-bold text-slate-600 mb-1">Localização (opcional)</label>
-        <input
-          type="text"
-          value={location}
-          onChange={e => setLocation(e.target.value)}
-          placeholder="ex: QCC-01"
-          className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30"
-        />
-      </div>
-
-      <div className="flex gap-2 pt-2">
-        <button
-          type="submit"
-          disabled={saving}
-          className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold hover:bg-blue-700 disabled:opacity-50 transition-all"
-        >
-          {saving ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
-          Salvar Dispositivo
-        </button>
-        <button
-          type="button"
-          onClick={onCancel}
-          className="px-4 py-2 border border-slate-200 rounded-lg text-sm font-bold text-slate-600 hover:bg-slate-50 transition-colors"
-        >
-          Cancelar
-        </button>
       </div>
     </form>
   );

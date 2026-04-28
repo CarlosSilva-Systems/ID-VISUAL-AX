@@ -198,7 +198,7 @@ export async function printTerminals(
 
 export interface CreateDevicePayload {
   device_tag: string;
-  description: string;
+  description?: string;
   location?: string;
 }
 

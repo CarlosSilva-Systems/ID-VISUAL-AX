@@ -412,7 +412,7 @@ async def create_device_manual(
     device = DeviceLabel(
         mo_id=mo_id,
         device_tag=payload.device_tag,
-        description=payload.description,
+        description=payload.description or payload.device_tag,  # Usa tag como descrição se não fornecida
         location=payload.location,
         order_index=next_order,
     )

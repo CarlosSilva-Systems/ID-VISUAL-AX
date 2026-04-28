@@ -30,7 +30,7 @@ class DeviceLabelOut(BaseModel):
 class DeviceLabelCreate(BaseModel):
     """Payload para criação manual de dispositivo."""
     device_tag: str = Field(..., min_length=1, max_length=50, description="Tag do dispositivo (ex: K1, DJ1)")
-    description: str = Field(..., min_length=1, max_length=200, description="Descrição funcional")
+    description: Optional[str] = Field(None, max_length=200, description="Descrição funcional (opcional)")
     location: Optional[str] = Field(None, max_length=50, description="Localização no quadro (opcional)")
 
 

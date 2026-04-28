@@ -1,7 +1,7 @@
 from fastapi import APIRouter
 from app.api.api_v1.endpoints import (
     health, batches, odoo, production, id_requests, documents, auth, andon, andon_dashboard, sync, webhook, settings as system_settings,
-    mpr_analytics, agent, custom_reports, user_config, devices, ota, id_visual_analytics, diagnostics, print_labels, print_queue, eplan
+    mpr_analytics, agent, custom_reports, user_config, devices, ota, id_visual_analytics, diagnostics, print_labels, print_queue, eplan, print_wago
 )
 
 api_router = APIRouter()
@@ -28,4 +28,5 @@ api_router.include_router(diagnostics.router, prefix="/diagnostics", tags=["diag
 api_router.include_router(print_labels.router, prefix="/id-visual", tags=["print_labels"])
 api_router.include_router(print_queue.router, prefix="/print", tags=["print_queue"])
 api_router.include_router(eplan.router, prefix="/id-visual/eplan", tags=["eplan"])
+api_router.include_router(print_wago.router, prefix="/id-visual/print", tags=["print_wago"])
 
