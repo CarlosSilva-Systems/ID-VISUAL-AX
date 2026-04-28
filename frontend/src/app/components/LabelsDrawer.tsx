@@ -16,6 +16,16 @@ import {
   deleteDevice,
   EplanImportSummary,
 } from '../../services/printQueueApi';
+import {
+  fetchPresets,
+  createPreset,
+  deletePreset,
+  toggleFavorite,
+  incrementUsage,
+  DoorLabelPreset,
+  CreatePresetPayload,
+  PresetFilterType,
+} from '../../services/doorPresetsApi';
 
 // Re-export PrintLabelDrawer content inline (aba Quadro)
 import { PrintLabelDrawer } from './PrintLabelDrawer';
@@ -398,7 +408,327 @@ function TabDevices({ moId, printers, printersLoading }: {
 }
 
 // ---------------------------------------------------------------------------
-// Tab: Porta (210-855)
+// Componente: PresetCard
+// ---------------------------------------------------------------------------
+
+function PresetCard({ preset, isSelected, onSelect, onToggleFavorite }: {
+  preset: DoorLabelPreset;
+  isSelected: boolean;
+  onSelect: () => void;
+  onToggleFavorite: (e: React.MouseEvent) => void;
+}) {
+  const getCategoryIcon = () => {
+    switch (preset.category) {
+      case 'sinaleira': return '💡';
+      case 'botoeira-3pos': return '🎛️';
+      case 'botoeira-2pos': return '🔘';
+      default: return '📋';
+    }
+  };
+
+  const getCategoryLabel = () => {
+    switch (preset.category) {
+      case 'sinaleira': return 'Sinaleira';
+      case 'botoeira-3pos': return 'Botoeira 3P';
+      case 'botoeira-2pos': return 'Botoeira 2P';
+      default: return 'Personalizado';
+    }
+  };
+
+  return (
+    <button
+      onClick={onSelect}
+      className={`relative p-3 rounded-lg border-2 transition-all text-left ${
+        isSelected
+          ? 'border-blue-600 bg-blue-50'
+          : 'border-slate-200 bg-white hover:border-slate-300 hover:shadow-sm'
+      }`}
+    >
+      {/* Badge de favorito */}
+      <button
+        onClick={onToggleFavorite}
+        className={`absolute top-2 right-2 p-1 rounded transition-colors ${
+          preset.is_favorite
+            ? 'text-yellow-500 hover:text-yellow-600'
+            : 'text-slate-300 hover:text-slate-400'
+        }`}
+      >
+        {preset.is_favorite ? '⭐' : '☆'}
+      </button>
+
+      {/* Ícone e categoria */}
+      <div className="flex items-center gap-2 mb-2">
+        <span className="text-2xl">{getCategoryIcon()}</span>
+        <div className="flex-1 min-w-0">
+          <div className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">
+            {getCategoryLabel()}
+          </div>
+          <div className="text-xs font-bold text-slate-800 truncate pr-6">
+            {preset.name}
+          </div>
+        </div>
+      </div>
+
+      {/* Preview de colunas */}
+      {preset.columns.length > 0 && (
+        <div className="flex gap-1 mb-2">
+          {preset.columns.map((col, i) => (
+            <div
+              key={i}
+              className="flex-1 text-center py-1 px-1 bg-slate-100 rounded text-[9px] font-bold text-slate-600 truncate"
+            >
+              {col}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Badges */}
+      <div className="flex items-center gap-1.5 flex-wrap">
+        {preset.is_system && (
+          <span className="px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded text-[9px] font-bold">
+            Sistema
+          </span>
+        )}
+        {preset.is_shared && !preset.is_system && (
+          <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded text-[9px] font-bold">
+            Compartilhado
+          </span>
+        )}
+        {preset.usage_count > 0 && (
+          <span className="px-1.5 py-0.5 bg-slate-100 text-slate-600 rounded text-[9px] font-bold">
+            {preset.usage_count} uso{preset.usage_count > 1 ? 's' : ''}
+          </span>
+        )}
+      </div>
+    </button>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Componente: PresetCreatorModal
+// ---------------------------------------------------------------------------
+
+function PresetCreatorModal({ onClose, onSuccess }: {
+  onClose: () => void;
+  onSuccess: () => void;
+}) {
+  const [name, setName] = useState('');
+  const [category, setCategory] = useState<'sinaleira' | 'botoeira-3pos' | 'botoeira-2pos' | 'custom'>('botoeira-3pos');
+  const [equipmentName, setEquipmentName] = useState('');
+  const [columns, setColumns] = useState<string[]>(['MAN', 'O', 'AUT']);
+  const [isShared, setIsShared] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const addColumn = () => setColumns(c => [...c, '']);
+  const removeColumn = (i: number) => setColumns(c => c.filter((_, idx) => idx !== i));
+  const updateColumn = (i: number, v: string) => setColumns(c => c.map((x, idx) => idx === i ? v : x));
+
+  useEffect(() => {
+    // Atualiza colunas padrão ao mudar categoria
+    if (category === 'botoeira-3pos') {
+      setColumns(['MAN', 'O', 'AUT']);
+    } else if (category === 'botoeira-2pos') {
+      setColumns(['MAN', 'AUT']);
+    } else if (category === 'sinaleira') {
+      setColumns([]);
+    }
+  }, [category]);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+
+    if (!name.trim()) {
+      toast.error('Nome do preset é obrigatório');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const payload: CreatePresetPayload = {
+        name: name.trim(),
+        category,
+        equipment_name: equipmentName.trim(),
+        columns: columns.filter(c => c.trim()).map(c => c.trim()),
+        rows: 1,
+        is_shared: isShared,
+      };
+      await createPreset(payload);
+      toast.success('Preset criado com sucesso');
+      onSuccess();
+    } catch (err) {
+      toast.error('Erro ao criar preset: ' + (err instanceof Error ? err.message : 'Erro'));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm animate-in fade-in duration-200">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto animate-in zoom-in-95 duration-200">
+        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          {/* Header */}
+          <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+            <h3 className="text-lg font-bold text-slate-800">Criar Novo Preset</h3>
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-1 text-slate-400 hover:text-slate-600 transition-colors"
+            >
+              <X size={20} />
+            </button>
+          </div>
+
+          {/* Nome */}
+          <div>
+            <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1.5">
+              Nome do Preset *
+            </label>
+            <input
+              type="text"
+              value={name}
+              onChange={e => setName(e.target.value)}
+              placeholder="ex: Bomba Recalque 3P"
+              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              required
+            />
+          </div>
+
+          {/* Categoria */}
+          <div>
+            <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1.5">
+              Categoria *
+            </label>
+            <select
+              value={category}
+              onChange={e => setCategory(e.target.value as any)}
+              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="sinaleira">💡 Sinaleira</option>
+              <option value="botoeira-3pos">🎛️ Botoeira 3 Posições</option>
+              <option value="botoeira-2pos">🔘 Botoeira 2 Posições</option>
+              <option value="custom">📋 Personalizado</option>
+            </select>
+          </div>
+
+          {/* Nome do Equipamento */}
+          <div>
+            <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1.5">
+              Nome do Equipamento {category !== 'sinaleira' && '(opcional)'}
+            </label>
+            <input
+              type="text"
+              value={equipmentName}
+              onChange={e => setEquipmentName(e.target.value)}
+              placeholder={category === 'sinaleira' ? 'ex: COMANDO ENERGIZADO' : 'Deixe vazio para customizar ao usar'}
+              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm uppercase focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            <p className="text-[10px] text-slate-500 mt-1">
+              {category === 'sinaleira'
+                ? 'Nome fixo da sinaleira'
+                : 'Se vazio, será solicitado ao usar o preset'}
+            </p>
+          </div>
+
+          {/* Colunas/Posições */}
+          {category !== 'sinaleira' && (
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-[10px] font-bold text-slate-600 uppercase tracking-wider">
+                  Posições/Colunas
+                </label>
+                <button
+                  type="button"
+                  onClick={addColumn}
+                  className="flex items-center gap-1 text-xs font-bold text-blue-600 hover:text-blue-700"
+                >
+                  <Plus size={12} /> Adicionar
+                </button>
+              </div>
+              <div className="space-y-2">
+                {columns.map((col, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={col}
+                      onChange={e => updateColumn(i, e.target.value)}
+                      placeholder={`Posição ${i + 1}`}
+                      className="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm uppercase focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                    {columns.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => removeColumn(i)}
+                        className="p-2 text-slate-400 hover:text-red-500 transition-colors"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Compartilhar */}
+          <div className="flex items-center gap-2 p-3 bg-slate-50 rounded-lg">
+            <input
+              type="checkbox"
+              id="share-preset"
+              checked={isShared}
+              onChange={e => setIsShared(e.target.checked)}
+              className="rounded"
+            />
+            <label htmlFor="share-preset" className="text-sm text-slate-700 cursor-pointer">
+              <span className="font-bold">Compartilhar com equipe</span>
+              <p className="text-xs text-slate-500">Outros usuários poderão ver e usar este preset</p>
+            </label>
+          </div>
+
+          {/* Preview */}
+          {(equipmentName.trim() || columns.some(c => c.trim())) && (
+            <div className="border border-slate-200 rounded-lg overflow-hidden">
+              <div className="bg-slate-700 text-white text-center py-2 text-sm font-bold">
+                {equipmentName.trim() || 'EQUIPAMENTO'}
+              </div>
+              {columns.filter(c => c.trim()).length > 0 && (
+                <div className="flex divide-x divide-slate-200">
+                  {columns.filter(c => c.trim()).map((col, i) => (
+                    <div key={i} className="flex-1 text-center py-2 text-xs font-medium text-slate-700 bg-white">
+                      {col}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Botões */}
+          <div className="flex gap-3 pt-3 border-t border-slate-100">
+            <button
+              type="submit"
+              disabled={saving}
+              className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-600 text-white rounded-lg font-bold text-sm hover:bg-emerald-700 disabled:opacity-50 transition-all"
+            >
+              {saving ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
+              Criar Preset
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2.5 border border-slate-300 rounded-lg font-bold text-sm text-slate-600 hover:bg-slate-50 transition-colors"
+            >
+              Cancelar
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Tab: Porta (210-855) - Sistema de Presets
 // ---------------------------------------------------------------------------
 
 function TabDoor({ moId, printers, printersLoading }: {
@@ -406,24 +736,72 @@ function TabDoor({ moId, printers, printersLoading }: {
   printers: PrinterInfo[];
   printersLoading: boolean;
 }) {
-  const [equipmentName, setEquipmentName] = useState('');
-  const [columns, setColumns] = useState<string[]>(['']);
+  const [presets, setPresets] = useState<DoorLabelPreset[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [filterType, setFilterType] = useState<PresetFilterType>('all');
+  const [selectedPreset, setSelectedPreset] = useState<DoorLabelPreset | null>(null);
+  const [customEquipmentName, setCustomEquipmentName] = useState('');
   const [printer, setPrinter] = useState<number | null>(null);
   const [printing, setPrinting] = useState(false);
+  const [showCreator, setShowCreator] = useState(false);
 
-  const addColumn = () => setColumns(c => [...c, '']);
-  const removeColumn = (i: number) => setColumns(c => c.filter((_, idx) => idx !== i));
-  const updateColumn = (i: number, v: string) => setColumns(c => c.map((x, idx) => idx === i ? v : x));
+  useEffect(() => {
+    loadPresets();
+  }, [filterType]);
+
+  async function loadPresets() {
+    setLoading(true);
+    try {
+      const data = await fetchPresets(filterType);
+      setPresets(data);
+    } catch (err) {
+      toast.error('Erro ao carregar presets');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleSelectPreset(preset: DoorLabelPreset) {
+    setSelectedPreset(preset);
+    setCustomEquipmentName(preset.equipment_name);
+  }
+
+  async function handleToggleFavorite(presetId: number, e: React.MouseEvent) {
+    e.stopPropagation();
+    try {
+      const result = await toggleFavorite(presetId);
+      setPresets(prev => prev.map(p =>
+        p.id === presetId ? { ...p, is_favorite: result.is_favorite } : p
+      ));
+      toast.success(result.is_favorite ? 'Adicionado aos favoritos' : 'Removido dos favoritos');
+    } catch (err) {
+      toast.error('Erro ao atualizar favorito');
+    }
+  }
 
   async function handlePrint() {
     if (!printer) { toast.error('Selecione uma impressora.'); return; }
-    if (!equipmentName.trim()) { toast.error('Informe o nome do equipamento.'); return; }
-    const validCols = columns.filter(c => c.trim());
-    if (validCols.length === 0) { toast.error('Adicione ao menos uma posição.'); return; }
+    if (!selectedPreset) { toast.error('Selecione um preset.'); return; }
+
+    const equipmentName = customEquipmentName.trim() || selectedPreset.equipment_name;
+    if (!equipmentName && selectedPreset.category !== 'sinaleira') {
+      toast.error('Informe o nome do equipamento.');
+      return;
+    }
+
     setPrinting(true);
     try {
-      const res = await printDoorInline(moId, printer, equipmentName.trim(), validCols);
+      // Incrementa contador de uso
+      await incrementUsage(selectedPreset.id);
+
+      // Enfileira impressão
+      const res = await printDoorInline(moId, printer, equipmentName, selectedPreset.columns);
       toast.success(`Job #${res.job_id} criado na fila`);
+
+      // Atualiza contador local
+      setPresets(prev => prev.map(p =>
+        p.id === selectedPreset.id ? { ...p, usage_count: p.usage_count + 1 } : p
+      ));
     } catch (err) {
       toast.error('Erro ao imprimir: ' + (err instanceof Error ? err.message : 'Erro'));
     } finally {
@@ -431,72 +809,132 @@ function TabDoor({ moId, printers, printersLoading }: {
     }
   }
 
-  const validCols = columns.filter(c => c.trim());
+  const filteredPresets = presets;
 
   return (
     <div className="space-y-4">
-      {/* Nome do equipamento */}
-      <div className="space-y-1">
-        <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider">Nome do Equipamento</label>
-        <input
-          type="text"
-          value={equipmentName}
-          onChange={e => setEquipmentName(e.target.value)}
-          placeholder="ex: Bomba 1"
-          className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30"
-        />
-      </div>
-
-      {/* Posições */}
-      <div className="space-y-2">
-        <div className="flex items-center justify-between">
-          <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Posições</label>
-          <button onClick={addColumn} className="flex items-center gap-1 text-xs font-bold text-blue-600 hover:text-blue-700">
-            <Plus size={12} /> Adicionar
+      {/* Filtros */}
+      <div className="flex items-center gap-2 flex-wrap">
+        {(['all', 'system', 'mine', 'team', 'favorites'] as PresetFilterType[]).map(type => (
+          <button
+            key={type}
+            onClick={() => setFilterType(type)}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+              filterType === type
+                ? 'bg-blue-600 text-white'
+                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+            }`}
+          >
+            {type === 'all' && 'Todos'}
+            {type === 'system' && '🏢 Sistema'}
+            {type === 'mine' && '👤 Meus'}
+            {type === 'team' && '👥 Equipe'}
+            {type === 'favorites' && '⭐ Favoritos'}
           </button>
-        </div>
-        {columns.map((col, i) => (
-          <div key={i} className="flex items-center gap-2">
-            <input
-              type="text"
-              value={col}
-              onChange={e => updateColumn(i, e.target.value)}
-              placeholder={`Posição ${i + 1} (ex: Automático)`}
-              className="flex-1 px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30"
-            />
-            {columns.length > 1 && (
-              <button onClick={() => removeColumn(i)} className="p-1.5 text-slate-400 hover:text-red-500 transition-colors">
-                <Trash2 size={14} />
-              </button>
-            )}
-          </div>
         ))}
+        <div className="flex-1" />
+        <button
+          onClick={() => setShowCreator(true)}
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-xs font-bold hover:bg-emerald-700 transition-colors"
+        >
+          <Plus size={12} />
+          Criar Preset
+        </button>
       </div>
 
-      {/* Preview visual */}
-      {equipmentName.trim() && validCols.length > 0 && (
+      {/* Grid de Presets */}
+      {loading ? (
+        <div className="flex items-center justify-center gap-2 text-sm text-slate-400 py-8">
+          <Loader2 size={16} className="animate-spin" /> Carregando presets...
+        </div>
+      ) : filteredPresets.length === 0 ? (
+        <div className="text-center py-8">
+          <p className="text-sm text-slate-400 mb-3">Nenhum preset encontrado</p>
+          {filterType !== 'all' && (
+            <button
+              onClick={() => setFilterType('all')}
+              className="text-xs text-blue-600 hover:text-blue-700 font-bold"
+            >
+              Ver todos os presets
+            </button>
+          )}
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 gap-3">
+          {filteredPresets.map(preset => (
+            <PresetCard
+              key={preset.id}
+              preset={preset}
+              isSelected={selectedPreset?.id === preset.id}
+              onSelect={() => handleSelectPreset(preset)}
+              onToggleFavorite={(e) => handleToggleFavorite(preset.id, e)}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* Formulário de Customização */}
+      {selectedPreset && selectedPreset.equipment_name === '' && (
+        <div className="border border-blue-200 rounded-lg p-4 bg-blue-50 space-y-2">
+          <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider">
+            Nome do Equipamento *
+          </label>
+          <input
+            type="text"
+            value={customEquipmentName}
+            onChange={e => setCustomEquipmentName(e.target.value)}
+            placeholder="ex: RECALQUE, BOMBA 1"
+            className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm font-bold uppercase focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+          <p className="text-[10px] text-slate-500">
+            Este preset requer um nome personalizado
+          </p>
+        </div>
+      )}
+
+      {/* Preview */}
+      {selectedPreset && (
         <div className="border border-slate-200 rounded-lg overflow-hidden">
-          <div className="bg-slate-700 text-white text-center py-2 text-sm font-bold">{equipmentName}</div>
-          <div className="flex divide-x divide-slate-200">
-            {validCols.map((col, i) => (
-              <div key={i} className="flex-1 text-center py-3 text-xs font-medium text-slate-700 bg-white">{col}</div>
-            ))}
+          <div className="bg-slate-700 text-white text-center py-2 text-sm font-bold">
+            {customEquipmentName || selectedPreset.equipment_name || 'EQUIPAMENTO'}
           </div>
+          {selectedPreset.columns.length > 0 && (
+            <div className="flex divide-x divide-slate-200">
+              {selectedPreset.columns.map((col, i) => (
+                <div key={i} className="flex-1 text-center py-3 text-xs font-medium text-slate-700 bg-white">
+                  {col}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
       {/* Impressora + botão */}
-      <div className="space-y-3 pt-2 border-t border-slate-100">
-        <PrinterSelect printers={printers} value={printer} onChange={setPrinter} loading={printersLoading} />
-        <button
-          onClick={handlePrint}
-          disabled={printing || !printer}
-          className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-emerald-600 text-white rounded-xl font-bold text-sm hover:bg-emerald-700 disabled:opacity-50 transition-all"
-        >
-          {printing ? <Loader2 size={15} className="animate-spin" /> : <Printer size={15} />}
-          Imprimir Etiqueta de Porta
-        </button>
-      </div>
+      {selectedPreset && (
+        <div className="space-y-3 pt-2 border-t border-slate-100">
+          <PrinterSelect printers={printers} value={printer} onChange={setPrinter} loading={printersLoading} />
+          <button
+            onClick={handlePrint}
+            disabled={printing || !printer}
+            className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-emerald-600 text-white rounded-xl font-bold text-sm hover:bg-emerald-700 disabled:opacity-50 transition-all"
+          >
+            {printing ? <Loader2 size={15} className="animate-spin" /> : <Printer size={15} />}
+            Imprimir Etiqueta de Porta
+          </button>
+        </div>
+      )}
+
+      {/* Modal de Criação */}
+      {showCreator && (
+        <PresetCreatorModal
+          onClose={() => setShowCreator(false)}
+          onSuccess={() => {
+            loadPresets();
+            setShowCreator(false);
+          }}
+        />
+      )}
     </div>
   );
 }
