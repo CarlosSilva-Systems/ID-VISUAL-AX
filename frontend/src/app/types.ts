@@ -127,6 +127,25 @@ export const TASK_CODE_TO_LABEL: Record<string, string> = {
   QA_FINAL:      "QA Final",
 };
 
+// Mapeamento: código técnico → nome descritivo completo
+export const LABEL_CODE_MAP: Record<string, { name: string; code: string }> = {
+  "210-804":  { name: "Característica Técnica", code: "210-804" },
+  "210-805":  { name: "Adesivo de Componente", code: "210-805" },
+  "210-855":  { name: "Porta do Quadro", code: "210-855" },
+  "2009-110": { name: "Régua de Borne", code: "2009-110" },
+};
+
+// Mapeamento: task_code → informações completas de nomenclatura
+export const TASK_CODE_TO_FULL_LABEL: Record<string, { name: string; code?: string }> = {
+  DOCS_Epson:    { name: "Diagrama e Layout" },
+  WAGO_210_804:  { name: "Característica Técnica", code: "210-804" },
+  WAGO_210_805:  { name: "Adesivo de Componente", code: "210-805" },
+  ELESYS_EFZ:    { name: "Tag Cabo EFZ" },
+  WAGO_2009_110: { name: "Régua de Borne", code: "2009-110" },
+  WAGO_210_855:  { name: "Porta do Quadro", code: "210-855" },
+  QA_FINAL:      { name: "QA Final" },
+};
+
 // Tipo de caixinha derivado do task_code
 export function taskCodeToType(code: string): Caixinha["type"] {
   if (code === "DOCS_Epson") return "Epson";

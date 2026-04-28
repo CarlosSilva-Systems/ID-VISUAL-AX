@@ -521,11 +521,11 @@ function TabTerminals({ moId, printers, printersLoading }: {
 // LabelsDrawer — shell principal com 4 abas
 // ---------------------------------------------------------------------------
 
-const TABS: { id: TabId; label: string; icon: React.ReactNode }[] = [
-  { id: 'quadro',    label: '210-804',  icon: <Tag size={13} /> },
-  { id: 'devices',  label: '210-805',  icon: <FileSpreadsheet size={13} /> },
-  { id: 'door',     label: '210-855',  icon: <DoorOpen size={13} /> },
-  { id: 'terminals',label: '2009-110', icon: <Terminal size={13} /> },
+const TABS: { id: TabId; label: string; sublabel?: string; icon: React.ReactNode }[] = [
+  { id: 'quadro',    label: 'Característica Técnica', sublabel: '210-804',  icon: <Tag size={13} /> },
+  { id: 'devices',   label: 'Adesivo de Componente',  sublabel: '210-805',  icon: <FileSpreadsheet size={13} /> },
+  { id: 'door',      label: 'Porta do Quadro',        sublabel: '210-855',  icon: <DoorOpen size={13} /> },
+  { id: 'terminals', label: 'Régua de Borne',         sublabel: '2009-110', icon: <Terminal size={13} /> },
 ];
 
 export function LabelsDrawer({ fabrication, open, onClose }: LabelsDrawerProps) {
@@ -591,14 +591,19 @@ export function LabelsDrawer({ fabrication, open, onClose }: LabelsDrawerProps) 
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
-                  className={`flex items-center gap-1.5 px-3 py-2.5 text-xs font-bold border-b-2 transition-colors whitespace-nowrap ${
+                  className={`flex items-center gap-2 px-3 py-2.5 border-b-2 transition-colors whitespace-nowrap ${
                     isActive
                       ? 'border-blue-600 text-blue-600'
                       : 'border-transparent text-slate-500 hover:text-slate-700'
                   }`}
                 >
                   {tab.icon}
-                  {tab.label}
+                  <div className="flex flex-col items-start">
+                    <span className="text-xs font-bold leading-tight">{tab.label}</span>
+                    {tab.sublabel && (
+                      <span className="text-[10px] text-slate-400 font-medium leading-tight">{tab.sublabel}</span>
+                    )}
+                  </div>
                   <Badge count={count} />
                 </button>
               );
