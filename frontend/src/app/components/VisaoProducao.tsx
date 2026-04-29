@@ -42,6 +42,8 @@ export function VisaoProducao() {
   // Blueprints
   const [blueprints, setBluePrints] = useState<Blueprints | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Ref para cancelar requisições antigas (evita race condition)
+  const searchAbortRef = useRef<AbortController | null>(null);
 
   // History
   const [history, setHistory] = useState<any[]>([]);
@@ -79,22 +81,39 @@ export function VisaoProducao() {
       setHasSearched(false);
       return;
     }
+
+    // Cancela requisição anterior se ainda estiver em andamento
+    if (searchAbortRef.current) {
+      searchAbortRef.current.abort();
+    }
+    const controller = new AbortController();
+    searchAbortRef.current = controller;
+
     setSearching(true);
     try {
-      const data = await api.searchMOs(q);
-      setResults(data);
-      setHasSearched(true);
-    } catch {
-      toast.error('Erro ao buscar fabricações');
+      const data = await api.searchMOs(q, controller.signal);
+      // Só atualiza se esta requisição não foi cancelada
+      if (!controller.signal.aborted) {
+        setResults(data);
+        setHasSearched(true);
+      }
+    } catch (err: any) {
+      // Ignora erros de abort (requisição cancelada intencionalmente)
+      if (err?.name !== 'AbortError') {
+        toast.error('Erro ao buscar fabricações');
+      }
     } finally {
-      setSearching(false);
+      if (!controller.signal.aborted) {
+        setSearching(false);
+      }
     }
   }, []);
 
   const handleSearchInput = (val: string) => {
     setSearch(val);
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => doSearch(val), 300);
+    // Debounce maior (500ms) para esperar o usuário terminar de digitar
+    debounceRef.current = setTimeout(() => doSearch(val), 500);
   };
 
   const handleSearchSubmit = (e: React.FormEvent) => {

@@ -321,8 +321,21 @@ export const api = {
     },
 
     // ── Production Portal ──
-    searchMOs: async (query: string) => {
-        return api.get(`/production/search?q=${encodeURIComponent(query)}`);
+    searchMOs: async (query: string, signal?: AbortSignal) => {
+        const url = `${API_URL}/production/search?q=${encodeURIComponent(query)}`;
+        const response = await fetch(url, {
+            method: 'GET',
+            headers: getHeaders(),
+            signal,
+        });
+        if (!response.ok) {
+            if (response.status === 401) {
+                localStorage.removeItem('id_visual_token');
+                window.location.reload();
+            }
+            throw new Error(`API Error: ${response.statusText}`);
+        }
+        return response.json();
     },
 
     getBlueprints: async () => {

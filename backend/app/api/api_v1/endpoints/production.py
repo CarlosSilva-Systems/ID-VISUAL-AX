@@ -46,39 +46,64 @@ def extract_product_name(product_val: Any) -> Optional[str]:
 
 def normalize_search_query(q: str) -> str:
     """
-    Normaliza a query de busca para o formato esperado pelo Odoo (WH/FAB/XXXXX).
+    Normaliza a query de busca. Retorna string para ilike simples,
+    ou None para indicar que deve usar build_number_domain().
 
-    O prefixo real das fabricações neste Odoo é WH/FAB/, não WH/MO/.
-
-    Casos tratados:
-      - "1659"        → "WH/FAB/01659"  (só números → zero-pad 5 dígitos)
-      - "01659"       → "WH/FAB/01659"  (já com zeros)
-      - "FAB1659"     → "WH/FAB/01659"  (prefixo FAB + número)
-      - "FAB01659"    → "WH/FAB/01659"  (prefixo FAB + número com zeros)
-      - "WH/FAB/1659" → "WH/FAB/01659"  (formato Odoo sem zero-pad)
-      - "WH/FAB/01659"→ "WH/FAB/01659"  (passthrough)
-      - "WH/MO/1659"  → "WH/FAB/01659"  (prefixo antigo → corrige)
+    - Número puro → None (usa domain OR com variantes zero-padded)
+    - FABnnn / WH/FAB/nnn → string exata normalizada
+    - Texto livre → passa direto
     """
     q = q.strip()
 
-    # Formato Odoo completo com qualquer prefixo (WH/FAB/ ou WH/MO/)
+    # Formato Odoo completo com qualquer prefixo
     odoo_match = re.match(r'^WH/(?:FAB|MO)/(\d+)$', q, re.IGNORECASE)
     if odoo_match:
         num = int(odoo_match.group(1))
         return f"WH/FAB/{num:05d}"
 
-    # Prefixo FAB (case-insensitive) + número
+    # Prefixo FAB + número → busca exata com zero-pad
     fab_match = re.match(r'^[Ff][Aa][Bb](\d+)$', q)
     if fab_match:
         num = int(fab_match.group(1))
         return f"WH/FAB/{num:05d}"
 
-    # Só números → monta o caminho completo com zero-pad
+    # Só números → sinaliza para usar domain OR (tratado no endpoint)
     if re.match(r'^\d+$', q):
-        return f"WH/FAB/{int(q):05d}"
+        return q  # retorna o número puro; o endpoint detecta e usa build_number_domain
 
-    # Qualquer outro formato → passa direto
+    # Texto livre → passa direto
     return q
+
+
+def build_number_search_domain(num_str: str) -> list:
+    """
+    Constrói um domain Odoo com OR para busca parcial por número de fabricação.
+
+    O Odoo usa LIKE 'termo%' (prefixo), então para encontrar WH/FAB/01659
+    a partir de "165" precisamos gerar variantes com zero-padding:
+      "165" → ["WH/FAB/165", "WH/FAB/0165", "WH/FAB/00165"]
+      "1659" → ["WH/FAB/1659", "WH/FAB/01659"]
+
+    O domain resultante usa o operador "|" (OR) do Odoo.
+    """
+    try:
+        num = int(num_str)
+    except ValueError:
+        return [["name", "ilike", num_str]]
+
+    # Gera variantes de len(num_str) até 5 dígitos com zero-pad
+    variants = []
+    for pad in range(len(num_str), 6):
+        variants.append(f"WH/FAB/{num:0{pad}d}")
+
+    # Monta domain OR: ["|", cond1, "|", cond2, cond3] para N condições
+    domain: list = []
+    for _ in range(len(variants) - 1):
+        domain.append("|")
+    for v in variants:
+        domain.append(["name", "ilike", v])
+
+    return domain
 
 
 def get_business_day_cutoff() -> datetime:
@@ -184,6 +209,7 @@ async def search_mos(
 
     # Normaliza a query antes de enviar ao Odoo
     normalized_q = normalize_search_query(q)
+    is_number_search = re.match(r'^\d+$', q.strip()) and not re.match(r'^WH/', normalized_q)
 
     client = OdooClient(
         url=settings.ODOO_URL,
@@ -194,12 +220,18 @@ async def search_mos(
     )
 
     try:
-        # Busca MOs no Odoo — exclui apenas canceladas
-        # "done" = fabricação concluída, ainda pode precisar de ID Visual
-        mo_domain = [
-            ["name", "ilike", normalized_q],
-            ["state", "not in", ["cancel"]],
-        ]
+        # Monta domain de busca
+        # Para números puros: usa OR com variantes zero-padded (busca parcial)
+        # Para outros formatos: usa ilike simples
+        state_filter = ["state", "not in", ["cancel"]]
+        if is_number_search:
+            number_domain = build_number_search_domain(q.strip())
+            mo_domain = number_domain + [state_filter]
+        else:
+            mo_domain = [
+                ["name", "ilike", normalized_q],
+                state_filter,
+            ]
         mo_fields = ["id", "name", "product_qty", "date_start", "state", "x_studio_nome_da_obra", "product_id"]
 
         mos = await client.search_read(
