@@ -462,28 +462,32 @@ export const DevicesPage: React.FC = () => {
                     <td className="px-4 py-4">
                       <StatusBadge device={device} />
                     </td>
-                    {/* Sinal */}
+                    {/* Sinal — exibido apenas quando o device está online */}
                     <td className="px-4 py-4">
-                      <div className="flex flex-col gap-1">
-                        {device.connection_type === 'wifi' ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-700 w-fit">
-                            <Wifi className="w-2.5 h-2.5" />WiFi
-                          </span>
-                        ) : device.connection_type === 'mesh' ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-700 w-fit">
-                            <Network className="w-2.5 h-2.5" />Mesh
-                          </span>
-                        ) : null}
-                        {device.rssi_quality ? (
-                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold ${rssiColor(device.rssi_quality)}`}>
-                            <Wifi className="w-3 h-3" />
-                            {device.rssi_quality}
-                            {device.rssi !== null && <span className="opacity-60">({device.rssi})</span>}
-                          </span>
-                        ) : (
-                          <span className="text-slate-400 text-xs">—</span>
-                        )}
-                      </div>
+                      {device.status === 'offline' ? (
+                        <span className="text-slate-400 text-xs">—</span>
+                      ) : (
+                        <div className="flex flex-col gap-1">
+                          {device.connection_type === 'wifi' ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-700 w-fit">
+                              <Wifi className="w-2.5 h-2.5" />WiFi
+                            </span>
+                          ) : device.connection_type === 'mesh' ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-700 w-fit">
+                              <Network className="w-2.5 h-2.5" />Mesh
+                            </span>
+                          ) : null}
+                          {device.rssi_quality ? (
+                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold ${rssiColor(device.rssi_quality)}`}>
+                              <Wifi className="w-3 h-3" />
+                              {device.rssi_quality}
+                              {device.rssi !== null && <span className="opacity-60">({device.rssi})</span>}
+                            </span>
+                          ) : (
+                            <span className="text-slate-400 text-xs">—</span>
+                          )}
+                        </div>
+                      )}
                     </td>
                     {/* Firmware */}
                     <td className="px-4 py-4">
