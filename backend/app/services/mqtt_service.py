@@ -649,7 +649,28 @@ async def _handle_pause(mac: str, payload_raw: bytes):
         await notify_odoo_error(mac)
 
 
-async def _handle_ota_progress(mac: str, payload_raw: bytes):
+async def _handle_identify(mac: str):
+    """
+    Processa evento de identificação física do device.
+    Publicado quando o operador segura o botão verde por 3s.
+    Faz broadcast WebSocket para o frontend piscar o card do device.
+    """
+    async with async_session_factory() as session:
+        stmt = select(ESPDevice).where(ESPDevice.mac_address == mac)
+        result = await session.execute(stmt)
+        device = result.scalars().first()
+        if not device:
+            logger.warning(f"MQTT identify: dispositivo {mac} não encontrado, descartado.")
+            return
+        device_id = str(device.id)
+        device_name = device.device_name
+
+    await ws_manager.broadcast("device_identify", {
+        "mac_address": mac,
+        "device_id": device_id,
+        "device_name": device_name,
+    })
+    logger.info(f"MQTT identify: {mac} ({device_name}) — broadcast WebSocket enviado")
     """
     Processa mensagens de progresso OTA publicadas pelo ESP32 em andon/ota/progress/{mac}.
     
@@ -860,7 +881,8 @@ async def _mqtt_loop():
                 await client.subscribe("andon/ota/progress/#")
                 await client.subscribe("andon/ota/trigger")
                 await client.subscribe("andon/restart/ack/#")
-                logger.info("MQTT: escutando tópicos andon/discovery, andon/status/#, andon/logs/#, andon/button/#, andon/state/request/#, andon/ota/progress/#, andon/ota/trigger, andon/restart/ack/#")
+                await client.subscribe("andon/identify/#")
+                logger.info("MQTT: escutando tópicos andon/discovery, andon/status/#, andon/logs/#, andon/button/#, andon/state/request/#, andon/ota/progress/#, andon/ota/trigger, andon/restart/ack/#, andon/identify/#")
 
                 async for message in client.messages:
                     topic = str(message.topic)
@@ -892,6 +914,9 @@ async def _mqtt_loop():
                     elif topic.startswith("andon/restart/ack/"):
                         mac = topic.split("/", 3)[3]
                         await _handle_restart_ack(mac, payload)
+                    elif topic.startswith("andon/identify/"):
+                        mac = topic.split("/", 2)[2]
+                        await _handle_identify(mac)
 
         except asyncio.CancelledError:
             logger.info("MQTT: serviço encerrado.")
