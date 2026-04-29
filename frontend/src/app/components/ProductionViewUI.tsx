@@ -301,7 +301,7 @@ export const ProductionViewUI: React.FC<ProductionViewUIProps> = ({
                     <input
                         value={searchTerm}
                         onChange={e => setSearchTerm(e.target.value)}
-                        placeholder="Digite o número da fabricação (ex: WH/MO/00123)..."
+                        placeholder="Digite o número da fabricação (ex: 1659 ou WH/FAB/01659)..."
                         className="w-full pl-12 pr-12 py-4 text-base font-medium bg-white border-2 border-slate-200 rounded-2xl focus:outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all placeholder:text-slate-400 shadow-sm"
                         autoFocus
                     />
