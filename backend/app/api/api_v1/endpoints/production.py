@@ -46,35 +46,38 @@ def extract_product_name(product_val: Any) -> Optional[str]:
 
 def normalize_search_query(q: str) -> str:
     """
-    Normaliza a query de busca para o formato esperado pelo Odoo (WH/MO/XXXXX).
+    Normaliza a query de busca para o formato esperado pelo Odoo (WH/FAB/XXXXX).
+
+    O prefixo real das fabricações neste Odoo é WH/FAB/, não WH/MO/.
 
     Casos tratados:
-      - "1659"       → "WH/MO/01659"  (só números → zero-pad 5 dígitos)
-      - "01659"      → "WH/MO/01659"  (já com zeros → monta caminho completo)
-      - "FAB1659"    → "WH/MO/01659"  (prefixo FAB + número)
-      - "FAB01659"   → "WH/MO/01659"  (prefixo FAB + número com zeros)
-      - "WH/MO/1659" → "WH/MO/01659"  (formato Odoo sem zero-pad)
-      - "WH/MO/01659"→ "WH/MO/01659"  (passthrough)
+      - "1659"        → "WH/FAB/01659"  (só números → zero-pad 5 dígitos)
+      - "01659"       → "WH/FAB/01659"  (já com zeros)
+      - "FAB1659"     → "WH/FAB/01659"  (prefixo FAB + número)
+      - "FAB01659"    → "WH/FAB/01659"  (prefixo FAB + número com zeros)
+      - "WH/FAB/1659" → "WH/FAB/01659"  (formato Odoo sem zero-pad)
+      - "WH/FAB/01659"→ "WH/FAB/01659"  (passthrough)
+      - "WH/MO/1659"  → "WH/FAB/01659"  (prefixo antigo → corrige)
     """
     q = q.strip()
 
-    # Já está no formato Odoo completo — normaliza zero-pad do número final
-    odoo_match = re.match(r'^(WH/MO/)(\d+)$', q, re.IGNORECASE)
+    # Formato Odoo completo com qualquer prefixo (WH/FAB/ ou WH/MO/)
+    odoo_match = re.match(r'^WH/(?:FAB|MO)/(\d+)$', q, re.IGNORECASE)
     if odoo_match:
-        num = odoo_match.group(2).lstrip("0") or "0"
-        return f"WH/MO/{int(num):05d}"
+        num = int(odoo_match.group(1))
+        return f"WH/FAB/{num:05d}"
 
     # Prefixo FAB (case-insensitive) + número
     fab_match = re.match(r'^[Ff][Aa][Bb](\d+)$', q)
     if fab_match:
         num = int(fab_match.group(1))
-        return f"WH/MO/{num:05d}"
+        return f"WH/FAB/{num:05d}"
 
     # Só números → monta o caminho completo com zero-pad
     if re.match(r'^\d+$', q):
-        return f"WH/MO/{int(q):05d}"
+        return f"WH/FAB/{int(q):05d}"
 
-    # Qualquer outro formato → passa direto (ex: busca parcial com texto)
+    # Qualquer outro formato → passa direto
     return q
 
 
@@ -191,10 +194,11 @@ async def search_mos(
     )
 
     try:
-        # Search MOs matching query, exclude cancel/done
+        # Busca MOs no Odoo — exclui apenas canceladas
+        # "done" = fabricação concluída, ainda pode precisar de ID Visual
         mo_domain = [
             ["name", "ilike", normalized_q],
-            ["state", "not in", ["cancel", "done"]],
+            ["state", "not in", ["cancel"]],
         ]
         mo_fields = ["id", "name", "product_qty", "date_start", "state", "x_studio_nome_da_obra", "product_id"]
 
