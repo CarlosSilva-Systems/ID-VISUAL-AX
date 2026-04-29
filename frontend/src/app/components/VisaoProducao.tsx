@@ -63,7 +63,11 @@ export function VisaoProducao() {
 
     // Carrega mesas do chão de fábrica (workcenters)
     api.getAndonWorkcenters()
-      .then((data: any[]) => setWorkcenters(data.map((wc: any) => ({ id: wc.id, name: wc.name }))))
+      .then((data: any[]) => {
+        const mapped = data.map((wc: any) => ({ id: wc.id, name: wc.name }));
+        mapped.sort((a, b) => a.name.localeCompare(b.name, 'pt-BR', { sensitivity: 'base' }));
+        setWorkcenters(mapped);
+      })
       .catch(console.error);
 
     // Poll history every 30s
