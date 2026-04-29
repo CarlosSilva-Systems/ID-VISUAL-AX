@@ -136,6 +136,7 @@ interface DeviceCardProps {
   syncing: string | null;
   deleting: string | null;
   restarting: string | null;
+  identifying: boolean;
   onEdit: () => void;
   onLogs: () => void;
   onSync: () => void;
@@ -148,6 +149,7 @@ const DeviceCard: React.FC<DeviceCardProps> = ({
   syncing,
   deleting,
   restarting,
+  identifying,
   onEdit,
   onLogs,
   onSync,
@@ -187,7 +189,11 @@ const DeviceCard: React.FC<DeviceCardProps> = ({
   ];
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 p-4 flex flex-col gap-3 shadow-sm">
+    <div className={`bg-white rounded-2xl border p-4 flex flex-col gap-3 shadow-sm transition-all ${
+      identifying
+        ? 'border-emerald-400 ring-2 ring-emerald-400 bg-emerald-50 animate-identify-pulse'
+        : 'border-slate-200'
+    }`}>
       {/* Header: nome + ActionMenu */}
       <div className="flex items-start justify-between gap-2">
         <div className="flex items-center gap-3 min-w-0">
@@ -233,6 +239,9 @@ export const DevicesPage: React.FC = () => {
   const [syncing, setSyncing] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [restarting, setRestarting] = useState<string | null>(null);
+  // MAC do device em modo identificação (pisca verde por 5s)
+  const [identifyingMac, setIdentifyingMac] = useState<string | null>(null);
+  const identifyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [drawerDevice, setDrawerDevice] = useState<ESPDeviceEnriched | null>(null);
   const [drawerTab, setDrawerTab] = useState<'info' | 'logs'>('info');
   const [firmwareVersions, setFirmwareVersions] = useState<FirmwareVersion[]>([]);
@@ -283,11 +292,20 @@ export const DevicesPage: React.FC = () => {
         if (relevantEvents.includes(msg.event)) {
           loadDevices();
         }
+        // Identificação física: pisca o card do device em verde por 5s
+        if (msg.event === 'device_identify' && msg.data?.mac_address) {
+          const mac: string = msg.data.mac_address;
+          setIdentifyingMac(mac);
+          toast.success(`📍 Identificando: ${msg.data.device_name || mac}`, { duration: 5000 });
+          if (identifyTimerRef.current) clearTimeout(identifyTimerRef.current);
+          identifyTimerRef.current = setTimeout(() => setIdentifyingMac(null), 5000);
+        }
       } catch { /* ignore */ }
     };
 
     return () => {
       if (ws.readyState === WebSocket.OPEN) ws.close();
+      if (identifyTimerRef.current) clearTimeout(identifyTimerRef.current);
     };
   }, [loadDevices]);
 
@@ -411,6 +429,7 @@ export const DevicesPage: React.FC = () => {
               syncing={syncing}
               deleting={deleting}
               restarting={restarting}
+              identifying={identifyingMac === device.mac_address}
               onEdit={() => openDrawer(device, 'info')}
               onLogs={() => openDrawer(device, 'logs')}
               onSync={() => handleSync(device)}
@@ -437,7 +456,14 @@ export const DevicesPage: React.FC = () => {
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {devices.map(device => (
-                  <tr key={device.id} className="hover:bg-slate-50/50 transition-colors">
+                  <tr
+                    key={device.id}
+                    className={`hover:bg-slate-50/50 transition-colors ${
+                      identifyingMac === device.mac_address
+                        ? 'animate-identify-pulse bg-emerald-50 ring-2 ring-inset ring-emerald-400'
+                        : ''
+                    }`}
+                  >
                     {/* Device */}
                     <td className="px-5 py-4">
                       <div className="flex items-center gap-3">

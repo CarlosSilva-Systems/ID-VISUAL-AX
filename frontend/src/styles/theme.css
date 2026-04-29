@@ -215,6 +215,16 @@
     background-size: 200% 100%;
     animation: shimmer 1.5s infinite;
   }
+
+  /* Animação de identificação física de device (botão verde 3s) */
+  @keyframes identify-pulse {
+    0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgb(52 211 153 / 0.5); }
+    50%       { opacity: 0.75; box-shadow: 0 0 0 8px rgb(52 211 153 / 0); }
+  }
+
+  .animate-identify-pulse {
+    animation: identify-pulse 0.8s ease-in-out infinite;
+  }
 }
 
 /* ============================================================
