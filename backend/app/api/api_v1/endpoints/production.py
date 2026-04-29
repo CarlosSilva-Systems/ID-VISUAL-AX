@@ -46,19 +46,35 @@ def extract_product_name(product_val: Any) -> Optional[str]:
 
 def normalize_search_query(q: str) -> str:
     """
-    Normaliza a query de busca para o formato esperado pelo Odoo (ex: "WH/MO/XXXXX").
+    Normaliza a query de busca para o formato esperado pelo Odoo (WH/MO/XXXXX).
 
     Casos tratados:
-      - "FAB01015"  → "WH/MO/01015"
-      - "fab01015"  → "WH/MO/01015"
-      - "01015"     → "01015"  (busca parcial por ilike)
-      - "WH/MO/01015" → "WH/MO/01015" (passthrough)
+      - "1659"       → "WH/MO/01659"  (só números → zero-pad 5 dígitos)
+      - "01659"      → "WH/MO/01659"  (já com zeros → monta caminho completo)
+      - "FAB1659"    → "WH/MO/01659"  (prefixo FAB + número)
+      - "FAB01659"   → "WH/MO/01659"  (prefixo FAB + número com zeros)
+      - "WH/MO/1659" → "WH/MO/01659"  (formato Odoo sem zero-pad)
+      - "WH/MO/01659"→ "WH/MO/01659"  (passthrough)
     """
     q = q.strip()
-    # Padrão "FABnnnnn" (case-insensitive) → converte para "WH/MO/nnnnn"
+
+    # Já está no formato Odoo completo — normaliza zero-pad do número final
+    odoo_match = re.match(r'^(WH/MO/)(\d+)$', q, re.IGNORECASE)
+    if odoo_match:
+        num = odoo_match.group(2).lstrip("0") or "0"
+        return f"WH/MO/{int(num):05d}"
+
+    # Prefixo FAB (case-insensitive) + número
     fab_match = re.match(r'^[Ff][Aa][Bb](\d+)$', q)
     if fab_match:
-        return f"WH/MO/{fab_match.group(1)}"
+        num = int(fab_match.group(1))
+        return f"WH/MO/{num:05d}"
+
+    # Só números → monta o caminho completo com zero-pad
+    if re.match(r'^\d+$', q):
+        return f"WH/MO/{int(q):05d}"
+
+    # Qualquer outro formato → passa direto (ex: busca parcial com texto)
     return q
 
 
