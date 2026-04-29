@@ -1074,6 +1074,7 @@ void checkIdentifyHold() {
 }
 
 void publishButtonEvent(const String& color) {
+    if (g_isRoot && mqttClient.connected()) {
         String topic = "andon/button/" + macAddress + "/" + color;
         if (mqttClient.publish(topic.c_str(), "PRESSED", false))
             logSerial("BUTTON: " + color + " -> MQTT " + topic);

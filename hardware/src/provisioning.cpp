@@ -102,8 +102,8 @@ bool saveCredentialsToNVS(const char* ssid, const char* password) {
 
 // Serialização de ProvisioningPayload para JSON
 bool serializeProvisioningPayload(const ProvisioningPayload& payload, char* json_out, size_t max_len) {
-    // JsonDocument é a API correta no ArduinoJson 7 (StaticJsonDocument foi removido)
-    JsonDocument doc;
+    // DynamicJsonDocument é a API correta no ArduinoJson 6 (StaticJsonDocument também funciona)
+    DynamicJsonDocument doc(256);
     
     doc["ssid"] = payload.ssid;
     doc["password"] = payload.password;
@@ -124,8 +124,8 @@ bool serializeProvisioningPayload(const ProvisioningPayload& payload, char* json
 
 // Desserialização de JSON para ProvisioningPayload
 bool deserializeProvisioningPayload(const char* json_str, ProvisioningPayload& payload_out) {
-    // JsonDocument é a API correta no ArduinoJson 7 (StaticJsonDocument foi removido)
-    JsonDocument doc;
+    // DynamicJsonDocument é a API correta no ArduinoJson 6 (StaticJsonDocument também funciona)
+    DynamicJsonDocument doc(256);
     
     DeserializationError error = deserializeJson(doc, json_str);
     
