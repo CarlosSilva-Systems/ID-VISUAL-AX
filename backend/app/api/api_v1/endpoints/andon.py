@@ -14,6 +14,7 @@ from pydantic import BaseModel, ConfigDict
 from app.api.deps import get_session, get_odoo_client
 from app.core.config import settings
 from app.models.andon import AndonStatus, AndonCall, SyncQueue
+from app.models.id_request import IDRequest, IDRequestStatus
 from app.models.manufacturing import ManufacturingOrder
 from app.services.odoo_utils import normalize_label
 from app.services.sync_service import add_to_sync_queue, process_sync_queue
