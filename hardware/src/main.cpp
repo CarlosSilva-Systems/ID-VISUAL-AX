@@ -96,6 +96,11 @@ unsigned long g_wifiLostAt = 0;   // 0 = WiFi está ok
 unsigned long g_pauseHeldSince = 0;
 #define RESET_HOLD_MS 5000UL
 
+// Identificação remota: verde segurado por 3s → publica andon/identify/{mac}
+unsigned long g_greenHeldSince = 0;
+bool g_identifySent = false;          // evita reenvio enquanto o botão está segurado
+#define IDENTIFY_HOLD_MS 3000UL
+
 // Retry WiFi em MESH_NODE: tenta reconectar periodicamente
 Timer wifiRetryTimer = {WIFI_RETRY_INTERVAL_MS, 0};
 
@@ -146,6 +151,7 @@ String createDiscoveryMessage();
 void logMQTT(const String& message);
 void processButton(ButtonState* btn);
 void checkResetCombo();
+void checkIdentifyHold();
 void publishButtonEvent(const String& color);
 void initializeGPIOs();
 void initializeWatchdog();
@@ -474,6 +480,17 @@ void onMeshMessage(uint32_t from, String& msg) {
         if (strlen(mac) > 0 && strlen(message) > 0) {
             String topic = "andon/logs/" + String(mac);
             mqttClient.publish(topic.c_str(), message, false);
+        }
+    }
+
+    // Nó raiz republica identify de nós folha no MQTT
+    // Folhas enviam {type:"identify", mac:"..."}
+    else if (strcmp(type, "identify") == 0 && g_isRoot && mqttClient.connected()) {
+        const char* mac = doc["mac"] | "";
+        if (strlen(mac) > 0) {
+            String topic = "andon/identify/" + String(mac);
+            mqttClient.publish(topic.c_str(), "IDENTIFY", false);
+            logSerial("MESH->MQTT identify: " + String(mac));
         }
     }
 }
@@ -1012,8 +1029,51 @@ void checkResetCombo() {
     }
 }
 
+// Detecta hold do botão verde por 3s → publica andon/identify/{mac}
+// Funciona independente do estado Andon e do vínculo com mesa.
+// Feedback visual: pisca verde 3x rápido ao confirmar o envio.
+void checkIdentifyHold() {
+    bool greenDown = (digitalRead(BTN_VERDE) == LOW);
+    unsigned long now = millis();
+
+    if (greenDown) {
+        if (g_greenHeldSince == 0) {
+            g_greenHeldSince = now;
+            g_identifySent   = false;
+        } else if (!g_identifySent && (now - g_greenHeldSince >= IDENTIFY_HOLD_MS)) {
+            g_identifySent = true;
+
+            // Publica o evento de identificação
+            if (g_isRoot && mqttClient.connected()) {
+                String topic = "andon/identify/" + macAddress;
+                mqttClient.publish(topic.c_str(), "IDENTIFY", false);
+                logSerial("IDENTIFY: publicado via MQTT -> " + topic);
+            } else if (g_meshStarted) {
+                StaticJsonDocument<128> doc;
+                doc["type"] = "identify";
+                doc["mac"]  = macAddress;
+                String msg; serializeJson(doc, msg);
+                g_mesh.sendBroadcast(msg);
+                logSerial("IDENTIFY: publicado via MESH broadcast");
+            }
+
+            // Feedback visual: pisca verde 3x rápido (não-bloqueante via delay curto)
+            for (int i = 0; i < 3; i++) {
+                digitalWrite(LED_VERDE_PIN, HIGH);
+                delay(80);
+                digitalWrite(LED_VERDE_PIN, LOW);
+                delay(80);
+            }
+            // Restaura o LED verde conforme estado Andon atual
+            updateAndonLEDs();
+        }
+    } else {
+        g_greenHeldSince = 0;
+        g_identifySent   = false;
+    }
+}
+
 void publishButtonEvent(const String& color) {
-    if (g_isRoot && mqttClient.connected()) {
         String topic = "andon/button/" + macAddress + "/" + color;
         if (mqttClient.publish(topic.c_str(), "PRESSED", false))
             logSerial("BUTTON: " + color + " -> MQTT " + topic);
@@ -1127,6 +1187,7 @@ void setup() {
 void loop() {
     esp_task_wdt_reset();
     checkResetCombo();
+    checkIdentifyHold();
     updateOnboardLED();
 
     // Blink de aguardando broker: vermelho e amarelo alternados quando sem MQTT
