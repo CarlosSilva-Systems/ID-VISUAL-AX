@@ -14,6 +14,11 @@ interface MOResult {
   has_id_activity: boolean;
 }
 
+interface WorkcenterOption {
+  id: number;
+  name: string;
+}
+
 interface TaskOption {
   code: string;
   label: string;
@@ -39,6 +44,9 @@ export function VisaoProducao() {
   const [notes, setNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
+  // Workcenters (mesas do chão de fábrica)
+  const [workcenters, setWorkcenters] = useState<WorkcenterOption[]>([]);
+
   // Blueprints
   const [blueprints, setBluePrints] = useState<Blueprints | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -52,6 +60,11 @@ export function VisaoProducao() {
   useEffect(() => {
     api.getBlueprints().then(setBluePrints).catch(console.error);
     fetchHistory();
+
+    // Carrega mesas do chão de fábrica (workcenters)
+    api.getAndonWorkcenters()
+      .then((data: any[]) => setWorkcenters(data.map((wc: any) => ({ id: wc.id, name: wc.name }))))
+      .catch(console.error);
 
     // Poll history every 30s
     const interval = setInterval(fetchHistory, 30000);
@@ -189,6 +202,7 @@ export function VisaoProducao() {
       setSelectedMO(null);
       setPanelType(null);
       setSelectedTypes(new Set());
+      setRequesterName('');
       setNotes('');
       setSearch('');
       setResults([]);
@@ -210,6 +224,7 @@ export function VisaoProducao() {
       hasSearched={hasSearched}
       selectedMO={selectedMO}
       setSelectedMO={setSelectedMO}
+      workcenters={workcenters}
       requesterName={requesterName}
       setRequesterName={setRequesterName}
       panelType={panelType}

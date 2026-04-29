@@ -37,6 +37,11 @@ import { useBreakpoint } from "@/hooks/useBreakpoint";
 
 // ── Types ─────────────────────────────────────────────────────────
 
+interface WorkcenterOption {
+    id: number;
+    name: string;
+}
+
 interface MOResult {
     odoo_mo_id: number;
     mo_number: string;
@@ -92,6 +97,7 @@ interface ProductionViewUIProps {
     hasSearched: boolean;
     selectedMO: MOResult | null;
     setSelectedMO: (mo: MOResult | null) => void;
+    workcenters: WorkcenterOption[];
     requesterName: string;
     setRequesterName: (val: string) => void;
     panelType: string | null;
@@ -254,6 +260,7 @@ export const ProductionViewUI: React.FC<ProductionViewUIProps> = ({
     hasSearched,
     selectedMO,
     setSelectedMO,
+    workcenters,
     requesterName,
     setRequesterName,
     panelType,
@@ -272,7 +279,7 @@ export const ProductionViewUI: React.FC<ProductionViewUIProps> = ({
         ? (blueprints.panel_types[panelType] || []).filter(t => t.code !== "QA_FINAL")
         : [];
 
-    const canSubmit = !!selectedMO && !!panelType && requesterName.trim().length >= 2 && selectedTypes.size > 0;
+    const canSubmit = !!selectedMO && !!panelType && !!requesterName && selectedTypes.size > 0;
 
     const { openDocs, isLoading: docsLoading, DocViewer } = useDocViewer();
     const bp = useBreakpoint();
@@ -495,6 +502,7 @@ export const ProductionViewUI: React.FC<ProductionViewUIProps> = ({
                 >
                     <RequestForm
                         selectedMO={selectedMO}
+                        workcenters={workcenters}
                         requesterName={requesterName}
                         setRequesterName={setRequesterName}
                         panelType={panelType}
@@ -528,6 +536,7 @@ export const ProductionViewUI: React.FC<ProductionViewUIProps> = ({
                             >
                                 <RequestForm
                                     selectedMO={selectedMO}
+                                    workcenters={workcenters}
                                     requesterName={requesterName}
                                     setRequesterName={setRequesterName}
                                     panelType={panelType}
@@ -570,6 +579,7 @@ export const ProductionViewUI: React.FC<ProductionViewUIProps> = ({
 
 interface RequestFormProps {
     selectedMO: MOResult | null;
+    workcenters: WorkcenterOption[];
     requesterName: string;
     setRequesterName: (v: string) => void;
     panelType: string | null;
@@ -588,6 +598,7 @@ interface RequestFormProps {
 
 function RequestForm({
     selectedMO,
+    workcenters,
     requesterName,
     setRequesterName,
     panelType,
@@ -641,12 +652,38 @@ function RequestForm({
                 <label className="text-xs font-black text-slate-400 uppercase tracking-widest">
                     Quem está solicitando? *
                 </label>
-                <Input
-                    placeholder="Seu nome completo"
-                    value={requesterName}
-                    onChange={e => setRequesterName(e.target.value)}
-                    className="h-12 font-bold px-4"
-                />
+                {workcenters.length === 0 ? (
+                    <div className="h-12 flex items-center px-4 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-400 font-medium">
+                        <Loader2 size={14} className="animate-spin mr-2 shrink-0" />
+                        Carregando mesas...
+                    </div>
+                ) : (
+                    <div className="relative">
+                        <select
+                            value={requesterName}
+                            onChange={e => setRequesterName(e.target.value)}
+                            className={cn(
+                                "w-full h-12 pl-4 pr-10 rounded-xl border-2 font-bold text-sm appearance-none transition-all outline-none cursor-pointer",
+                                requesterName
+                                    ? "border-blue-500 bg-blue-50 text-blue-800 ring-2 ring-blue-100"
+                                    : "border-slate-200 bg-white text-slate-500 hover:border-blue-300"
+                            )}
+                        >
+                            <option value="">Selecione a mesa...</option>
+                            {workcenters.map(wc => (
+                                <option key={wc.id} value={wc.name}>
+                                    {wc.name}
+                                </option>
+                            ))}
+                        </select>
+                        {/* Ícone de seta customizado */}
+                        <div className="pointer-events-none absolute inset-y-0 right-3 flex items-center">
+                            <svg className={cn("w-4 h-4 transition-colors", requesterName ? "text-blue-500" : "text-slate-400")} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                            </svg>
+                        </div>
+                    </div>
+                )}
             </div>
 
             {/* Tipo do quadro */}
