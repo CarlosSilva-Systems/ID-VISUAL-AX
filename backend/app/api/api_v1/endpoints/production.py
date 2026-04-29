@@ -7,13 +7,14 @@ POST /production/requests/{id}/nao-consta — registra IDs que nao chegaram ao o
 from __future__ import annotations
 
 import logging
+import re
 import uuid
-from datetime import datetime, timezone, timedelta
+from datetime import date, datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, ConfigDict
-from sqlmodel import select, text
+from sqlmodel import select, text, or_
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.api import deps
@@ -27,6 +28,63 @@ from app.services.status_mappers import map_mrp_state
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+# ── Helpers de módulo ─────────────────────────────────────────────
+
+def extract_product_name(product_val: Any) -> Optional[str]:
+    """Extrai o nome do produto do campo product_id do Odoo, removendo código AX entre colchetes."""
+    if not product_val or product_val is False:
+        return None
+    if isinstance(product_val, (list, tuple)) and len(product_val) >= 2:
+        name = str(product_val[1])
+        # Remove código AX entre colchetes (ex: "[AX0003578]")
+        name = re.sub(r'\[AX\d+\]', '', name).strip()
+        return name if name else None
+    return None
+
+
+def normalize_search_query(q: str) -> str:
+    """
+    Normaliza a query de busca para o formato esperado pelo Odoo (ex: "WH/MO/XXXXX").
+
+    Casos tratados:
+      - "FAB01015"  → "WH/MO/01015"
+      - "fab01015"  → "WH/MO/01015"
+      - "01015"     → "01015"  (busca parcial por ilike)
+      - "WH/MO/01015" → "WH/MO/01015" (passthrough)
+    """
+    q = q.strip()
+    # Padrão "FABnnnnn" (case-insensitive) → converte para "WH/MO/nnnnn"
+    fab_match = re.match(r'^[Ff][Aa][Bb](\d+)$', q)
+    if fab_match:
+        return f"WH/MO/{fab_match.group(1)}"
+    return q
+
+
+def get_business_day_cutoff() -> datetime:
+    """
+    Retorna o início do dia útil anterior (00:00 UTC).
+
+    Regra:
+      - Segunda-feira → retorna sexta-feira anterior (pula sábado e domingo)
+      - Qualquer outro dia → retorna ontem
+    """
+    today = date.today()
+    weekday = today.weekday()  # 0=segunda, 4=sexta, 5=sábado, 6=domingo
+
+    if weekday == 0:  # Segunda-feira → volta para sexta
+        delta = 3
+    elif weekday == 6:  # Domingo (não deveria ocorrer, mas por segurança)
+        delta = 2
+    elif weekday == 5:  # Sábado (idem)
+        delta = 1
+    else:
+        delta = 1  # Terça a sexta → ontem
+
+    cutoff_date = today - timedelta(days=delta)
+    # Início do dia (00:00:00) em UTC naive (padrão do banco)
+    return datetime(cutoff_date.year, cutoff_date.month, cutoff_date.day, 0, 0, 0)
 
 # ── Panel Blueprints (Poka-yoke) ─────────────────────────────────
 ALL_TASK_CODES = [
@@ -99,10 +157,14 @@ async def search_mos(
 ) -> Any:
     """
     Search Odoo MOs by fabrication number. Filters out cancel/done.
+    Normalizes query: "FAB01015" → "WH/MO/01015", "01015" → ilike "%01015%".
     Returns has_id_activity flag per MO.
     """
     if not q or len(q) < 2:
         raise HTTPException(status_code=400, detail="Query must be at least 2 characters")
+
+    # Normaliza a query antes de enviar ao Odoo
+    normalized_q = normalize_search_query(q)
 
     client = OdooClient(
         url=settings.ODOO_URL,
@@ -115,7 +177,7 @@ async def search_mos(
     try:
         # Search MOs matching query, exclude cancel/done
         mo_domain = [
-            ["name", "ilike", q],
+            ["name", "ilike", normalized_q],
             ["state", "not in", ["cancel", "done"]],
         ]
         mo_fields = ["id", "name", "product_qty", "date_start", "state", "x_studio_nome_da_obra", "product_id"]
@@ -344,18 +406,6 @@ async def create_manual_request(
         except (ValueError, TypeError):
             return None
 
-    def extract_product_name(product_val: Any) -> Optional[str]:
-        """Extrai o nome do produto do campo product_id, removendo código AX entre colchetes."""
-        if not product_val or product_val is False:
-            return None
-        if isinstance(product_val, (list, tuple)) and len(product_val) >= 2:
-            name = str(product_val[1])
-            # Remove código AX entre colchetes (ex: "[AX0003578]")
-            import re
-            name = re.sub(r'\[AX\d+\]', '', name).strip()
-            return name if name else None
-        return None
-
     try:
         # ── 4. Upsert ManufacturingOrder locally ──
         if existing_mo:
@@ -479,6 +529,7 @@ async def get_panel_blueprints() -> Any:
 class ProductionRequestResponse(BaseModel):
     id: uuid.UUID
     mo_number: str
+    product_name: Optional[str] = None
     package_code: str
     created_at: datetime
     status: str
@@ -487,6 +538,7 @@ class ProductionRequestResponse(BaseModel):
     obra: Optional[str] = None
     product_qty: float = 0
     priority: str = "normal"
+    nao_consta_em: Optional[datetime] = None
 
 
 @router.get("/requests", response_model=List[ProductionRequestResponse])
@@ -496,37 +548,53 @@ async def get_production_requests(
     session: AsyncSession = Depends(deps.get_session),
 ) -> Any:
     """
-    Get manual requests history for the production view.
-    Returns Open, In Progress, and Done requests.
+    Retorna o histórico de solicitações manuais da produção.
+
+    Regra de exibição para pedidos concluídos (status "done"):
+      - Exibe apenas pedidos concluídos dentro do último dia útil.
+      - Segunda-feira: exibe desde sexta-feira anterior (pula fim de semana).
+      - Demais dias: exibe desde ontem.
+    Pedidos em aberto (waiting / in_progress) são sempre exibidos.
     """
+    business_day_cutoff = get_business_day_cutoff()
+
     stmt = (
         select(IDRequest, ManufacturingOrder)
         .join(ManufacturingOrder, IDRequest.mo_id == ManufacturingOrder.id)
         .where(IDRequest.source == "manual")
+        .where(
+            or_(
+                # Pedidos abertos: sempre visíveis
+                IDRequest.status.in_(["nova", "triagem", "em_lote", "em_progresso", "bloqueada"]),
+                # Pedidos concluídos: apenas dentro do último dia útil
+                IDRequest.created_at >= business_day_cutoff,
+            )
+        )
         .order_by(IDRequest.created_at.desc())
         .offset(offset)
         .limit(limit)
     )
     results = await session.exec(stmt)
-    
+
     response = []
     for req, mo in results:
-        # Determine strict production status
+        # Determina production_status
         p_status = "waiting"
         s = req.status
         if isinstance(s, IDRequestStatus):
             s = s.value
-            
+
         if s in ["nova", "triagem"]:
             p_status = "waiting"
         elif s in ["em_lote", "em_progresso", "bloqueada"]:
-             p_status = "in_progress"
+            p_status = "in_progress"
         elif s in ["concluida", "entregue"]:
-             p_status = "done"
-        
+            p_status = "done"
+
         response.append(ProductionRequestResponse(
             id=req.id,
             mo_number=mo.name,
+            product_name=mo.product_name,
             package_code=req.package_code,
             created_at=req.created_at,
             status=s,
@@ -534,9 +602,10 @@ async def get_production_requests(
             notes=req.notes,
             obra=mo.x_studio_nome_da_obra or "Sem Obra",
             product_qty=mo.product_qty,
-            priority=req.priority or "normal"
+            priority=req.priority or "normal",
+            nao_consta_em=req.nao_consta_em,
         ))
-        
+
     return response
 
 
