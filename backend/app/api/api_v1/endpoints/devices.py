@@ -554,7 +554,25 @@ async def trigger_ota_batch(
     }
 
 
-# ── POST /devices/{device_id}/restart ────────────────────────────────────────
+# ── POST /devices/{device_id}/identify ───────────────────────────────────────
+
+@router.post("/{device_id}/identify", status_code=202)
+async def identify_device(
+    device_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(require_current_user),
+):
+    """Dispara o evento de identificação visual no painel (pisca verde por 5s).
+    Útil para identificar um device sem precisar acionar o botão físico."""
+    device = await _get_device_by_id(session, device_id)
+
+    await ws_manager.broadcast("device_identify", {
+        "mac_address": device.mac_address,
+        "device_id": str(device.id),
+        "device_name": device.device_name,
+    })
+    logger.info(f"IDENTIFY: broadcast manual para {device.mac_address} por {current_user.username}")
+    return {"message": f"Identificação disparada para {device.device_name}"}
 
 @router.post("/{device_id}/restart", status_code=202)
 async def restart_device(

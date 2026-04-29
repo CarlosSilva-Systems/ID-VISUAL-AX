@@ -621,6 +621,10 @@ export const api = {
         return api.post(`/devices/${encodeURIComponent(deviceId)}/restart`, {});
     },
 
+    identifyDevice: async (deviceId: string) => {
+        return api.post(`/devices/${encodeURIComponent(deviceId)}/identify`, {});
+    },
+
     deleteDevice: async (deviceId: string) => {
         return api.delete(`/devices/${encodeURIComponent(deviceId)}`);
     },

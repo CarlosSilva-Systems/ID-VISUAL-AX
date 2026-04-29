@@ -14,6 +14,7 @@ import {
   CheckCircle2,
   XCircle,
   Loader2,
+  Locate,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../../services/api';
@@ -140,6 +141,7 @@ interface DeviceCardProps {
   onEdit: () => void;
   onLogs: () => void;
   onSync: () => void;
+  onIdentify: () => void;
   onRestart: () => void;
   onDelete: () => void;
 }
@@ -153,6 +155,7 @@ const DeviceCard: React.FC<DeviceCardProps> = ({
   onEdit,
   onLogs,
   onSync,
+  onIdentify,
   onRestart,
   onDelete,
 }) => {
@@ -166,6 +169,11 @@ const DeviceCard: React.FC<DeviceCardProps> = ({
       label: 'Ver Logs',
       icon: ClipboardList,
       onClick: onLogs,
+    },
+    {
+      label: 'Identificar',
+      icon: Locate,
+      onClick: onIdentify,
     },
     {
       label: syncing === device.id ? 'Sincronizando…' : 'Sincronizar',
@@ -189,11 +197,15 @@ const DeviceCard: React.FC<DeviceCardProps> = ({
   ];
 
   return (
-    <div className={`bg-white rounded-2xl border p-4 flex flex-col gap-3 shadow-sm transition-all ${
-      identifying
-        ? 'border-emerald-400 ring-2 ring-emerald-400 bg-emerald-50 animate-identify-pulse'
-        : 'border-slate-200'
-    }`}>
+    <div
+      className="bg-white rounded-2xl border p-4 flex flex-col gap-3 shadow-sm transition-all"
+      style={identifying ? {
+        backgroundColor: '#ecfdf5',
+        borderColor: '#34d399',
+        outline: '2px solid #34d399',
+        animation: 'identify-pulse 0.7s ease-in-out infinite',
+      } : undefined}
+    >
       {/* Header: nome + ActionMenu */}
       <div className="flex items-start justify-between gap-2">
         <div className="flex items-center gap-3 min-w-0">
@@ -309,8 +321,20 @@ export const DevicesPage: React.FC = () => {
     };
   }, [loadDevices]);
 
+  const handleIdentify = async (device: ESPDeviceEnriched) => {
+    try {
+      await api.identifyDevice(device.id);
+      // O efeito visual chega via WebSocket — não precisa setar estado aqui
+    } catch {
+      // Fallback: aciona localmente se o backend falhar
+      setIdentifyingMac(device.mac_address);
+      toast.success(`📍 Identificando: ${device.device_name}`, { duration: 5000 });
+      if (identifyTimerRef.current) clearTimeout(identifyTimerRef.current);
+      identifyTimerRef.current = setTimeout(() => setIdentifyingMac(null), 5000);
+    }
+  };
+
   const handleSync = async (device: ESPDeviceEnriched) => {
-    setSyncing(device.id);
     try {
       await api.syncDevice(device.id);
       toast.success(`Sync solicitado para ${device.device_name}`);
@@ -384,8 +408,7 @@ export const DevicesPage: React.FC = () => {
         >
           <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           Atualizar
-        </button>
-      </div>
+        </button>      </div>
 
       {/* Summary Cards */}
       <SummaryCards devices={devices} />
@@ -433,6 +456,7 @@ export const DevicesPage: React.FC = () => {
               onEdit={() => openDrawer(device, 'info')}
               onLogs={() => openDrawer(device, 'logs')}
               onSync={() => handleSync(device)}
+              onIdentify={() => handleIdentify(device)}
               onRestart={() => setConfirmRestart({ isOpen: true, payload: device })}
               onDelete={() => setConfirmDelete({ isOpen: true, payload: device })}
             />
@@ -458,11 +482,13 @@ export const DevicesPage: React.FC = () => {
                 {devices.map(device => (
                   <tr
                     key={device.id}
-                    className={`hover:bg-slate-50/50 transition-colors ${
-                      identifyingMac === device.mac_address
-                        ? 'animate-identify-pulse bg-emerald-50 ring-2 ring-inset ring-emerald-400'
-                        : ''
-                    }`}
+                    className="hover:bg-slate-50/50 transition-all"
+                    style={identifyingMac === device.mac_address ? {
+                      backgroundColor: '#ecfdf5',
+                      outline: '2px solid #34d399',
+                      outlineOffset: '-2px',
+                      animation: 'identify-pulse 0.7s ease-in-out infinite',
+                    } : undefined}
                   >
                     {/* Device */}
                     <td className="px-5 py-4">
@@ -549,6 +575,13 @@ export const DevicesPage: React.FC = () => {
                           className="p-2 rounded-lg text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 transition-colors disabled:opacity-40"
                         >
                           <RotateCcw className={`w-4 h-4 ${syncing === device.id ? 'animate-spin' : ''}`} />
+                        </button>
+                        <button
+                          onClick={() => handleIdentify(device)}
+                          title="Identificar (pisca na lista)"
+                          className="p-2 rounded-lg text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 transition-colors"
+                        >
+                          <Locate className="w-4 h-4" />
                         </button>
                         <button
                           onClick={() => setConfirmRestart({ isOpen: true, payload: device })}
