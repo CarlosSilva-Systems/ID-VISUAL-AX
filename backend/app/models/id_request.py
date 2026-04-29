@@ -37,6 +37,9 @@ class IDRequest(SQLModel, table=True):
     
     id: Optional[uuid.UUID] = Field(default_factory=uuid.uuid4, primary_key=True)
     mo_id: uuid.UUID = Field(foreign_key="manufacturing_order.id", index=True)
+    # odoo_mo_id: referência direta ao Odoo (int), elimina dependência da FK local
+    # Permite futura remoção da tabela manufacturing_order sem quebrar queries de analytics.
+    odoo_mo_id: Optional[int] = Field(default=None, index=True)
     batch_id: Optional[uuid.UUID] = Field(default=None, foreign_key="batch.id", index=True)
     # Usando str para evitar LookupError intermitente no SQLAlchemy/SQLite
     package_code: str = Field(default=PackageType.COMANDO.value, index=True)

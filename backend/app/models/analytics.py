@@ -19,6 +19,8 @@ class FabricacaoBlock(SQLModel, table=True):
 
     id: Optional[uuid.UUID] = Field(default_factory=uuid.uuid4, primary_key=True)
     mo_id: uuid.UUID = Field(foreign_key="manufacturing_order.id", index=True)
+    # odoo_mo_id: referência direta ao Odoo para desacoplar da FK local
+    odoo_mo_id: Optional[int] = Field(default=None, index=True)
     id_visual_id: Optional[uuid.UUID] = Field(default=None, foreign_key="id_request.id", index=True)
 
     motivo: Optional[str] = Field(default=MotivoParada.AGUARDANDO_ID_VISUAL.value, index=True)

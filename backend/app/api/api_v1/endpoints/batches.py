@@ -546,7 +546,7 @@ async def create_batch(
             continue
 
         # Criar novo IDRequest
-        new_req = IDRequest(mo_id=local_mo.id, batch_id=new_batch.id, status="nova")
+        new_req = IDRequest(mo_id=local_mo.id, odoo_mo_id=mo_data["id"], batch_id=new_batch.id, status="nova")
         session.add(new_req)
         await session.commit()
         await session.refresh(new_req)
@@ -930,7 +930,7 @@ async def add_items_to_batch(
             continue
 
         # Criar novo IDRequest
-        new_req = IDRequest(mo_id=local_mo.id, batch_id=batch_id, status="nova")
+        new_req = IDRequest(mo_id=local_mo.id, odoo_mo_id=mo_data["id"], batch_id=batch_id, status="nova")
         session.add(new_req)
         await session.commit()
         await session.refresh(new_req)

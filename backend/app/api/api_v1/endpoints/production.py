@@ -403,6 +403,7 @@ async def create_manual_request(
         
         id_request = IDRequest(
             mo_id=mo.id,
+            odoo_mo_id=odoo_mo['id'],  # Referência direta ao Odoo para desacoplamento gradual
             package_code=payload.panel_type if payload.panel_type != "custom" else "personalizado",
             status=IDRequestStatus.NOVA,
             priority="urgente",
