@@ -83,7 +83,15 @@ class TriggerOTAResponse(BaseModel):
     """Response do endpoint trigger."""
     message: str
     device_count: int
+    root_device_count: int = 0
+    mesh_device_count: int = 0
     target_version: str
+
+
+class CancelOTAResponse(BaseModel):
+    """Response do endpoint cancel."""
+    message: str
+    cancelled_count: int
 
 
 class DeviceOTAStatus(BaseModel):
@@ -98,6 +106,8 @@ class DeviceOTAStatus(BaseModel):
     error_message: Optional[str]
     started_at: Optional[datetime]
     completed_at: Optional[datetime]
+    is_root: bool = False
+    connection_type: str = "mesh"
 
 
 class OTAStatusResponse(BaseModel):

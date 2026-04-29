@@ -64,6 +64,27 @@ async def lifespan(app: FastAPI):
     start_device_monitor()
     logger.info("✓ Device monitor started")
     
+    # Iniciar monitor de timeout OTA
+    async def ota_timeout_monitor():
+        """Background task que verifica dispositivos OTA travados a cada 60s."""
+        from app.db.session import async_session_factory
+        from app.services.ota_service import OTAService
+        while True:
+            try:
+                await asyncio.sleep(60)
+                async with async_session_factory() as session:
+                    ota_service = OTAService(session)
+                    timed_out = await ota_service.mark_timed_out_devices(timeout_minutes=10)
+                    if timed_out > 0:
+                        logger.warning(f"OTA timeout monitor: {timed_out} dispositivo(s) marcado(s) como timeout")
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"OTA timeout monitor: erro — {e}")
+    
+    ota_timeout_task = asyncio.create_task(ota_timeout_monitor())
+    logger.info("✓ OTA timeout monitor started")
+    
     # Event Loop Watchdog
     async def loop_watchdog():
         logger.info("Watchdog started")
@@ -87,6 +108,11 @@ async def lifespan(app: FastAPI):
     stop_mqtt_service()
     from app.services.device_monitor_service import stop_device_monitor
     stop_device_monitor()
+    ota_timeout_task.cancel()
+    try:
+        await ota_timeout_task
+    except asyncio.CancelledError:
+        pass
     watchdog_task.cancel()
     try:
         await watchdog_task

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   ArrowLeft,
   CheckCircle,
@@ -6,7 +6,10 @@ import {
   Loader2,
   ChevronDown,
   Info,
-  ChevronRight
+  ChevronRight,
+  Wifi,
+  Network,
+  XCircle
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../../services/api';
@@ -31,6 +34,8 @@ interface DeviceStatus {
   error_message: string | null;
   started_at: string | null;
   completed_at: string | null;
+  is_root: boolean;
+  connection_type: string;
 }
 
 interface OTAProgressDashboardProps {
@@ -43,10 +48,11 @@ export function OTAProgressDashboard({ onClose }: OTAProgressDashboardProps) {
   const [devices, setDevices] = useState<DeviceStatus[]>([]);
   const [targetVersion, setTargetVersion] = useState<string>('');
   const [loading, setLoading] = useState(true);
-  const [gatewaysExpanded, setGatewaysExpanded] = useState(true);
-  const [nodesExpanded, setNodesExpanded] = useState(true);
-  const [showAllGateways, setShowAllGateways] = useState(false);
-  const [showAllNodes, setShowAllNodes] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
+  const [rootExpanded, setRootExpanded] = useState(true);
+  const [meshExpanded, setMeshExpanded] = useState(true);
+  const [showAllRoot, setShowAllRoot] = useState(false);
+  const [showAllMesh, setShowAllMesh] = useState(false);
 
   const bp = useBreakpoint();
   const isMobile = bp === 'mobile' || bp === 'sm';
@@ -54,10 +60,7 @@ export function OTAProgressDashboard({ onClose }: OTAProgressDashboardProps) {
   useEffect(() => {
     fetchOTAStatus();
 
-    // TODO: Subscribe to WebSocket events for real-time updates
-    // This will be implemented when WebSocket integration is ready
-
-    // For now, poll every 5 seconds
+    // TODO: Substituir por WebSocket quando integração estiver pronta
     const interval = setInterval(fetchOTAStatus, 5000);
     return () => clearInterval(interval);
   }, []);
@@ -67,7 +70,6 @@ export function OTAProgressDashboard({ onClose }: OTAProgressDashboardProps) {
       const status = await api.getOTAStatus();
       setDevices(status.devices || []);
 
-      // Get target version from first device with target_version
       const deviceWithTarget = status.devices?.find((d: DeviceStatus) => d.target_version);
       if (deviceWithTarget) {
         setTargetVersion(deviceWithTarget.target_version || '');
@@ -81,6 +83,22 @@ export function OTAProgressDashboard({ onClose }: OTAProgressDashboardProps) {
     }
   };
 
+  const handleCancel = async () => {
+    if (!confirm('Cancelar a atualização OTA? Dispositivos que já iniciaram o download podem continuar.')) return;
+    
+    setCancelling(true);
+    try {
+      const result = await api.post('/ota/cancel', {});
+      toast.success(result.message);
+      await fetchOTAStatus();
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Erro desconhecido';
+      toast.error('Erro ao cancelar: ' + message);
+    } finally {
+      setCancelling(false);
+    }
+  };
+
   const stats = useMemo(() => ({
     completed: devices.filter(d => d.status === 'success').length,
     inProgress: devices.filter(d => ['downloading', 'installing'].includes(d.status)).length,
@@ -88,14 +106,15 @@ export function OTAProgressDashboard({ onClose }: OTAProgressDashboardProps) {
     total: devices.length
   }), [devices]);
 
-  // Separate gateways and nodes
-  const gateways = devices.filter(d => d.device_name.toLowerCase().includes('gateway'));
-  const nodes = devices.filter(d => !d.device_name.toLowerCase().includes('gateway'));
+  // Separar por tipo de conexão usando is_root e connection_type (não por nome)
+  const rootDevices = devices.filter(d => d.is_root || d.connection_type === 'wifi');
+  const meshDevices = devices.filter(d => !d.is_root && d.connection_type !== 'wifi');
 
-  const visibleGateways = showAllGateways ? gateways : gateways.slice(0, SHOW_INITIAL);
-  const visibleNodes = showAllNodes ? nodes : nodes.slice(0, SHOW_INITIAL);
+  const visibleRoot = showAllRoot ? rootDevices : rootDevices.slice(0, SHOW_INITIAL);
+  const visibleMesh = showAllMesh ? meshDevices : meshDevices.slice(0, SHOW_INITIAL);
 
   const allComplete = stats.inProgress === 0 && stats.total > 0;
+  const hasActiveUpdates = stats.inProgress > 0;
 
   if (loading) {
     return (
@@ -130,6 +149,22 @@ export function OTAProgressDashboard({ onClose }: OTAProgressDashboardProps) {
               </p>
             )}
           </div>
+
+          {/* Botão de cancelamento — visível apenas quando há atualizações ativas */}
+          {hasActiveUpdates && (
+            <button
+              onClick={handleCancel}
+              disabled={cancelling}
+              className="flex items-center gap-2 px-4 py-2.5 bg-red-100 text-red-700 border border-red-200 rounded-xl font-bold text-sm hover:bg-red-200 transition-all active:scale-95 disabled:opacity-50"
+            >
+              {cancelling ? (
+                <Loader2 className="animate-spin" size={16} />
+              ) : (
+                <XCircle size={16} />
+              )}
+              Cancelar Atualização
+            </button>
+          )}
         </div>
 
         {/* Stats Summary — 2 cols mobile, 4 cols md+ */}
@@ -191,37 +226,38 @@ export function OTAProgressDashboard({ onClose }: OTAProgressDashboardProps) {
           </div>
         </div>
 
-        {/* Gateways Section */}
-        {gateways.length > 0 && (
+        {/* Nós Raiz (WiFi direto) */}
+        {rootDevices.length > 0 && (
           <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
             <button
-              onClick={() => setGatewaysExpanded(!gatewaysExpanded)}
+              onClick={() => setRootExpanded(!rootExpanded)}
               className="w-full flex items-center justify-between p-6 hover:bg-slate-50 transition-colors"
             >
               <h2 className="font-bold text-slate-800 flex items-center gap-2">
-                Gateways Mesh ({gateways.length})
+                <Wifi size={18} className="text-blue-500" />
+                Nós Raiz — WiFi Direto ({rootDevices.length})
               </h2>
               <ChevronDown
                 className={cn(
                   "text-slate-400 transition-transform",
-                  gatewaysExpanded && "rotate-180"
+                  rootExpanded && "rotate-180"
                 )}
                 size={20}
               />
             </button>
-            {gatewaysExpanded && (
+            {rootExpanded && (
               <div className="border-t border-slate-100 divide-y divide-slate-50">
-                {visibleGateways.map(device => (
+                {visibleRoot.map(device => (
                   <DeviceProgressItem key={device.device_id} device={device} isMobile={isMobile} />
                 ))}
-                {gateways.length > SHOW_INITIAL && !showAllGateways && (
+                {rootDevices.length > SHOW_INITIAL && !showAllRoot && (
                   <div className="p-4 flex justify-center">
                     <button
-                      onClick={() => setShowAllGateways(true)}
+                      onClick={() => setShowAllRoot(true)}
                       className="flex items-center gap-2 px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold text-sm transition-all active:scale-95"
                     >
                       <ChevronRight size={16} />
-                      Ver mais {gateways.length - SHOW_INITIAL} dispositivos
+                      Ver mais {rootDevices.length - SHOW_INITIAL} dispositivos
                     </button>
                   </div>
                 )}
@@ -230,37 +266,38 @@ export function OTAProgressDashboard({ onClose }: OTAProgressDashboardProps) {
           </div>
         )}
 
-        {/* Nodes Section */}
-        {nodes.length > 0 && (
+        {/* Nós Mesh */}
+        {meshDevices.length > 0 && (
           <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
             <button
-              onClick={() => setNodesExpanded(!nodesExpanded)}
+              onClick={() => setMeshExpanded(!meshExpanded)}
               className="w-full flex items-center justify-between p-6 hover:bg-slate-50 transition-colors"
             >
               <h2 className="font-bold text-slate-800 flex items-center gap-2">
-                Nós Mesh ({nodes.length})
+                <Network size={18} className="text-purple-500" />
+                Nós Mesh ({meshDevices.length})
               </h2>
               <ChevronDown
                 className={cn(
                   "text-slate-400 transition-transform",
-                  nodesExpanded && "rotate-180"
+                  meshExpanded && "rotate-180"
                 )}
                 size={20}
               />
             </button>
-            {nodesExpanded && (
+            {meshExpanded && (
               <div className="border-t border-slate-100 divide-y divide-slate-50">
-                {visibleNodes.map(device => (
+                {visibleMesh.map(device => (
                   <DeviceProgressItem key={device.device_id} device={device} isMobile={isMobile} />
                 ))}
-                {nodes.length > SHOW_INITIAL && !showAllNodes && (
+                {meshDevices.length > SHOW_INITIAL && !showAllMesh && (
                   <div className="p-4 flex justify-center">
                     <button
-                      onClick={() => setShowAllNodes(true)}
+                      onClick={() => setShowAllMesh(true)}
                       className="flex items-center gap-2 px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold text-sm transition-all active:scale-95"
                     >
                       <ChevronRight size={16} />
-                      Ver mais {nodes.length - SHOW_INITIAL} dispositivos
+                      Ver mais {meshDevices.length - SHOW_INITIAL} dispositivos
                     </button>
                   </div>
                 )}
@@ -269,7 +306,7 @@ export function OTAProgressDashboard({ onClose }: OTAProgressDashboardProps) {
           </div>
         )}
 
-        {/* Close Button */}
+        {/* Botão de fechar — aparece quando tudo terminou */}
         {allComplete && (
           <div className="flex justify-center animate-in fade-in slide-in-from-bottom-4 duration-500">
             <button
@@ -348,7 +385,6 @@ function DeviceProgressItem({ device, isMobile }: DeviceProgressItemProps) {
 
   return (
     <div className="p-6 hover:bg-slate-50 transition-colors">
-      {/* Layout em coluna em mobile, linha em desktop */}
       <div className={cn("flex gap-4", isMobile ? "flex-col" : "items-center")}>
         <div className={cn("flex gap-4", isMobile ? "items-start" : "items-center flex-1")}>
           {/* Status Icon */}
@@ -358,10 +394,19 @@ function DeviceProgressItem({ device, isMobile }: DeviceProgressItemProps) {
 
           {/* Device Info */}
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-3 mb-1">
+            <div className="flex items-center gap-3 mb-1 flex-wrap">
               <p className="font-bold text-slate-900 truncate">{device.device_name}</p>
               <span className={cn("text-xs font-bold uppercase tracking-wider", getStatusColor())}>
                 {getStatusText()}
+              </span>
+              {/* Badge de tipo de conexão */}
+              <span className={cn(
+                "px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider",
+                device.is_root || device.connection_type === 'wifi'
+                  ? "bg-blue-100 text-blue-600"
+                  : "bg-purple-100 text-purple-600"
+              )}>
+                {device.is_root || device.connection_type === 'wifi' ? 'WiFi' : 'Mesh'}
               </span>
             </div>
             <p className="text-sm text-slate-500 font-mono">{device.mac_address}</p>

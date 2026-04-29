@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, AlertTriangle, Loader2 } from 'lucide-react';
+import { X, AlertTriangle, Loader2, Wifi, Network } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../../services/api';
 import { clsx, type ClassValue } from 'clsx';
@@ -24,6 +24,12 @@ interface FirmwareRelease {
   device_count: number;
 }
 
+interface OnlineDeviceCount {
+  total: number;
+  root_count: number;
+  mesh_count: number;
+}
+
 interface OTAConfirmModalProps {
   open: boolean;
   release: FirmwareRelease | null;
@@ -32,24 +38,24 @@ interface OTAConfirmModalProps {
 
 export function OTAConfirmModal({ open, release, onClose }: OTAConfirmModalProps) {
   const navigate = useNavigate();
-  const [deviceCount, setDeviceCount] = useState(0);
+  const [onlineCount, setOnlineCount] = useState<OnlineDeviceCount>({ total: 0, root_count: 0, mesh_count: 0 });
   const [loading, setLoading] = useState(false);
   const [confirming, setConfirming] = useState(false);
 
   useEffect(() => {
     if (open) {
-      fetchDeviceCount();
+      fetchOnlineCount();
     }
   }, [open]);
 
-  const fetchDeviceCount = async () => {
+  const fetchOnlineCount = async () => {
     setLoading(true);
     try {
-      const devices = await api.getDevices();
-      setDeviceCount(devices.length);
-    } catch (err: any) {
-      console.error('Erro ao buscar dispositivos:', err);
-      setDeviceCount(0);
+      const data = await api.get('/ota/online-devices/count');
+      setOnlineCount(data);
+    } catch (err: unknown) {
+      console.error('Erro ao buscar dispositivos online:', err);
+      setOnlineCount({ total: 0, root_count: 0, mesh_count: 0 });
     } finally {
       setLoading(false);
     }
@@ -64,10 +70,11 @@ export function OTAConfirmModal({ open, release, onClose }: OTAConfirmModalProps
       toast.success(result.message);
       onClose();
       
-      // Navigate to progress dashboard
+      // Navegar para o dashboard de progresso
       navigate('/admin/ota-progress');
-    } catch (err: any) {
-      toast.error('Erro ao disparar atualização: ' + err.message);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Erro desconhecido';
+      toast.error('Erro ao disparar atualização: ' + message);
     } finally {
       setConfirming(false);
     }
@@ -86,7 +93,7 @@ export function OTAConfirmModal({ open, release, onClose }: OTAConfirmModalProps
             </div>
             <div>
               <h3 className="font-bold text-slate-900">Confirmar Atualização OTA</h3>
-              <p className="text-xs text-slate-500">Esta ação afetará todos os dispositivos</p>
+              <p className="text-xs text-slate-500">Esta ação afetará todos os dispositivos online</p>
             </div>
           </div>
           <button
@@ -109,24 +116,44 @@ export function OTAConfirmModal({ open, release, onClose }: OTAConfirmModalProps
               </p>
               <p className="text-xs text-amber-800 leading-relaxed">
                 Esta operação iniciará o processo de atualização OTA em todos os dispositivos ESP32 
-                conectados. O processo pode levar alguns minutos dependendo da rede Mesh.
+                <strong> online</strong>. Dispositivos offline não serão afetados. O processo pode 
+                levar alguns minutos dependendo da rede Mesh.
               </p>
             </div>
           </div>
 
           {/* Update Details */}
-          <div className="space-y-4">
+          <div className="space-y-3">
             <div className="flex items-center justify-between p-4 bg-slate-50 rounded-xl">
               <span className="text-sm text-slate-600 font-medium">Versão Alvo</span>
               <span className="text-lg font-black text-slate-900">{release.version}</span>
             </div>
 
-            <div className="flex items-center justify-between p-4 bg-slate-50 rounded-xl">
-              <span className="text-sm text-slate-600 font-medium">Dispositivos Afetados</span>
-              {loading ? (
-                <Loader2 className="animate-spin text-slate-400" size={20} />
-              ) : (
-                <span className="text-lg font-black text-slate-900">{deviceCount}</span>
+            {/* Dispositivos online separados por tipo */}
+            <div className="p-4 bg-slate-50 rounded-xl space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-slate-600 font-medium">Dispositivos Online</span>
+                {loading ? (
+                  <Loader2 className="animate-spin text-slate-400" size={20} />
+                ) : (
+                  <span className="text-lg font-black text-slate-900">{onlineCount.total}</span>
+                )}
+              </div>
+              {!loading && onlineCount.total > 0 && (
+                <div className="flex gap-3">
+                  <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-100 rounded-lg">
+                    <Wifi size={14} className="text-blue-600" />
+                    <span className="text-xs font-bold text-blue-700">
+                      {onlineCount.root_count} Raiz (WiFi)
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 px-3 py-1.5 bg-purple-100 rounded-lg">
+                    <Network size={14} className="text-purple-600" />
+                    <span className="text-xs font-bold text-purple-700">
+                      {onlineCount.mesh_count} Mesh
+                    </span>
+                  </div>
+                </div>
               )}
             </div>
 
@@ -146,8 +173,8 @@ export function OTAConfirmModal({ open, release, onClose }: OTAConfirmModalProps
           {/* Confirmation Message */}
           <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
             <p className="text-sm text-blue-900 leading-relaxed">
-              Você está prestes a atualizar <strong>{deviceCount} dispositivos</strong> para a versão{' '}
-              <strong>{release.version}</strong>. Este processo pode levar alguns minutos via rede Mesh. 
+              Você está prestes a atualizar <strong>{onlineCount.total} dispositivos online</strong> para a versão{' '}
+              <strong>{release.version}</strong>. Nós raiz atualizam primeiro; nós mesh atualizam em seguida via propagação. 
               Deseja continuar?
             </p>
           </div>
@@ -164,7 +191,7 @@ export function OTAConfirmModal({ open, release, onClose }: OTAConfirmModalProps
           </button>
           <button
             onClick={handleConfirm}
-            disabled={confirming || loading || deviceCount === 0}
+            disabled={confirming || loading || onlineCount.total === 0}
             className="flex-1 px-4 py-3 bg-red-600 text-white rounded-xl font-bold text-sm hover:bg-red-700 transition-all active:scale-95 disabled:opacity-50 disabled:grayscale flex items-center justify-center gap-2"
           >
             {confirming ? (

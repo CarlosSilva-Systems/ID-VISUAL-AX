@@ -220,17 +220,22 @@ class OTAService:
         username: str
     ) -> dict:
         """
-        Dispara atualização OTA em massa para todos os dispositivos.
+        Dispara atualização OTA em massa para todos os dispositivos ONLINE.
+        
+        Separa dispositivos em raiz (WiFi direto) e mesh (nós folha).
+        Dispositivos raiz recebem o trigger imediatamente via MQTT.
+        Dispositivos mesh aguardam o gateway atualizar (lógica no firmware).
         
         Args:
             firmware_release_id: ID do firmware release a instalar
             username: Usuário que disparou a atualização
             
         Returns:
-            Dict com mensagem e contagem de dispositivos
+            Dict com mensagem, contagem de dispositivos e versão alvo
             
         Raises:
-            HTTPException: Se firmware não existir ou arquivo não for encontrado
+            HTTPException: Se firmware não existir, arquivo não for encontrado
+                           ou nenhum dispositivo estiver online
         """
         # Buscar firmware release
         stmt = select(FirmwareRelease).where(FirmwareRelease.id == firmware_release_id)
@@ -245,15 +250,20 @@ class OTAService:
             logger.error(f"OTA: Firmware file not found - {file_path}")
             raise HTTPException(500, "Arquivo de firmware não encontrado no storage")
         
-        # Buscar todos os dispositivos ESP32
-        stmt_devices = select(ESPDevice)
+        # Buscar apenas dispositivos ESP32 online
+        stmt_devices = select(ESPDevice).where(
+            ESPDevice.status == "online"
+        )
         result = await self.session.execute(stmt_devices)
         devices = result.scalars().all()
         
         if not devices:
-            raise HTTPException(400, "Nenhum dispositivo ESP32 cadastrado")
+            raise HTTPException(400, "Nenhum dispositivo ESP32 online no momento")
         
-        # Criar logs de atualização para cada dispositivo
+        # Criar logs de atualização para cada dispositivo online
+        root_devices = [d for d in devices if d.is_root or d.connection_type == "wifi"]
+        mesh_devices = [d for d in devices if not d.is_root and d.connection_type != "wifi"]
+        
         for device in devices:
             # Buscar versão anterior (última atualização bem-sucedida)
             stmt_prev = select(OTAUpdateLog).where(
@@ -262,6 +272,17 @@ class OTAService:
             ).order_by(OTAUpdateLog.completed_at.desc())
             prev_log = (await self.session.execute(stmt_prev)).scalars().first()
             previous_version = prev_log.target_version if prev_log else None
+            
+            # Cancelar logs ativos anteriores (downloading/installing) para este device
+            stmt_active = select(OTAUpdateLog).where(
+                OTAUpdateLog.device_id == device.id,
+                OTAUpdateLog.status.in_([OTAStatus.downloading, OTAStatus.installing])
+            )
+            active_logs = (await self.session.execute(stmt_active)).scalars().all()
+            for active_log in active_logs:
+                active_log.status = OTAStatus.failed
+                active_log.error_message = "Substituído por nova atualização"
+                active_log.completed_at = datetime.now(timezone.utc).replace(tzinfo=None)
             
             # Criar novo log
             log = OTAUpdateLog(
@@ -312,12 +333,119 @@ class OTAService:
         logger.info(f"OTA: Update triggered for version {release.version} by user {username}")
         
         return {
-            "message": f"Atualização OTA disparada para {len(devices)} dispositivos",
+            "message": f"Atualização OTA disparada para {len(devices)} dispositivos online",
             "device_count": len(devices),
+            "root_device_count": len(root_devices),
+            "mesh_device_count": len(mesh_devices),
             "target_version": release.version
         }    
-    async def get_fleet_status(self) -> list[dict]:
+    async def cancel_ota_update(self, username: str) -> dict:
         """
+        Cancela atualizações OTA pendentes (status downloading/installing).
+        
+        Dispositivos que já estão em download ativo não podem ser interrompidos
+        remotamente — o cancelamento marca os logs pendentes como 'cancelled'
+        e publica um comando MQTT de cancelamento para que o firmware ignore
+        futuros triggers desta sessão.
+        
+        Args:
+            username: Usuário que solicitou o cancelamento
+            
+        Returns:
+            Dict com contagem de logs cancelados
+        """
+        # Buscar todos os logs ativos (downloading ou installing)
+        stmt = select(OTAUpdateLog).where(
+            OTAUpdateLog.status.in_([OTAStatus.downloading, OTAStatus.installing])
+        )
+        result = await self.session.execute(stmt)
+        active_logs = result.scalars().all()
+        
+        if not active_logs:
+            return {
+                "message": "Nenhuma atualização OTA em andamento para cancelar",
+                "cancelled_count": 0
+            }
+        
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        for log in active_logs:
+            log.status = OTAStatus.failed
+            log.error_message = f"Cancelado manualmente por {username}"
+            log.completed_at = now
+        
+        await self.session.commit()
+        
+        # Publicar comando MQTT de cancelamento (best-effort)
+        try:
+            import aiomqtt
+            import json as _json
+            mqtt_host = settings.MQTT_BROKER_HOST
+            mqtt_port = int(settings.MQTT_BROKER_PORT)
+            cancel_payload = _json.dumps({"action": "cancel"})
+            async with aiomqtt.Client(hostname=mqtt_host, port=mqtt_port) as client:
+                await client.publish("andon/ota/cancel", cancel_payload, qos=1)
+            logger.info(f"OTA: Cancel command published by {username}")
+        except Exception as e:
+            logger.warning(f"OTA: MQTT cancel publish failed — {e}. Logs já marcados como cancelados no banco.")
+        
+        # Emitir evento WebSocket
+        await ws_manager.broadcast("ota_cancelled", {
+            "cancelled_count": len(active_logs),
+            "cancelled_by": username
+        })
+        
+        logger.info(f"OTA: {len(active_logs)} updates cancelled by {username}")
+        
+        return {
+            "message": f"{len(active_logs)} atualização(ões) OTA cancelada(s)",
+            "cancelled_count": len(active_logs)
+        }
+    
+    async def mark_timed_out_devices(self, timeout_minutes: int = 10) -> int:
+        """
+        Marca como falha dispositivos que estão em downloading/installing
+        há mais de `timeout_minutes` minutos sem atualização.
+        
+        Deve ser chamado periodicamente como background task.
+        
+        Args:
+            timeout_minutes: Tempo máximo em minutos antes de considerar timeout
+            
+        Returns:
+            Número de dispositivos marcados como falha
+        """
+        from datetime import timedelta
+        
+        cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(minutes=timeout_minutes)
+        
+        stmt = select(OTAUpdateLog).where(
+            OTAUpdateLog.status.in_([OTAStatus.downloading, OTAStatus.installing]),
+            OTAUpdateLog.started_at < cutoff
+        )
+        result = await self.session.execute(stmt)
+        timed_out = result.scalars().all()
+        
+        if not timed_out:
+            return 0
+        
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        for log in timed_out:
+            log.status = OTAStatus.failed
+            log.error_message = f"Timeout — dispositivo não respondeu em {timeout_minutes} minutos"
+            log.completed_at = now
+        
+        await self.session.commit()
+        
+        logger.warning(f"OTA: {len(timed_out)} dispositivos marcados como timeout após {timeout_minutes}min")
+        
+        # Notificar frontend
+        await ws_manager.broadcast("ota_timeout", {
+            "timed_out_count": len(timed_out)
+        })
+        
+        return len(timed_out)
+
+    async def get_fleet_status(self) -> list[dict]:        """
         Retorna status de atualização de todos os dispositivos.
         
         Returns:
@@ -356,7 +484,9 @@ class OTAService:
                     "progress_percent": latest_log.progress_percent,
                     "error_message": latest_log.error_message,
                     "started_at": latest_log.started_at,
-                    "completed_at": latest_log.completed_at
+                    "completed_at": latest_log.completed_at,
+                    "is_root": device.is_root,
+                    "connection_type": device.connection_type or ("wifi" if device.is_root else "mesh"),
                 })
         
         return status_list

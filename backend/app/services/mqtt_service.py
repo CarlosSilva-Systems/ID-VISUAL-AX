@@ -649,28 +649,7 @@ async def _handle_pause(mac: str, payload_raw: bytes):
         await notify_odoo_error(mac)
 
 
-async def _handle_identify(mac: str):
-    """
-    Processa evento de identificação física do device.
-    Publicado quando o operador segura o botão verde por 3s.
-    Faz broadcast WebSocket para o frontend piscar o card do device.
-    """
-    async with async_session_factory() as session:
-        stmt = select(ESPDevice).where(ESPDevice.mac_address == mac)
-        result = await session.execute(stmt)
-        device = result.scalars().first()
-        if not device:
-            logger.warning(f"MQTT identify: dispositivo {mac} não encontrado, descartado.")
-            return
-        device_id = str(device.id)
-        device_name = device.device_name
-
-    await ws_manager.broadcast("device_identify", {
-        "mac_address": mac,
-        "device_id": device_id,
-        "device_name": device_name,
-    })
-    logger.info(f"MQTT identify: {mac} ({device_name}) — broadcast WebSocket enviado")
+async def _handle_ota_progress(mac: str, payload_raw: bytes):
     """
     Processa mensagens de progresso OTA publicadas pelo ESP32 em andon/ota/progress/{mac}.
     
@@ -711,15 +690,24 @@ async def _handle_identify(mac: str):
         ota_log = result_log.scalars().first()
         
         if not ota_log:
-            # Criar novo log se não existir
-            logger.info(f"MQTT OTA progress: criando novo log para {mac}")
+            # Sem log ativo — pode ser progresso de uma atualização iniciada antes
+            # do backend reiniciar. Buscar o release mais recente para associar.
+            from app.models.ota import FirmwareRelease
+            stmt_release = select(FirmwareRelease).order_by(FirmwareRelease.uploaded_at.desc())
+            latest_release = (await session.execute(stmt_release)).scalars().first()
+            
+            if not latest_release:
+                logger.warning(f"MQTT OTA progress: nenhum firmware release encontrado para {mac}, descartando")
+                return
+            
+            logger.info(f"MQTT OTA progress: criando novo log para {mac} associado ao release {latest_release.version}")
             ota_log = OTAUpdateLog(
                 device_id=device.id,
-                firmware_release_id=None,  # Será preenchido posteriormente
+                firmware_release_id=latest_release.id,
                 status=OTAStatus[status] if status in OTAStatus.__members__ else OTAStatus.downloading,
                 progress_percent=progress,
                 error_message=error,
-                target_version="unknown"
+                target_version=latest_release.version
             )
             session.add(ota_log)
         else:

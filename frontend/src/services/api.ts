@@ -719,5 +719,13 @@ export const api = {
     getOTAHistory: async (macAddress: string) => {
         return api.get(`/ota/history/${encodeURIComponent(macAddress)}`);
     },
+
+    cancelOTAUpdate: async () => {
+        return api.post('/ota/cancel', {});
+    },
+
+    getOTAOnlineDeviceCount: async () => {
+        return api.get('/ota/online-devices/count');
+    },
 };
 

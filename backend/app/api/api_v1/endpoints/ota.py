@@ -22,6 +22,7 @@ from app.schemas.ota import (
     DownloadGitHubRequest,
     TriggerOTARequest,
     TriggerOTAResponse,
+    CancelOTAResponse,
     DeviceOTAStatus,
     OTAStatusResponse,
     OTAHistoryItem
@@ -266,8 +267,58 @@ async def trigger_ota_update(
     return TriggerOTAResponse(
         message=result["message"],
         device_count=result["device_count"],
+        root_device_count=result.get("root_device_count", 0),
+        mesh_device_count=result.get("mesh_device_count", 0),
         target_version=result["target_version"]
     )
+
+
+@router.post("/cancel", response_model=CancelOTAResponse)
+async def cancel_ota_update(
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(require_current_user)
+):
+    """
+    Cancela atualizações OTA pendentes (status downloading/installing).
+    
+    Marca todos os logs ativos como falha e publica comando MQTT de cancelamento.
+    Dispositivos que já iniciaram o download não podem ser interrompidos remotamente —
+    o firmware irá concluir o download mas não instalará se receber o comando de cancel.
+    """
+    ota_service = OTAService(session)
+    result = await ota_service.cancel_ota_update(current_user.username)
+    
+    return CancelOTAResponse(
+        message=result["message"],
+        cancelled_count=result["cancelled_count"]
+    )
+
+
+@router.get("/online-devices/count")
+async def get_online_device_count(
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(require_current_user)
+):
+    """
+    Retorna a contagem de dispositivos ESP32 online, separados por tipo.
+    
+    Usado pelo modal de confirmação para exibir quantos dispositivos
+    serão afetados pela atualização OTA.
+    """
+    from app.models.esp_device import DeviceStatus
+    
+    stmt = select(ESPDevice).where(ESPDevice.status == DeviceStatus.online)
+    result = await session.execute(stmt)
+    online_devices = result.scalars().all()
+    
+    root_count = sum(1 for d in online_devices if d.is_root or d.connection_type == "wifi")
+    mesh_count = sum(1 for d in online_devices if not d.is_root and d.connection_type != "wifi")
+    
+    return {
+        "total": len(online_devices),
+        "root_count": root_count,
+        "mesh_count": mesh_count
+    }
 
 
 @router.get("/status", response_model=OTAStatusResponse)
@@ -295,7 +346,9 @@ async def get_ota_status(
             progress_percent=s["progress_percent"],
             error_message=s["error_message"],
             started_at=s["started_at"],
-            completed_at=s["completed_at"]
+            completed_at=s["completed_at"],
+            is_root=s.get("is_root", False),
+            connection_type=s.get("connection_type", "mesh")
         )
         for s in status_list
     ]
