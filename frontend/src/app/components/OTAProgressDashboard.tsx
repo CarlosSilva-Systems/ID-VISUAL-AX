@@ -36,6 +36,7 @@ interface DeviceStatus {
   completed_at: string | null;
   is_root: boolean;
   connection_type: string;
+  device_status: string; // online | offline
 }
 
 interface OTAProgressDashboardProps {
@@ -408,8 +409,22 @@ function DeviceProgressItem({ device, isMobile }: DeviceProgressItemProps) {
               )}>
                 {device.is_root || device.connection_type === 'wifi' ? 'WiFi' : 'Mesh'}
               </span>
+              {/* Badge online/offline */}
+              <span className={cn(
+                "px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider",
+                device.device_status === 'online'
+                  ? "bg-emerald-100 text-emerald-600"
+                  : "bg-slate-100 text-slate-500"
+              )}>
+                {device.device_status === 'online' ? 'Online' : 'Offline'}
+              </span>
             </div>
             <p className="text-sm text-slate-500 font-mono">{device.mac_address}</p>
+            {device.current_version && (
+              <p className="text-xs text-slate-400 mt-0.5">
+                Versão atual: <span className="font-mono font-medium">{device.current_version}</span>
+              </p>
+            )}
 
             {/* Error Message */}
             {device.error_message && (

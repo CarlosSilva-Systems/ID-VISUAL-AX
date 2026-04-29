@@ -385,7 +385,8 @@ async def get_ota_status(
             started_at=s["started_at"],
             completed_at=s["completed_at"],
             is_root=s.get("is_root", False),
-            connection_type=s.get("connection_type", "mesh")
+            connection_type=s.get("connection_type", "mesh"),
+            device_status=s.get("device_status", "offline"),
         )
         for s in status_list
     ]

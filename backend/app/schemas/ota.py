@@ -108,6 +108,7 @@ class DeviceOTAStatus(BaseModel):
     completed_at: Optional[datetime]
     is_root: bool = False
     connection_type: str = "mesh"
+    device_status: str = "offline"  # status de conectividade do device (online/offline)
 
 
 class OTAStatusResponse(BaseModel):

@@ -466,8 +466,12 @@ class OTAService:
         
         return len(timed_out)
 
-    async def get_fleet_status(self) -> list[dict]:        """
+    async def get_fleet_status(self) -> list[dict]:
+        """
         Retorna status de atualização de todos os dispositivos.
+        
+        Inclui todos os devices cadastrados, mesmo os que nunca tiveram OTA.
+        Devices sem histórico aparecem com status 'idle'.
         
         Returns:
             Lista de dicts com status de cada dispositivo
@@ -494,21 +498,23 @@ class OTAService:
             ).order_by(OTAUpdateLog.started_at.desc())
             latest_log = (await self.session.execute(stmt_latest)).scalars().first()
             
-            if latest_log:
-                status_list.append({
-                    "device_id": device.id,
-                    "mac_address": device.mac_address,
-                    "device_name": device.device_name,
-                    "current_version": current_version,
-                    "target_version": latest_log.target_version,
-                    "status": latest_log.status.value,
-                    "progress_percent": latest_log.progress_percent,
-                    "error_message": latest_log.error_message,
-                    "started_at": latest_log.started_at,
-                    "completed_at": latest_log.completed_at,
-                    "is_root": device.is_root,
-                    "connection_type": device.connection_type or ("wifi" if device.is_root else "mesh"),
-                })
+            # Incluir device independente de ter historico OTA ou nao
+            # Devices sem historico aparecem com status 'idle'
+            status_list.append({
+                "device_id": device.id,
+                "mac_address": device.mac_address,
+                "device_name": device.device_name,
+                "current_version": current_version or device.firmware_version,
+                "target_version": latest_log.target_version if latest_log else None,
+                "status": latest_log.status.value if latest_log else "idle",
+                "progress_percent": latest_log.progress_percent if latest_log else 0,
+                "error_message": latest_log.error_message if latest_log else None,
+                "started_at": latest_log.started_at if latest_log else None,
+                "completed_at": latest_log.completed_at if latest_log else None,
+                "is_root": device.is_root,
+                "connection_type": device.connection_type or ("wifi" if device.is_root else "mesh"),
+                "device_status": device.status.value,
+            })
         
         return status_list
     
