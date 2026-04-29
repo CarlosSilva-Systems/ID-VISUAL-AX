@@ -4,6 +4,8 @@
 #include "rtc_sync.h"
 #include "espnow_comm.h"
 #include "config.h"
+#include <cstring>       // strncpy, strlen, memcpy
+#include <ArduinoJson.h> // JsonDocument, serializeJson, deserializeJson
 
 // Estado global de provisionamento
 static ProvisioningState g_provState = ProvisioningState::UNCONFIGURED;
@@ -100,7 +102,8 @@ bool saveCredentialsToNVS(const char* ssid, const char* password) {
 
 // Serialização de ProvisioningPayload para JSON
 bool serializeProvisioningPayload(const ProvisioningPayload& payload, char* json_out, size_t max_len) {
-    StaticJsonDocument<256> doc;
+    // JsonDocument é a API correta no ArduinoJson 7 (StaticJsonDocument foi removido)
+    JsonDocument doc;
     
     doc["ssid"] = payload.ssid;
     doc["password"] = payload.password;
@@ -112,7 +115,7 @@ bool serializeProvisioningPayload(const ProvisioningPayload& payload, char* json
     
     // Validar tamanho (máximo 200 bytes)
     if (len == 0 || len > 200) {
-        Serial.printf("[PROVISIONING] ERRO: JSON muito grande (%d bytes, max 200)\n", len);
+        Serial.printf("[PROVISIONING] ERRO: JSON muito grande (%zu bytes, max 200)\n", len);
         return false;
     }
     
@@ -121,7 +124,8 @@ bool serializeProvisioningPayload(const ProvisioningPayload& payload, char* json
 
 // Desserialização de JSON para ProvisioningPayload
 bool deserializeProvisioningPayload(const char* json_str, ProvisioningPayload& payload_out) {
-    StaticJsonDocument<256> doc;
+    // JsonDocument é a API correta no ArduinoJson 7 (StaticJsonDocument foi removido)
+    JsonDocument doc;
     
     DeserializationError error = deserializeJson(doc, json_str);
     
