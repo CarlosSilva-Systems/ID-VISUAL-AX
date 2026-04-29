@@ -19,44 +19,9 @@ class AndonStatus(SQLModel, table=True):
     updated_by: Optional[str] = Field(default=None)
 
 
-class AndonEvent(SQLModel, table=True):
-    """Histórico imutável de cada acionamento Andon."""
-
-    __tablename__ = "andon_event"
-
-    id: Optional[int] = Field(default=None, primary_key=True)
-    workcenter_odoo_id: int = Field(index=True)
-    workcenter_name: str
-    workorder_odoo_id: Optional[int] = Field(default=None)
-    production_odoo_id: Optional[int] = Field(default=None)
-
-    status: str  # verde | amarelo | vermelho | cinza
-    reason: Optional[str] = Field(default=None)
-    triggered_by: str
-    timestamp: datetime = Field(default_factory=_now)
-
-    odoo_picking_id: Optional[int] = Field(default=None)
-    odoo_activity_id: Optional[int] = Field(default=None)
-    material_request_id: Optional[int] = Field(
-        default=None, foreign_key="andon_material_request.id"
-    )
-    pause_ok: Optional[bool] = Field(default=None)
-    pause_method: Optional[str] = Field(default=None)
-
-
-class AndonMaterialRequest(SQLModel, table=True):
-    """Requisição de material local."""
-
-    __tablename__ = "andon_material_request"
-
-    id: Optional[int] = Field(default=None, primary_key=True)
-    workcenter_odoo_id: int
-    workorder_odoo_id: Optional[int] = Field(default=None)
-    production_odoo_id: Optional[int] = Field(default=None)
-    note: Optional[str] = Field(default=None)
-    status: str = Field(default="pending")  # pending | fulfilled | cancelled
-    created_at: datetime = Field(default_factory=_now)
-    fulfilled_at: Optional[datetime] = Field(default=None)
+# AndonEvent e AndonMaterialRequest foram removidos na refatoração de arquitetura
+# (2026-04-29). Eram tabelas órfãs — nunca instanciadas em nenhum endpoint.
+# O histórico de acionamentos é registrado via chatter no Odoo (fonte única de verdade).
 
 
 class AndonCall(SQLModel, table=True):

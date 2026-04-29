@@ -14,7 +14,6 @@ from pydantic import BaseModel, ConfigDict
 from app.api.deps import get_session, get_odoo_client
 from app.core.config import settings
 from app.models.andon import AndonStatus, AndonCall, SyncQueue
-from app.models.id_request import IDRequest, IDRequestStatus
 from app.models.manufacturing import ManufacturingOrder
 from app.services.odoo_utils import normalize_label
 from app.services.sync_service import add_to_sync_queue, process_sync_queue
@@ -476,7 +475,7 @@ async def create_andon_call(
             reason=req.reason,
             description=req.description,
             workcenter_id=req.workcenter_id,
-            workcenter_name=req.workcenter_name,
+            workcenter_name=req.workcenter_name.strip(),  # Normaliza para evitar inconsistência no agrupamento OEE
             mo_id=req.mo_id,
             status="OPEN",
             triggered_by=req.triggered_by,

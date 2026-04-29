@@ -158,7 +158,7 @@ async def search_mos(
                 # Check if this MO already has a pending ID activity (from Step 2)
                 mid = mo['id']
                 has_act = (mid in id_activity_map)
-                
+
                 # Helper: Normalization
                 obra_raw = mo.get('x_studio_nome_da_obra')
                 obra_clean = normalize_many2one_display(obra_raw) or "Sem Obra"
@@ -176,7 +176,7 @@ async def search_mos(
             except Exception as e:
                 logger.error(f"Error processing MO {mo.get('id')}: {e}")
                 continue
-            
+
         return final_list
 
     except HTTPException:
@@ -292,23 +292,24 @@ async def create_manual_request(
             )
 
     # ── 3. Fetch MO from Odoo (source of truth) ──
-    client = OdooClient(
+    async with OdooClient(
         url=settings.ODOO_URL,
         db=settings.ODOO_DB,
         auth_type="jsonrpc_password",
         login=settings.ODOO_SERVICE_LOGIN,
         secret=settings.ODOO_SERVICE_PASSWORD,
-    )
-
-    try:
-        odoo_mos = await client.search_read(
-            "mrp.production",
-            domain=[["id", "=", payload.odoo_mo_id]],
-            fields=["id", "name", "product_qty", "date_start", "state", "x_studio_nome_da_obra", "company_id", "product_id"],
-            limit=1,
-        )
-    finally:
-        await client.close()
+    ) as client:
+        try:
+            odoo_mos = await client.search_read(
+                "mrp.production",
+                domain=[["id", "=", payload.odoo_mo_id]],
+                fields=["id", "name", "product_qty", "date_start", "state", "x_studio_nome_da_obra", "company_id", "product_id"],
+                limit=1,
+            )
+        except Exception as e:
+            request_id = str(uuid.uuid4())[:8]
+            logger.exception(f"Odoo MO fetch error [ref:{request_id}]: {e}")
+            raise HTTPException(status_code=502, detail=f"Falha ao consultar Odoo [ref: {request_id}]")
 
     if not odoo_mos:
         raise HTTPException(status_code=404, detail=f"MO {payload.odoo_mo_id} not found in Odoo")

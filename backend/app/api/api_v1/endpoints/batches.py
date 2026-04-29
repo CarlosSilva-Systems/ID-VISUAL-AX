@@ -450,19 +450,18 @@ async def create_batch(
     # 1. Buscar MOs no Odoo usando banco ativo
     active_db = await get_active_odoo_db(session)
     try:
-        client = OdooClient(
+        async with OdooClient(
             url=settings.ODOO_URL,
             db=active_db,
             auth_type=settings.ODOO_AUTH_TYPE,
             login=settings.ODOO_SERVICE_LOGIN,
             secret=settings.ODOO_SERVICE_PASSWORD,
-        )
-        mos_data = await client.search_read(
-            "mrp.production",
-            domain=[["id", "in", payload.mo_ids]],
-            fields=["id", "name", "product_qty", "date_start", "state", "origin", "x_studio_nome_da_obra", "product_id"],
-        )
-        await client.close()
+        ) as client:
+            mos_data = await client.search_read(
+                "mrp.production",
+                domain=[["id", "in", payload.mo_ids]],
+                fields=["id", "name", "product_qty", "date_start", "state", "origin", "x_studio_nome_da_obra", "product_id"],
+            )
     except Exception as e:
         req_id = str(uuid.uuid4())[:8]
         logger.exception(f"create_batch: Odoo fetch error [ref:{req_id}]: {e}")
@@ -568,50 +567,51 @@ async def get_finished_batches(
     session: AsyncSession = Depends(deps.get_session)
 ) -> Any:
     """
-    List all finished (concluded) batches with their associated MO details.
-    Returns fabrication name, board name, quantity, and completion date.
+    Lista lotes finalizados com detalhes das MOs associadas.
+    Usa JOIN único para evitar N+1 queries.
     """
-    from app.models.batch import BatchStatus
-    
-    # 1. Fetch all concluded batches
     from sqlalchemy import or_
-    stmt = select(Batch).where(
-        or_(Batch.status == BatchStatus.CONCLUDED, Batch.status == BatchStatus.FINALIZED)
-    ).order_by(Batch.updated_at.desc())
-    result = await session.exec(stmt)
-    batches = result.all()
-    
+
+    # Query única com JOIN — elimina N+1 (antes: 1 + N_batches + N_requests queries)
+    stmt = (
+        select(Batch, IDRequest, ManufacturingOrder)
+        .join(IDRequest, IDRequest.batch_id == Batch.id, isouter=True)
+        .join(ManufacturingOrder, ManufacturingOrder.id == IDRequest.mo_id, isouter=True)
+        .where(
+            or_(Batch.status == BatchStatus.CONCLUDED, Batch.status == BatchStatus.FINALIZED)
+        )
+        .order_by(Batch.updated_at.desc())
+    )
+    result = await session.execute(stmt)
+    rows = result.all()
+
+    # Agrupa por batch preservando a ordem
+    batches_map: Dict[uuid.UUID, dict] = {}
+    for batch, req, mo in rows:
+        if batch.id not in batches_map:
+            batches_map[batch.id] = {
+                "batch_id": str(batch.id),
+                "batch_name": batch.name,
+                "batch_status": batch.status.value,
+                "finished_at": (batch.finalized_at or batch.updated_at).isoformat()
+                    if (batch.finalized_at or batch.updated_at) else None,
+                "items": [],
+            }
+        if req and mo:
+            batches_map[batch.id]["items"].append({
+                "request_id": str(req.id),
+                "mo_name": mo.name,
+                "obra_nome": mo.x_studio_nome_da_obra or "",
+                "id_name": f"{mo.name} — {mo.x_studio_nome_da_obra or 'S/N'}",
+                "quantity": mo.product_qty,
+                "date_start": mo.date_start.isoformat() if mo.date_start else None,
+            })
+
     finished_list = []
-    
-    for batch in batches:
-        # 2. Fetch IDRequests linked to this batch
-        req_stmt = select(IDRequest).where(IDRequest.batch_id == batch.id)
-        req_result = await session.exec(req_stmt)
-        requests = req_result.all()
-        
-        items = []
-        for req in requests:
-            # 3. Fetch the ManufacturingOrder for each request
-            mo = await session.get(ManufacturingOrder, req.mo_id)
-            if mo:
-                items.append({
-                    "request_id": str(req.id),
-                    "mo_name": mo.name,
-                    "obra_nome": mo.x_studio_nome_da_obra or "",
-                    "id_name": f"{mo.name} — {mo.x_studio_nome_da_obra or 'S/N'}",
-                    "quantity": mo.product_qty,
-                    "date_start": mo.date_start.isoformat() if mo.date_start else None,
-                })
-        
-        finished_list.append({
-            "batch_id": str(batch.id),
-            "batch_name": batch.name,
-            "batch_status": batch.status.value,
-            "finished_at": (batch.finalized_at or batch.updated_at).isoformat() if (batch.finalized_at or batch.updated_at) else None,
-            "items_count": len(items),
-            "items": items,
-        })
-    
+    for entry in batches_map.values():
+        entry["items_count"] = len(entry["items"])
+        finished_list.append(entry)
+
     return finished_list
 
 @router.patch("/{batch_id}/finalize", response_model=Dict[str, Any])
@@ -729,45 +729,41 @@ async def finalize_batch(
     # C) CLOSE ODOO ACTIVITIES
     odoo_errors = []
     odoo_closed_count = 0
-    
-    client = OdooClient(
+
+    async with OdooClient(
         url=settings.ODOO_URL,
         db=settings.ODOO_DB,
         auth_type="jsonrpc_password",
         login=settings.ODOO_SERVICE_LOGIN,
         secret=settings.ODOO_SERVICE_PASSWORD
-    )
-    
-    try:
+    ) as client:
         # Get activity type ID once
         activity_type_id = await client.get_activity_type_id("Imprimir ID Visual")
-        
+
         for req in requests:
             mo = await session.get(ManufacturingOrder, req.mo_id)
             if not mo:
                 continue
-            
+
             try:
                 # Find activities for this MO
                 activities = await client.find_activities_for_mo(
                     odoo_mo_id=mo.odoo_id,
                     activity_type_id=activity_type_id or 0
                 )
-                
+
                 if activities:
                     activity_ids = [a['id'] for a in activities]
                     await client.close_activities(activity_ids)
                     odoo_closed_count += len(activity_ids)
                 # No activities found = idempotent success
-                
+
             except Exception as e:
                 odoo_errors.append({
                     "odoo_mo_id": mo.odoo_id,
                     "mo_name": mo.name,
                     "reason": str(e)
                 })
-    finally:
-        await client.close()
     
     # D) RETURN RESPONSE
     return {
@@ -843,19 +839,18 @@ async def add_items_to_batch(
 
     # Buscar MOs no Odoo
     try:
-        client = OdooClient(
+        async with OdooClient(
             url=settings.ODOO_URL,
             db=settings.ODOO_DB,
             auth_type="jsonrpc_password",
             login=settings.ODOO_SERVICE_LOGIN,
             secret=settings.ODOO_SERVICE_PASSWORD,
-        )
-        mos_data = await client.search_read(
-            "mrp.production",
-            domain=[["id", "in", payload.mo_ids]],
-            fields=["id", "name", "product_qty", "date_start", "state", "x_studio_nome_da_obra", "product_id"],
-        )
-        await client.close()
+        ) as client:
+            mos_data = await client.search_read(
+                "mrp.production",
+                domain=[["id", "in", payload.mo_ids]],
+                fields=["id", "name", "product_qty", "date_start", "state", "x_studio_nome_da_obra", "product_id"],
+            )
     except Exception as e:
         req_id = str(uuid.uuid4())[:8]
         logger.error(f"add-items: Odoo fetch error [ref:{req_id}]: {e}")
@@ -986,54 +981,52 @@ async def resync_mo_fields(
 
     active_db = await get_active_odoo_db(session)
     try:
-        client = OdooClient(
+        async with OdooClient(
             url=settings.ODOO_URL,
             db=active_db,
             auth_type=settings.ODOO_AUTH_TYPE,
             login=settings.ODOO_SERVICE_LOGIN,
             secret=settings.ODOO_SERVICE_PASSWORD,
-        )
-        mos_data = await client.search_read(
-            "mrp.production",
-            domain=[["id", "in", odoo_ids]],
-            fields=["id", "product_id"],
-        )
+        ) as client:
+            mos_data = await client.search_read(
+                "mrp.production",
+                domain=[["id", "in", odoo_ids]],
+                fields=["id", "product_id"],
+            )
+
+            # Mapeia odoo_id → product_id
+            odoo_product_map: dict[int, int] = {}
+            for mo_data in mos_data:
+                raw = mo_data.get("product_id")
+                if raw and isinstance(raw, (list, tuple)) and len(raw) >= 1:
+                    odoo_product_map[mo_data["id"]] = raw[0]
+
+            # Busca default_code de todos os product_ids únicos em paralelo
+            import asyncio as _asyncio
+            unique_product_ids = list(set(odoo_product_map.values()))
+
+            async def _fetch_one(pid: int) -> tuple[int, str | None, str | None]:
+                try:
+                    res = await client.search_read(
+                        "product.product",
+                        domain=[["id", "=", pid]],
+                        fields=["default_code", "name"],
+                        limit=1,
+                    )
+                    if res:
+                        return pid, res[0].get("default_code") or None, res[0].get("name") or None
+                except Exception:
+                    pass
+                return pid, None, None
+
+            results = await _asyncio.gather(*[_fetch_one(pid) for pid in unique_product_ids])
+            product_info: dict[int, tuple[str | None, str | None]] = {
+                pid: (ax, name) for pid, ax, name in results
+            }
     except Exception as e:
         req_id = str(uuid.uuid4())[:8]
         logger.exception(f"resync_mo_fields: Odoo fetch error [ref:{req_id}]: {e}")
         raise HTTPException(status_code=500, detail=f"Erro ao buscar dados no Odoo [ref: {req_id}]")
-
-    # Mapeia odoo_id → product_id
-    odoo_product_map: dict[int, int] = {}
-    for mo_data in mos_data:
-        raw = mo_data.get("product_id")
-        if raw and isinstance(raw, (list, tuple)) and len(raw) >= 1:
-            odoo_product_map[mo_data["id"]] = raw[0]
-
-    # Busca default_code de todos os product_ids únicos em paralelo
-    import asyncio as _asyncio
-    unique_product_ids = list(set(odoo_product_map.values()))
-
-    async def _fetch_one(pid: int) -> tuple[int, str | None, str | None]:
-        try:
-            res = await client.search_read(
-                "product.product",
-                domain=[["id", "=", pid]],
-                fields=["default_code", "name"],
-                limit=1,
-            )
-            if res:
-                return pid, res[0].get("default_code") or None, res[0].get("name") or None
-        except Exception:
-            pass
-        return pid, None, None
-
-    results = await _asyncio.gather(*[_fetch_one(pid) for pid in unique_product_ids])
-    product_info: dict[int, tuple[str | None, str | None]] = {
-        pid: (ax, name) for pid, ax, name in results
-    }
-
-    await client.close()
 
     # Atualiza as MOs locais
     updated = 0

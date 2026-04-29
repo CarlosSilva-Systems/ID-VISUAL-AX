@@ -24,6 +24,14 @@ class OdooClient:
     async def close(self):
         await self.session.aclose()
 
+    async def __aenter__(self) -> "OdooClient":
+        """Suporte a context manager: async with OdooClient(...) as client:"""
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
+        """Garante fechamento da sessão HTTP mesmo em caso de exceção."""
+        await self.close()
+
     async def _call_with_retry(self, func, *args, **kwargs):
         """Helper para executar chamadas com retentativa e backoff exponencial."""
         max_retries = 2 # Reduzido de 3 para 2
