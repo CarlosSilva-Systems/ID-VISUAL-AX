@@ -250,17 +250,36 @@ class OTAService:
             logger.error(f"OTA: Firmware file not found - {file_path}")
             raise HTTPException(500, "Arquivo de firmware não encontrado no storage")
         
-        # Buscar apenas dispositivos ESP32 online
-        stmt_devices = select(ESPDevice).where(
-            ESPDevice.status == DeviceStatus.online
-        )
+        # Buscar todos os dispositivos ESP32 cadastrados.
+        # O MQTT é broadcast — devices online recebem e processam,
+        # devices offline ignoram (não estão conectados ao broker).
+        # Criamos logs para todos para rastrear o estado esperado.
+        stmt_devices = select(ESPDevice)
         result = await self.session.execute(stmt_devices)
         devices = result.scalars().all()
         
         if not devices:
-            raise HTTPException(400, "Nenhum dispositivo ESP32 online no momento")
+            raise HTTPException(400, "Nenhum dispositivo ESP32 cadastrado")
         
-        # Criar logs de atualização para cada dispositivo online
+        # Separar online vs offline para log e resposta informativa
+        online_devices = [d for d in devices if d.status == DeviceStatus.online]
+        offline_devices = [d for d in devices if d.status != DeviceStatus.online]
+        
+        if online_devices:
+            logger.info(
+                f"OTA trigger: {len(online_devices)} online, "
+                f"{len(offline_devices)} offline (total: {len(devices)})"
+            )
+        else:
+            # Nenhum device online — ainda assim dispara o MQTT (best-effort)
+            # e cria logs para todos. O operador pode ter devices que não reportam
+            # status corretamente mas estão conectados ao broker.
+            logger.warning(
+                f"OTA trigger: nenhum device com status=online no banco. "
+                f"Disparando para todos os {len(devices)} cadastrados via MQTT broadcast."
+            )
+        
+        # Criar logs de atualização para cada dispositivo
         root_devices = [d for d in devices if d.is_root or d.connection_type == "wifi"]
         mesh_devices = [d for d in devices if not d.is_root and d.connection_type != "wifi"]
         
@@ -333,8 +352,10 @@ class OTAService:
         logger.info(f"OTA: Update triggered for version {release.version} by user {username}")
         
         return {
-            "message": f"Atualização OTA disparada para {len(devices)} dispositivos online",
+            "message": f"Atualização OTA disparada para {len(devices)} dispositivos ({len(online_devices)} online, {len(offline_devices)} offline)",
             "device_count": len(devices),
+            "online_count": len(online_devices),
+            "offline_count": len(offline_devices),
             "root_device_count": len(root_devices),
             "mesh_device_count": len(mesh_devices),
             "target_version": release.version

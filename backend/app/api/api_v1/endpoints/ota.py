@@ -301,22 +301,60 @@ async def get_online_device_count(
     current_user: User = Depends(require_current_user)
 ):
     """
-    Retorna a contagem de dispositivos ESP32 online, separados por tipo.
+    Retorna a contagem de dispositivos ESP32, separados por status e tipo.
     
     Usado pelo modal de confirmação para exibir quantos dispositivos
     serão afetados pela atualização OTA.
     """
-    stmt = select(ESPDevice).where(ESPDevice.status == DeviceStatus.online)
-    result = await session.execute(stmt)
-    online_devices = result.scalars().all()
+    # Buscar todos os devices
+    stmt_all = select(ESPDevice)
+    all_devices = (await session.execute(stmt_all)).scalars().all()
+
+    online_devices = [d for d in all_devices if d.status == DeviceStatus.online]
     
-    root_count = sum(1 for d in online_devices if d.is_root or d.connection_type == "wifi")
-    mesh_count = sum(1 for d in online_devices if not d.is_root and d.connection_type != "wifi")
+    root_count = sum(1 for d in all_devices if d.is_root or d.connection_type == "wifi")
+    mesh_count = sum(1 for d in all_devices if not d.is_root and d.connection_type != "wifi")
     
     return {
-        "total": len(online_devices),
+        "total": len(all_devices),
+        "online": len(online_devices),
+        "offline": len(all_devices) - len(online_devices),
         "root_count": root_count,
         "mesh_count": mesh_count
+    }
+
+
+@router.get("/diagnostics/devices")
+async def get_ota_device_diagnostics(
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(require_current_user)
+):
+    """
+    Diagnóstico: retorna todos os devices com status raw do banco.
+    Útil para depurar problemas de filtro online/offline.
+    """
+    stmt_all = select(ESPDevice).order_by(ESPDevice.created_at.desc())
+    all_devices = (await session.execute(stmt_all)).scalars().all()
+
+    stmt_online = select(ESPDevice).where(ESPDevice.status == DeviceStatus.online.value)
+    online_devices = (await session.execute(stmt_online)).scalars().all()
+
+    return {
+        "total_devices": len(all_devices),
+        "online_count_filtered": len(online_devices),
+        "devices": [
+            {
+                "mac_address": d.mac_address,
+                "device_name": d.device_name,
+                "status_raw": str(d.status),
+                "status_value": d.status.value if hasattr(d.status, "value") else str(d.status),
+                "status_type": type(d.status).__name__,
+                "is_root": d.is_root,
+                "connection_type": d.connection_type,
+                "last_seen_at": str(d.last_seen_at) if d.last_seen_at else None,
+            }
+            for d in all_devices
+        ]
     }
 
 

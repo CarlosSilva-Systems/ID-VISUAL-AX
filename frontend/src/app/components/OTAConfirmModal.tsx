@@ -26,6 +26,8 @@ interface FirmwareRelease {
 
 interface OnlineDeviceCount {
   total: number;
+  online: number;
+  offline: number;
   root_count: number;
   mesh_count: number;
 }
@@ -38,7 +40,7 @@ interface OTAConfirmModalProps {
 
 export function OTAConfirmModal({ open, release, onClose }: OTAConfirmModalProps) {
   const navigate = useNavigate();
-  const [onlineCount, setOnlineCount] = useState<OnlineDeviceCount>({ total: 0, root_count: 0, mesh_count: 0 });
+  const [onlineCount, setOnlineCount] = useState<OnlineDeviceCount>({ total: 0, online: 0, offline: 0, root_count: 0, mesh_count: 0 });
   const [loading, setLoading] = useState(false);
   const [confirming, setConfirming] = useState(false);
 
@@ -55,7 +57,7 @@ export function OTAConfirmModal({ open, release, onClose }: OTAConfirmModalProps
       setOnlineCount(data);
     } catch (err: unknown) {
       console.error('Erro ao buscar dispositivos online:', err);
-      setOnlineCount({ total: 0, root_count: 0, mesh_count: 0 });
+      setOnlineCount({ total: 0, online: 0, offline: 0, root_count: 0, mesh_count: 0 });
     } finally {
       setLoading(false);
     }
@@ -129,10 +131,10 @@ export function OTAConfirmModal({ open, release, onClose }: OTAConfirmModalProps
               <span className="text-lg font-black text-slate-900">{release.version}</span>
             </div>
 
-            {/* Dispositivos online separados por tipo */}
+          {/* Dispositivos separados por status */}
             <div className="p-4 bg-slate-50 rounded-xl space-y-3">
               <div className="flex items-center justify-between">
-                <span className="text-sm text-slate-600 font-medium">Dispositivos Online</span>
+                <span className="text-sm text-slate-600 font-medium">Dispositivos Cadastrados</span>
                 {loading ? (
                   <Loader2 className="animate-spin text-slate-400" size={20} />
                 ) : (
@@ -140,11 +142,25 @@ export function OTAConfirmModal({ open, release, onClose }: OTAConfirmModalProps
                 )}
               </div>
               {!loading && onlineCount.total > 0 && (
-                <div className="flex gap-3">
+                <div className="flex gap-2 flex-wrap">
+                  <div className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-100 rounded-lg">
+                    <div className="w-2 h-2 rounded-full bg-emerald-500" />
+                    <span className="text-xs font-bold text-emerald-700">
+                      {onlineCount.online} Online
+                    </span>
+                  </div>
+                  {onlineCount.offline > 0 && (
+                    <div className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 rounded-lg">
+                      <div className="w-2 h-2 rounded-full bg-slate-400" />
+                      <span className="text-xs font-bold text-slate-600">
+                        {onlineCount.offline} Offline
+                      </span>
+                    </div>
+                  )}
                   <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-100 rounded-lg">
                     <Wifi size={14} className="text-blue-600" />
                     <span className="text-xs font-bold text-blue-700">
-                      {onlineCount.root_count} Raiz (WiFi)
+                      {onlineCount.root_count} Raiz
                     </span>
                   </div>
                   <div className="flex items-center gap-2 px-3 py-1.5 bg-purple-100 rounded-lg">
@@ -170,12 +186,11 @@ export function OTAConfirmModal({ open, release, onClose }: OTAConfirmModalProps
             </div>
           </div>
 
-          {/* Confirmation Message */}
           <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
             <p className="text-sm text-blue-900 leading-relaxed">
-              Você está prestes a atualizar <strong>{onlineCount.total} dispositivos online</strong> para a versão{' '}
-              <strong>{release.version}</strong>. Nós raiz atualizam primeiro; nós mesh atualizam em seguida via propagação. 
-              Deseja continuar?
+              Você está prestes a disparar OTA para <strong>{onlineCount.total} dispositivos cadastrados</strong> (versão{' '}
+              <strong>{release.version}</strong>). O comando MQTT é broadcast — apenas os devices online no momento irão processar. 
+              Nós raiz atualizam primeiro; nós mesh seguem via propagação.
             </p>
           </div>
         </div>
@@ -191,8 +206,7 @@ export function OTAConfirmModal({ open, release, onClose }: OTAConfirmModalProps
           </button>
           <button
             onClick={handleConfirm}
-            disabled={confirming || loading || onlineCount.total === 0}
-            className="flex-1 px-4 py-3 bg-red-600 text-white rounded-xl font-bold text-sm hover:bg-red-700 transition-all active:scale-95 disabled:opacity-50 disabled:grayscale flex items-center justify-center gap-2"
+            disabled={confirming || loading || onlineCount.total === 0}            className="flex-1 px-4 py-3 bg-red-600 text-white rounded-xl font-bold text-sm hover:bg-red-700 transition-all active:scale-95 disabled:opacity-50 disabled:grayscale flex items-center justify-center gap-2"
           >
             {confirming ? (
               <>
