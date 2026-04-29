@@ -17,7 +17,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.config import settings
 from app.models.ota import FirmwareRelease, FirmwareSource, OTAUpdateLog, OTAStatus
-from app.models.esp_device import ESPDevice
+from app.models.esp_device import ESPDevice, DeviceStatus
 from app.services.github_client import GitHubClient
 from app.services.websocket_manager import ws_manager
 
@@ -252,7 +252,7 @@ class OTAService:
         
         # Buscar apenas dispositivos ESP32 online
         stmt_devices = select(ESPDevice).where(
-            ESPDevice.status == "online"
+            ESPDevice.status == DeviceStatus.online
         )
         result = await self.session.execute(stmt_devices)
         devices = result.scalars().all()

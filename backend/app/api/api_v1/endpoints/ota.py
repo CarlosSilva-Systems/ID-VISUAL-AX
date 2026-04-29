@@ -15,6 +15,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.api.deps import get_session, get_current_user, require_current_user
 from app.models.user import User
 from app.models.ota import FirmwareRelease, OTAUpdateLog
+from app.models.esp_device import ESPDevice, DeviceStatus
 from app.schemas.ota import (
     FirmwareReleaseOut,
     CheckGitHubRequest,
@@ -305,8 +306,6 @@ async def get_online_device_count(
     Usado pelo modal de confirmação para exibir quantos dispositivos
     serão afetados pela atualização OTA.
     """
-    from app.models.esp_device import DeviceStatus
-    
     stmt = select(ESPDevice).where(ESPDevice.status == DeviceStatus.online)
     result = await session.execute(stmt)
     online_devices = result.scalars().all()
