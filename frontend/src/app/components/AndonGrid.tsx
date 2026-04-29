@@ -229,37 +229,49 @@ export const AndonGrid: React.FC<AndonGridProps> = ({ username }) => {
                                 )}
                             </div>
                             <div className="flex items-center gap-2">
-                                {/* Ícone IoT — tooltip em desktop, label inline em mobile */}
-                                <TooltipProvider>
-                                    <Tooltip delayDuration={200}>
-                                        <TooltipTrigger asChild>
-                                            <button
-                                                onClick={(e) => { e.stopPropagation(); setIotWc(wc); }}
-                                                className="flex items-center gap-1 p-1 rounded-lg hover:bg-white/60 active:bg-white/80 transition-colors min-w-[44px] min-h-[44px] justify-center"
-                                                aria-label={iotStatusLabel}
-                                            >
-                                                <KeyRound
-                                                    className={cn(
-                                                        "w-4 h-4",
-                                                        boundDevice?.status === 'online'
-                                                            ? 'text-emerald-500'
-                                                            : 'text-red-400'
-                                                    )}
-                                                />
-                                                {/* Label inline visível em mobile (< lg) */}
-                                                <span className={cn(
-                                                    "text-[10px] font-bold lg:hidden",
-                                                    boundDevice?.status === 'online' ? 'text-emerald-600' : 'text-red-400'
-                                                )}>
-                                                    {boundDevice?.status === 'online' ? 'ON' : 'OFF'}
-                                                </span>
-                                            </button>
-                                        </TooltipTrigger>
-                                        <TooltipContent side="top" className="bg-slate-900 text-white border-slate-800 text-[10px] font-bold py-1.5 px-3 rounded-lg shadow-xl hidden lg:block">
-                                            {iotStatusLabel}
-                                        </TooltipContent>
-                                    </Tooltip>
-                                </TooltipProvider>
+                                {/* Ícone IoT — exibido apenas quando há device vinculado */}
+                                {boundDevice ? (
+                                    <TooltipProvider>
+                                        <Tooltip delayDuration={200}>
+                                            <TooltipTrigger asChild>
+                                                <button
+                                                    onClick={(e) => { e.stopPropagation(); setIotWc(wc); }}
+                                                    className="flex items-center gap-1 p-1 rounded-lg hover:bg-white/60 active:bg-white/80 transition-colors min-w-[44px] min-h-[44px] justify-center"
+                                                    aria-label={iotStatusLabel}
+                                                >
+                                                    <KeyRound
+                                                        className={cn(
+                                                            "w-4 h-4",
+                                                            boundDevice.status === 'online'
+                                                                ? 'text-emerald-500'
+                                                                : 'text-red-400'
+                                                        )}
+                                                    />
+                                                    {/* Label inline visível em mobile (< lg) */}
+                                                    <span className={cn(
+                                                        "text-[10px] font-bold lg:hidden",
+                                                        boundDevice.status === 'online' ? 'text-emerald-600' : 'text-red-400'
+                                                    )}>
+                                                        {boundDevice.status === 'online' ? 'ON' : 'OFF'}
+                                                    </span>
+                                                </button>
+                                            </TooltipTrigger>
+                                            <TooltipContent side="top" className="bg-slate-900 text-white border-slate-800 text-[10px] font-bold py-1.5 px-3 rounded-lg shadow-xl hidden lg:block">
+                                                {iotStatusLabel}
+                                            </TooltipContent>
+                                        </Tooltip>
+                                    </TooltipProvider>
+                                ) : (
+                                    /* Sem device vinculado — botão discreto para abrir modal de vínculo */
+                                    <button
+                                        onClick={(e) => { e.stopPropagation(); setIotWc(wc); }}
+                                        className="flex items-center gap-1 p-1 rounded-lg hover:bg-white/60 active:bg-white/80 transition-colors min-w-[44px] min-h-[44px] justify-center"
+                                        aria-label="Vincular dispositivo IoT"
+                                        title="Vincular dispositivo IoT"
+                                    >
+                                        <KeyRound className="w-4 h-4 text-slate-300" />
+                                    </button>
+                                )}
                                 <TooltipProvider>
                                     <Tooltip delayDuration={300}>
                                         <TooltipTrigger asChild>
