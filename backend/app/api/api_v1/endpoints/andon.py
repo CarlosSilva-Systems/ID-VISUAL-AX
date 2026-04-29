@@ -392,6 +392,18 @@ async def trigger_andon_basic(
             call.downtime_minutes = compute_downtime_minutes(call.created_at, now)
             session.add(call)
             resolved_calls.append(call)
+
+        # Enfileira resume_workorder se houver WO ativa no workcenter
+        # Garante que a WO seja retomada no Odoo mesmo se ele estiver temporariamente offline
+        if req.workorder_id:
+            await add_to_sync_queue(
+                session,
+                "resume_workorder",
+                {"workorder_id": req.workorder_id, "workcenter_id": req.workcenter_id},
+            )
+            logger.info(
+                f"[Andon] resume_workorder enfileirado: wo={req.workorder_id} wc={req.workcenter_id}"
+            )
     
     await session.commit()
     update_sync_version("andon_version")  # após commit — dados já persistidos
