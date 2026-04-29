@@ -318,7 +318,7 @@ function DashboardRow({ item, isSelected, onToggle, onViewDocs, isMobile, isDocs
 }
 
 export function Dashboard({ onCreateBatch }: DashboardProps) {
-  const { odooMOs, loadingMOs, refreshMOs, syncStatus } = useData();
+  const { odooMOs, manualRequests, loadingMOs, refreshMOs, syncStatus } = useData();
   const [loadingBatches, setLoadingBatches] = useState(true);
   const breakpoint = useBreakpoint();
   const isMobile = breakpoint === 'mobile' || breakpoint === 'sm';
@@ -374,7 +374,12 @@ export function Dashboard({ onCreateBatch }: DashboardProps) {
   };
 
   const filteredItems = useMemo(() => {
-    const items = odooMOs;
+    // IDs transferidas do módulo Solicitações que NÃO aparecem em odooMOs
+    // (MOs sem atividade ativa no Odoo ou cuja atividade já foi fechada)
+    const odooMoNumbers = new Set(odooMOs.map(m => m.mo_number));
+    const extraFromManual = manualRequests.filter(r => !odooMoNumbers.has(r.mo_number));
+
+    const items = [...odooMOs, ...extraFromManual];
     return items.filter(item => {
       const searchLower = search.toLowerCase();
       const obraStr = typeof item.obra === 'string' ? item.obra : '';
@@ -387,7 +392,7 @@ export function Dashboard({ onCreateBatch }: DashboardProps) {
       if (filter === 'Bloqueadas') return item.status === 'Bloqueada';
       return true;
     });
-  }, [odooMOs, search, filter]);
+  }, [odooMOs, manualRequests, search, filter]);
 
   const toggleSelect = (id: string) => {
     const newSelected = new Set(selectedIds);
@@ -466,17 +471,17 @@ export function Dashboard({ onCreateBatch }: DashboardProps) {
     <div className="p-3 sm:p-4 md:p-6 lg:p-8 max-w-7xl mx-auto space-y-6">
       {/* Stats Section */}
       <div className="grid grid-cols-2 sm:grid-cols-4 auto-rows-fr gap-4">
-        <StatCard label="Total Filas" value={odooMOs.length.toString()} icon={Package} color="blue" />
+        <StatCard label="Total Filas" value={filteredItems.length.toString()} icon={Package} color="blue" />
         <StatCard label="Selecionados" value={selectedIds.size.toString()} icon={CheckCircle2} color="amber" />
         <StatCard
           label="Atrasadas"
-          value={odooMOs.filter(i => i.sla === 'Vencida' && i.status !== 'Concluída').length.toString()}
+          value={filteredItems.filter(i => i.sla === 'Vencida' && i.status !== 'Concluída').length.toString()}
           icon={Clock}
           color="red"
         />
         <StatCard
           label="Bloqueadas"
-          value={odooMOs.filter(i => i.status === 'Bloqueada').length.toString()}
+          value={filteredItems.filter(i => i.status === 'Bloqueada').length.toString()}
           icon={AlertTriangle}
           color="red"
         />
