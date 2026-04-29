@@ -725,7 +725,7 @@ export const api = {
     },
 
     getOTAOnlineDeviceCount: async () => {
-        return api.get('/ota/online-devices/count');
+        return api.get('/ota/devices/count');
     },
 };
 

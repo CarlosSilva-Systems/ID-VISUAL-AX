@@ -376,8 +376,13 @@ async def delete_device(
     mac = device.mac_address
     dev_id_str = str(device.id)
 
-    # Deletar logs em cascata
+    # Deletar registros dependentes em cascata (ordem importa por FK constraints)
+    # 1. Logs de diagnóstico do device
     await session.execute(delete(ESPDeviceLog).where(ESPDeviceLog.device_id == device.id))
+    # 2. Logs de OTA do device (FK para esp_devices.id)
+    from app.models.ota import OTAUpdateLog
+    await session.execute(delete(OTAUpdateLog).where(OTAUpdateLog.device_id == device.id))
+    # 3. Deletar o device
     await session.delete(device)
     await session.commit()
 

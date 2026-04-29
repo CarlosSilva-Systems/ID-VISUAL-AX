@@ -53,7 +53,7 @@ export function OTAConfirmModal({ open, release, onClose }: OTAConfirmModalProps
   const fetchOnlineCount = async () => {
     setLoading(true);
     try {
-      const data = await api.get('/ota/online-devices/count');
+      const data = await api.get('/ota/devices/count');
       setOnlineCount(data);
     } catch (err: unknown) {
       console.error('Erro ao buscar dispositivos online:', err);

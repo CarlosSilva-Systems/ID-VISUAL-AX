@@ -295,7 +295,7 @@ async def cancel_ota_update(
     )
 
 
-@router.get("/online-devices/count")
+@router.get("/devices/count")
 async def get_online_device_count(
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(require_current_user)
@@ -306,7 +306,6 @@ async def get_online_device_count(
     Usado pelo modal de confirmação para exibir quantos dispositivos
     serão afetados pela atualização OTA.
     """
-    # Buscar todos os devices
     stmt_all = select(ESPDevice)
     all_devices = (await session.execute(stmt_all)).scalars().all()
 
@@ -324,7 +323,7 @@ async def get_online_device_count(
     }
 
 
-@router.get("/diagnostics/devices")
+@router.get("/devices/diagnostics")
 async def get_ota_device_diagnostics(
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(require_current_user)
@@ -336,12 +335,8 @@ async def get_ota_device_diagnostics(
     stmt_all = select(ESPDevice).order_by(ESPDevice.created_at.desc())
     all_devices = (await session.execute(stmt_all)).scalars().all()
 
-    stmt_online = select(ESPDevice).where(ESPDevice.status == DeviceStatus.online.value)
-    online_devices = (await session.execute(stmt_online)).scalars().all()
-
     return {
         "total_devices": len(all_devices),
-        "online_count_filtered": len(online_devices),
         "devices": [
             {
                 "mac_address": d.mac_address,
