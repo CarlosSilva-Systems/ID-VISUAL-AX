@@ -110,17 +110,55 @@ export function OTAConfirmModal({ open, release, onClose }: OTAConfirmModalProps
         {/* Content */}
         <div className="p-6 space-y-6">
           {/* Warning Banner */}
-          <div className="bg-amber-50 border-2 border-amber-200 rounded-xl p-4 flex gap-3">
-            <AlertTriangle className="text-amber-600 shrink-0 mt-0.5" size={20} />
+          <div className={cn(
+            "border-2 rounded-xl p-4 flex gap-3",
+            onlineCount.total === 0 
+              ? "bg-red-50 border-red-200"
+              : onlineCount.online === 0
+              ? "bg-amber-50 border-amber-200"
+              : "bg-blue-50 border-blue-200"
+          )}>
+            <AlertTriangle className={cn(
+              "shrink-0 mt-0.5",
+              onlineCount.total === 0 
+                ? "text-red-600"
+                : onlineCount.online === 0
+                ? "text-amber-600"
+                : "text-blue-600"
+            )} size={20} />
             <div className="space-y-1">
-              <p className="font-bold text-amber-900 text-sm">
-                Atenção: Atualização em Massa
-              </p>
-              <p className="text-xs text-amber-800 leading-relaxed">
-                Esta operação iniciará o processo de atualização OTA em todos os dispositivos ESP32 
-                <strong> online</strong>. Dispositivos offline não serão afetados. O processo pode 
-                levar alguns minutos dependendo da rede Mesh.
-              </p>
+              {onlineCount.total === 0 ? (
+                <>
+                  <p className="font-bold text-red-900 text-sm">
+                    Nenhum Dispositivo Cadastrado
+                  </p>
+                  <p className="text-xs text-red-800 leading-relaxed">
+                    Não há dispositivos ESP32 cadastrados no sistema. Cadastre pelo menos um dispositivo 
+                    antes de disparar atualizações OTA.
+                  </p>
+                </>
+              ) : onlineCount.online === 0 ? (
+                <>
+                  <p className="font-bold text-amber-900 text-sm">
+                    Nenhum Dispositivo Online no Momento
+                  </p>
+                  <p className="text-xs text-amber-800 leading-relaxed">
+                    Existem {onlineCount.total} dispositivo(s) cadastrado(s), mas nenhum está online no momento. 
+                    Você pode disparar a atualização mesmo assim — os devices receberão quando reconectarem ao broker MQTT.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="font-bold text-blue-900 text-sm">
+                    Atualização em Massa
+                  </p>
+                  <p className="text-xs text-blue-800 leading-relaxed">
+                    Esta operação iniciará o processo de atualização OTA em {onlineCount.online} dispositivo(s) online. 
+                    Os {onlineCount.offline} dispositivo(s) offline receberão quando reconectarem. 
+                    O processo pode levar alguns minutos dependendo da rede Mesh.
+                  </p>
+                </>
+              )}
             </div>
           </div>
 
@@ -189,8 +227,13 @@ export function OTAConfirmModal({ open, release, onClose }: OTAConfirmModalProps
           <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
             <p className="text-sm text-blue-900 leading-relaxed">
               Você está prestes a disparar OTA para <strong>{onlineCount.total} dispositivos cadastrados</strong> (versão{' '}
-              <strong>{release.version}</strong>). O comando MQTT é broadcast — apenas os devices online no momento irão processar. 
-              Nós raiz atualizam primeiro; nós mesh seguem via propagação.
+              <strong>{release.version}</strong>). O comando MQTT é broadcast — apenas os devices <strong>conectados ao broker no momento</strong> irão processar. 
+              {onlineCount.online > 0 && (
+                <> Atualmente <strong>{onlineCount.online} dispositivo(s) online</strong> receberão a atualização imediatamente.</>
+              )}
+              {onlineCount.offline > 0 && (
+                <> Os {onlineCount.offline} dispositivo(s) offline receberão quando reconectarem.</>
+              )}
             </p>
           </div>
         </div>
@@ -206,7 +249,9 @@ export function OTAConfirmModal({ open, release, onClose }: OTAConfirmModalProps
           </button>
           <button
             onClick={handleConfirm}
-            disabled={confirming || loading || onlineCount.total === 0}            className="flex-1 px-4 py-3 bg-red-600 text-white rounded-xl font-bold text-sm hover:bg-red-700 transition-all active:scale-95 disabled:opacity-50 disabled:grayscale flex items-center justify-center gap-2"
+            disabled={confirming || loading || onlineCount.total === 0}
+            className="flex-1 px-4 py-3 bg-red-600 text-white rounded-xl font-bold text-sm hover:bg-red-700 transition-all active:scale-95 disabled:opacity-50 disabled:grayscale flex items-center justify-center gap-2"
+            title={onlineCount.total === 0 ? "Nenhum dispositivo cadastrado" : ""}
           >
             {confirming ? (
               <>
