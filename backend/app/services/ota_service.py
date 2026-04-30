@@ -317,7 +317,21 @@ class OTAService:
         await self.session.commit()
         
         # Construir payload MQTT
+        # IMPORTANTE: ESP32 não pode acessar "localhost" — usar IP real do servidor
         backend_host = getattr(settings, 'BACKEND_HOST', 'localhost:8000')
+        
+        # Se backend_host contém "localhost", substituir pelo IP do broker MQTT
+        # (assumindo que o backend está no mesmo servidor que o broker)
+        if 'localhost' in backend_host or '127.0.0.1' in backend_host:
+            mqtt_host = settings.MQTT_BROKER_HOST
+            # Extrair porta do backend_host se houver
+            port = backend_host.split(':')[1] if ':' in backend_host else '8000'
+            backend_host = f"{mqtt_host}:{port}"
+            logger.warning(
+                f"OTA: backend_host continha localhost, substituído por {backend_host}. "
+                f"Configure BACKEND_HOST no .env com o IP real do servidor."
+            )
+        
         firmware_url = f"http://{backend_host}/static/ota/{release.filename}"
         
         payload = {
