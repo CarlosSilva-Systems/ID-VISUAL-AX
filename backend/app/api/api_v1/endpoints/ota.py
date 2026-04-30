@@ -13,8 +13,9 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.api.deps import get_session, get_current_user, require_current_user
+from app.core.config import settings
 from app.models.user import User
-from app.models.ota import FirmwareRelease, OTAUpdateLog
+from app.models.ota import FirmwareRelease, OTAUpdateLog, OTAStatus
 from app.models.esp_device import ESPDevice, DeviceStatus
 from app.schemas.ota import (
     FirmwareReleaseOut,
@@ -329,14 +330,24 @@ async def get_ota_device_diagnostics(
     current_user: User = Depends(require_current_user)
 ):
     """
-    Diagnóstico: retorna todos os devices com status raw do banco.
-    Útil para depurar problemas de filtro online/offline.
+    Diagnóstico completo: retorna todos os devices com status detalhado.
+    Útil para depurar problemas de filtro online/offline e conectividade MQTT.
     """
     stmt_all = select(ESPDevice).order_by(ESPDevice.created_at.desc())
     all_devices = (await session.execute(stmt_all)).scalars().all()
 
+    # Verificar se há logs OTA ativos
+    stmt_active_ota = select(OTAUpdateLog).where(
+        OTAUpdateLog.status.in_([OTAStatus.downloading, OTAStatus.installing])
+    )
+    active_ota_logs = (await session.execute(stmt_active_ota)).scalars().all()
+
     return {
         "total_devices": len(all_devices),
+        "mqtt_broker": f"{settings.MQTT_BROKER_HOST}:{settings.MQTT_BROKER_PORT}",
+        "backend_host": getattr(settings, 'BACKEND_HOST', 'localhost:8000'),
+        "ota_storage_path": settings.OTA_STORAGE_PATH,
+        "active_ota_updates": len(active_ota_logs),
         "devices": [
             {
                 "mac_address": d.mac_address,
@@ -346,9 +357,22 @@ async def get_ota_device_diagnostics(
                 "status_type": type(d.status).__name__,
                 "is_root": d.is_root,
                 "connection_type": d.connection_type,
+                "firmware_version": d.firmware_version,
                 "last_seen_at": str(d.last_seen_at) if d.last_seen_at else None,
+                "rssi": d.rssi,
+                "ip_address": d.ip_address,
             }
             for d in all_devices
+        ],
+        "active_ota_logs": [
+            {
+                "device_id": str(log.device_id),
+                "target_version": log.target_version,
+                "status": log.status.value,
+                "progress_percent": log.progress_percent,
+                "started_at": str(log.started_at),
+            }
+            for log in active_ota_logs
         ]
     }
 
