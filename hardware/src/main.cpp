@@ -745,6 +745,10 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
         // Comando de atualização OTA recebido via broadcast
         logSerial("OTA: Trigger recebido via MQTT");
         handleOTATrigger(payloadStr.c_str());
+    } else if (String(topic) == "andon/ota/cancel") {
+        // Comando de cancelamento OTA recebido via broadcast
+        logSerial("OTA: Cancel recebido via MQTT - ignorando downloads futuros");
+        publishOTAProgress("cancelled", 0, "Cancelado pelo backend");
     } else if (String(topic) == odooErrTopic) {
         // Integração Odoo falhou — acionamento registrado localmente mas não chegou ao Odoo
         // Pisca vermelho rápido por 5s para alertar o operador
@@ -799,11 +803,14 @@ void handleMQTTConnecting() {
         String stateTopic    = "andon/state/"     + macAddress;
         String restartTopic  = "andon/restart/"   + macAddress;
         String odooErrTopic  = "andon/odoo_error/" + macAddress;
+        String otaTrigger    = "andon/ota/trigger";
+        String otaCancel     = "andon/ota/cancel";
         mqttClient.subscribe(ledTopic.c_str(),     1);
         mqttClient.subscribe(stateTopic.c_str(),   1);
         mqttClient.subscribe(restartTopic.c_str(), 1);
         mqttClient.subscribe(odooErrTopic.c_str(), 1);
-        mqttClient.subscribe("andon/ota/trigger",  1);
+        mqttClient.subscribe(otaTrigger.c_str(),   1);
+        mqttClient.subscribe(otaCancel.c_str(),    1);
 
         String reqTopic = "andon/state/request/" + macAddress;
         mqttClient.publish(reqTopic.c_str(), "REQUEST", false);
