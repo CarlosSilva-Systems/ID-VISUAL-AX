@@ -7,8 +7,8 @@
 #include <esp_ota_ops.h>
 
 // Referência ao cliente MQTT global (definido em main.cpp)
-extern PubSubClient g_mqtt;
-extern String g_mac;
+extern PubSubClient mqttClient;
+extern String macAddress;
 
 // ═══════════════════════════════════════════════════════════
 // Implementação OTA
@@ -54,10 +54,10 @@ void publishOTAProgress(const char* status, int progress, const char* error) {
     char buffer[256];
     serializeJson(doc, buffer);
     
-    String topic = "andon/ota/progress/" + g_mac;
+    String topic = "andon/ota/progress/" + macAddress;
     
-    if (g_mqtt.connected()) {
-        bool published = g_mqtt.publish(topic.c_str(), buffer, false);
+    if (mqttClient.connected()) {
+        bool published = mqttClient.publish(topic.c_str(), buffer, false);
         if (published) {
             Serial.printf("[OTA] Progresso publicado: %s - %d%%\n", status, progress);
         } else {

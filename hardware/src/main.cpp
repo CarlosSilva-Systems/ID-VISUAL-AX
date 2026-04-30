@@ -29,6 +29,7 @@
 #include <esp_wifi.h>
 #include <esp_mac.h>
 #include "config.h"
+#include "ota.h"
 
 // ═══════════════════════════════════════════════════════════
 // ESTRUTURAS DE DADOS

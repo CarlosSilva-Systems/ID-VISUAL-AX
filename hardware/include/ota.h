@@ -1,6 +1,14 @@
 #pragma once
 
 #include <Arduino.h>
+#include <PubSubClient.h>
+
+// ═══════════════════════════════════════════════════════════
+// Variáveis Globais Externas (definidas em main.cpp)
+// ═══════════════════════════════════════════════════════════
+
+extern PubSubClient mqttClient;
+extern String macAddress;
 
 // ═══════════════════════════════════════════════════════════
 // OTA (Over-The-Air) Update Management
