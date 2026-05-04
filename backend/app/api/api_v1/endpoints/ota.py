@@ -8,9 +8,11 @@ import logging
 from typing import List
 import uuid
 
-from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException
+from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException, Request
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from app.api.deps import get_session, get_current_user, require_current_user
 from app.core.config import settings
@@ -35,6 +37,7 @@ from app.services.github_client import GitHubClient
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/ota", tags=["OTA Management"])
+limiter = Limiter(key_func=get_remote_address)
 
 
 @router.get("/firmware/releases", response_model=List[FirmwareReleaseOut])
@@ -248,7 +251,9 @@ async def upload_firmware_manually(
 
 
 @router.post("/trigger", response_model=TriggerOTAResponse, status_code=202)
+@limiter.limit("1/minute")  # Máximo 1 trigger por minuto para evitar sobrecarga
 async def trigger_ota_update(
+    http_request: Request,  # Necessário para o limiter
     request: TriggerOTARequest,
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(require_current_user)
@@ -257,7 +262,7 @@ async def trigger_ota_update(
     Dispara atualização OTA em massa para todos os dispositivos.
     
     Cria logs de atualização para cada dispositivo e publica comando MQTT.
-    Rate limited a 1 requisição por segundo.
+    Rate limited a 1 requisição por minuto para evitar sobrecarga do sistema.
     """
     ota_service = OTAService(session)
     
@@ -273,7 +278,6 @@ async def trigger_ota_update(
         mesh_device_count=result.get("mesh_device_count", 0),
         target_version=result["target_version"]
     )
-
 
 @router.post("/cancel", response_model=CancelOTAResponse)
 async def cancel_ota_update(
