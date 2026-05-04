@@ -90,6 +90,8 @@ class Settings(BaseSettings):
     # MQTT Configuration
     MQTT_BROKER_HOST: str = "localhost"
     MQTT_BROKER_PORT: int = 1883
+    MQTT_USERNAME: str = ""  # Deixar vazio para conexão sem autenticação (dev)
+    MQTT_PASSWORD: str = ""  # Configurar em produção
 
     # --- OTA Management Configuration ---
     # GitHub Integration (opcional - para downloads automáticos de firmware)
@@ -132,11 +134,24 @@ _INSECURE_DEFAULTS = {
     "OPENROUTER_API_KEY": "your_key_here",
 }
 
+import sys
+_is_production = os.getenv("ENVIRONMENT", "").lower() in ["production", "prod"]
+
 for _key, _default in _INSECURE_DEFAULTS.items():
     if getattr(settings, _key) == _default:
-        import warnings
-        warnings.warn(
-            f"⚠️  SECURITY: '{_key}' is using the insecure default value. "
-            f"Set it in .env before deploying to production.",
-            stacklevel=2,
-        )
+        if _is_production:
+            # Em produção: BLOQUEAR startup com secrets inseguros
+            import logging
+            logging.critical(
+                f"🔴 FATAL SECURITY ERROR: '{_key}' está usando valor padrão inseguro. "
+                f"Configure no .env antes de rodar em produção. Sistema bloqueado."
+            )
+            sys.exit(1)
+        else:
+            # Em desenvolvimento: apenas warning
+            import warnings
+            warnings.warn(
+                f"⚠️  SECURITY: '{_key}' is using the insecure default value. "
+                f"Set it in .env before deploying to production.",
+                stacklevel=2,
+            )
