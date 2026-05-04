@@ -28,6 +28,25 @@ _button_dedup: dict[str, dict[str, float]] = {}
 _BUTTON_DEDUP_WINDOW_S = 3.0
 
 
+def _get_mqtt_client_kwargs() -> dict:
+    """
+    Retorna kwargs para criar cliente MQTT com autenticação se configurada.
+    
+    Centraliza a lógica de autenticação MQTT para evitar duplicação.
+    """
+    host = getattr(settings, "MQTT_BROKER_HOST", "localhost")
+    port = int(getattr(settings, "MQTT_BROKER_PORT", 1883))
+    username = getattr(settings, "MQTT_USERNAME", "")
+    password = getattr(settings, "MQTT_PASSWORD", "")
+    
+    client_kwargs = {"hostname": host, "port": port}
+    if username and password:
+        client_kwargs["username"] = username
+        client_kwargs["password"] = password
+    
+    return client_kwargs
+
+
 async def _get_or_create_device(
     session: AsyncSession, mac_address: str, device_name: str = ""
 ) -> ESPDevice:
@@ -851,14 +870,18 @@ async def _mqtt_loop():
         logger.error("aiomqtt não instalado. Serviço MQTT desabilitado.")
         return
 
-    host = getattr(settings, "MQTT_BROKER_HOST", "localhost")
-    port = int(getattr(settings, "MQTT_BROKER_PORT", 1883))
     backoff = 1
 
     while True:
         try:
-            logger.info(f"MQTT: conectando a {host}:{port}...")
-            async with aiomqtt.Client(hostname=host, port=port) as client:
+            client_kwargs = _get_mqtt_client_kwargs()
+            logger.info(f"MQTT: conectando a {client_kwargs['hostname']}:{client_kwargs['port']}...")
+            if "username" in client_kwargs:
+                logger.info(f"MQTT: autenticação habilitada (usuário: {client_kwargs['username']})")
+            else:
+                logger.warning("MQTT: conectando SEM autenticação (não recomendado em produção)")
+            
+            async with aiomqtt.Client(**client_kwargs) as client:
                 backoff = 1
                 logger.info("MQTT: conectado. Inscrevendo nos tópicos...")
                 await client.subscribe("andon/discovery")
