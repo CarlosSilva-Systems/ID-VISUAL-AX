@@ -372,6 +372,102 @@ async def bulk_transfer_manual_requests(
         "results": results
     }
 
+@router.post("/bulk-complete", response_model=Dict[str, Any])
+async def bulk_complete_requests(
+    request_ids: List[str],
+    session: AsyncSession = Depends(deps.get_session),
+    current_user: Any = Depends(deps.get_current_user),
+) -> Any:
+    """
+    Marca múltiplos IDRequests como 'concluida' de uma vez.
+
+    Caso de uso: operadores que fazem a ID Visual de forma manual (sem usar o
+    fluxo de lote/matriz) e precisam apenas registrar a conclusão no sistema
+    para que o Andon TV seja notificado.
+
+    Regras:
+    - Aceita apenas UUIDs válidos.
+    - Ignora silenciosamente IDs não encontrados ou já concluídos/cancelados.
+    - Seta status = 'concluida', finished_at e concluido_em com o timestamp atual.
+    - Dispara update_sync_version("andon_version") para notificar o Andon TV.
+    - Retorna contagem de sucesso e falha.
+    """
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    success_ids: List[str] = []
+    skipped_ids: List[str] = []
+    error_ids: List[str] = []
+
+    # Statuses que podem ser concluídos (não faz sentido concluir cancelados/já concluídos)
+    completable_statuses = [
+        IDRequestStatus.NOVA.value,
+        IDRequestStatus.TRIAGEM.value,
+        IDRequestStatus.EM_LOTE.value,
+        IDRequestStatus.EM_PROGRESSO.value,
+        IDRequestStatus.BLOQUEADA.value,
+    ]
+
+    for rid in request_ids:
+        try:
+            req_uuid = uuid.UUID(rid)
+        except ValueError:
+            error_ids.append(rid)
+            continue
+
+        stmt = select(IDRequest).where(IDRequest.id == req_uuid)
+        result = await session.exec(stmt)
+        req = result.first()
+
+        if not req:
+            skipped_ids.append(rid)
+            continue
+
+        current_status = req.status.value if hasattr(req.status, "value") else req.status
+
+        if current_status not in completable_statuses:
+            # Já concluído, entregue ou cancelado — ignora silenciosamente
+            skipped_ids.append(rid)
+            continue
+
+        req.status = IDRequestStatus.CONCLUIDA.value
+        req.finished_at = now
+        req.concluido_em = now
+        # Se nunca foi iniciado, registra o início como agora também
+        if not req.started_at:
+            req.started_at = now
+            req.iniciado_em = now
+
+        session.add(req)
+
+        # Log de auditoria
+        log = HistoryLog(
+            entity_type="id_request",
+            entity_id=req.id,
+            action="BULK_COMPLETED",
+            after_json={
+                "status": IDRequestStatus.CONCLUIDA.value,
+                "completed_by": str(current_user.id) if hasattr(current_user, "id") else str(current_user),
+                "finished_at": now.isoformat(),
+            },
+        )
+        session.add(log)
+        success_ids.append(rid)
+
+    if success_ids:
+        await session.commit()
+        # Notifica o Andon TV sobre as conclusões (dispara evento IDVISUAL_DONE)
+        update_sync_version("andon_version")
+        update_sync_version("odoo_version")
+
+    return {
+        "success_count": len(success_ids),
+        "skipped_count": len(skipped_ids),
+        "error_count": len(error_ids),
+        "success_ids": success_ids,
+        "skipped_ids": skipped_ids,
+        "error_ids": error_ids,
+    }
+
+
 @router.get("/stats")
 async def get_id_requests_stats(
     session: AsyncSession = Depends(deps.get_session),

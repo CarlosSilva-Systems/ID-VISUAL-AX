@@ -408,6 +408,34 @@ export const api = {
         return data;
     },
 
+    /**
+     * Marca múltiplos IDRequests como "concluída" de uma vez.
+     * Usado por operadores que fazem a ID Visual manualmente e precisam
+     * apenas registrar a conclusão (notifica o Andon TV automaticamente).
+     */
+    bulkCompleteRequests: async (requestIds: string[]): Promise<{
+        success_count: number;
+        skipped_count: number;
+        error_count: number;
+        success_ids: string[];
+        skipped_ids: string[];
+        error_ids: string[];
+    }> => {
+        const response = await fetch(`${API_URL}/id-requests/bulk-complete`, {
+            method: 'POST',
+            headers: getHeaders(),
+            body: JSON.stringify(requestIds),
+        });
+
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            const error = new Error(data.detail?.message || data.detail || `API Error: ${response.statusText}`);
+            (error as any).status = response.status;
+            throw error;
+        }
+        return data;
+    },
+
     getProductionRequests: async (limit: number = 50, offset: number = 0) => {
         return api.get(`/production/requests?limit=${limit}&offset=${offset}`);
     },

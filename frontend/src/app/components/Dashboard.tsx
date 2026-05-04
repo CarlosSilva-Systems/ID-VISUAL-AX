@@ -18,6 +18,7 @@ import {
   Trash2,
   X,
   MonitorPlay,
+  CheckSquare,
 } from 'lucide-react';
 import { Fabrication, PackageType } from '../types';
 import { ModalPacote } from './ModalPacote';
@@ -350,6 +351,10 @@ export function Dashboard({ onCreateBatch }: DashboardProps) {
   const [confirmAction, setConfirmAction] = useState<{ batchId: string; type: 'finalize' | 'delete' } | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
 
+  // Bulk complete state
+  const [showBulkCompleteConfirm, setShowBulkCompleteConfirm] = useState(false);
+  const [isBulkCompleting, setIsBulkCompleting] = useState(false);
+
   useEffect(() => {
     loadActiveBatches();
     refreshMOs();
@@ -449,6 +454,43 @@ export function Dashboard({ onCreateBatch }: DashboardProps) {
     }
   };
 
+  /**
+   * Marca as IDs selecionadas como "Concluída" diretamente, sem criar lote.
+   * Fluxo para operadores que fazem a ID Visual de forma manual e usam o app
+   * apenas para registrar a conclusão e notificar o Andon TV.
+   */
+  const handleBulkComplete = async () => {
+    if (selectedIds.size === 0) return;
+    setIsBulkCompleting(true);
+    try {
+      // Filtra apenas IDs que são request_ids (UUIDs) — itens do Odoo usam odoo_mo_id (número)
+      // e itens manuais usam o request_id (UUID). Enviamos todos e o backend ignora os inválidos.
+      const ids = Array.from(selectedIds);
+      const res = await api.bulkCompleteRequests(ids);
+
+      if (res.success_count > 0) {
+        toast.success(
+          `${res.success_count} ID(s) marcada(s) como Concluída. O Andon TV foi notificado.`
+        );
+      }
+      if (res.skipped_count > 0) {
+        toast.info(`${res.skipped_count} item(ns) ignorado(s) (já concluído ou não encontrado).`);
+      }
+      if (res.error_count > 0) {
+        toast.warning(`${res.error_count} item(ns) com erro de formato.`);
+      }
+
+      setSelectedIds(new Set());
+      setShowBulkCompleteConfirm(false);
+      // Recarrega a fila para refletir os novos status
+      await refreshMOs();
+    } catch (err: any) {
+      toast.error(`Erro ao concluir IDs: ${err.message}`);
+    } finally {
+      setIsBulkCompleting(false);
+    }
+  };
+
   if (loadingMOs && odooMOs.length === 0) {
     return (
       <div className="p-3 sm:p-4 md:p-6 lg:p-8 max-w-7xl mx-auto space-y-6">
@@ -542,6 +584,17 @@ export function Dashboard({ onCreateBatch }: DashboardProps) {
             <div className="px-4 py-2 bg-slate-100 rounded-lg text-sm font-medium text-slate-600">
               Selecionadas: <span className="text-blue-600 font-bold">{selectedIds.size}</span>
             </div>
+            {selectedIds.size > 0 && (
+              <button
+                onClick={() => setShowBulkCompleteConfirm(true)}
+                disabled={isBulkCompleting}
+                className="w-full sm:w-auto min-h-[44px] px-5 py-2 rounded-lg font-bold flex items-center justify-center gap-2 transition-all shadow-md bg-emerald-600 text-white hover:bg-emerald-700 active:bg-emerald-800 disabled:opacity-60 disabled:cursor-not-allowed"
+                title="Marcar IDs selecionadas como Concluída (sem criar lote)"
+              >
+                <CheckSquare size={16} />
+                Marcar como Concluído
+              </button>
+            )}
             <button
               onClick={handleCreateBatch}
               disabled={selectedIds.size === 0 || isCreatingBatch}
@@ -627,6 +680,54 @@ export function Dashboard({ onCreateBatch }: DashboardProps) {
       )}
 
       <DocViewer />
+
+      {/* Modal de Confirmação — Marcar como Concluído */}
+      {showBulkCompleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl flex flex-col scale-100 animate-in zoom-in-95 duration-200">
+            <div className="p-6 text-center space-y-4">
+              <div className="w-16 h-16 rounded-full mx-auto flex items-center justify-center bg-emerald-100 text-emerald-600">
+                <CheckSquare size={32} />
+              </div>
+              <div>
+                <h3 className="text-xl font-bold text-slate-800">Marcar como Concluído?</h3>
+                <p className="text-sm text-slate-500 mt-2">
+                  {selectedIds.size === 1
+                    ? 'Esta ID Visual será marcada como Concluída.'
+                    : `${selectedIds.size} IDs Visuais serão marcadas como Concluídas.`
+                  }
+                </p>
+                <p className="text-xs text-slate-400 mt-2 bg-slate-50 rounded-lg p-3 text-left">
+                  Use esta opção quando a ID Visual foi feita de forma manual (sem usar o fluxo de lote). O Andon TV será notificado automaticamente.
+                </p>
+              </div>
+            </div>
+            <div className="p-4 bg-slate-50 border-t border-slate-100 flex gap-3">
+              <button
+                onClick={() => setShowBulkCompleteConfirm(false)}
+                disabled={isBulkCompleting}
+                className="flex-1 px-4 py-2 font-bold text-slate-600 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors disabled:opacity-60"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleBulkComplete}
+                disabled={isBulkCompleting}
+                className="flex-1 px-4 py-2 font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg transition-colors shadow-sm flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed focus:ring-2 focus:ring-emerald-500/20"
+              >
+                {isBulkCompleting ? (
+                  <Loader2 size={16} className="animate-spin" />
+                ) : (
+                  <>
+                    <CheckSquare size={16} />
+                    Confirmar
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Confirmation Modal for Finalize / Delete Batch */}
       {confirmAction && (
