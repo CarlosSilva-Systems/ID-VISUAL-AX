@@ -149,48 +149,119 @@ function buildWsUrl(): string {
 
 // ── TTS Engine ───────────────────────────────────────────────────
 
+/**
+ * Motor de TTS com fila sequencial e workaround para o bug do Chrome.
+ *
+ * Problemas resolvidos:
+ * 1. O `speechSynthesis.cancel()` agressivo cortava a fala anterior quando
+ *    o polling de 1.5s chegava com novos eventos enquanto a voz ainda falava.
+ * 2. Bug do Chrome: o speechSynthesis para sozinho após ~15s em background.
+ *    Workaround: `resume()` periódico enquanto há fala em andamento.
+ *
+ * Comportamento:
+ * - Mensagens são enfileiradas e faladas sequencialmente.
+ * - Nunca cancela a fala atual — a próxima começa quando a anterior termina.
+ * - O workaround do Chrome faz resume() a cada 10s enquanto está falando.
+ */
+const ttsState = {
+    queue: [] as string[],
+    speaking: false,
+    resumeTimer: null as ReturnType<typeof setInterval> | null,
+};
+
+function _startChromeResumeWorkaround() {
+    if (ttsState.resumeTimer) return;
+    ttsState.resumeTimer = setInterval(() => {
+        if (window.speechSynthesis.speaking) {
+            window.speechSynthesis.pause();
+            window.speechSynthesis.resume();
+        } else {
+            _stopChromeResumeWorkaround();
+        }
+    }, 10_000);
+}
+
+function _stopChromeResumeWorkaround() {
+    if (ttsState.resumeTimer) {
+        clearInterval(ttsState.resumeTimer);
+        ttsState.resumeTimer = null;
+    }
+}
+
+function _processQueue() {
+    if (ttsState.speaking || ttsState.queue.length === 0) return;
+
+    const text = ttsState.queue.shift()!;
+    ttsState.speaking = true;
+
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = 'pt-BR';
+    utterance.rate = 0.92;
+    utterance.pitch = 1.0;
+    utterance.volume = 1.0;
+
+    utterance.onend = () => {
+        ttsState.speaking = false;
+        _stopChromeResumeWorkaround();
+        // Pequena pausa entre mensagens para naturalidade
+        setTimeout(_processQueue, 400);
+    };
+
+    utterance.onerror = (e) => {
+        // 'interrupted' é esperado quando cancel() é chamado externamente — não logar
+        if ((e as SpeechSynthesisErrorEvent).error !== 'interrupted') {
+            console.warn('[TTS] Erro na utterance:', (e as SpeechSynthesisErrorEvent).error);
+        }
+        ttsState.speaking = false;
+        _stopChromeResumeWorkaround();
+        setTimeout(_processQueue, 400);
+    };
+
+    const doSpeak = () => {
+        const voices = window.speechSynthesis.getVoices();
+        if (voices.length > 0) {
+            const ptVoice =
+                voices.find(v => v.lang === 'pt-BR') ??
+                voices.find(v => v.lang.startsWith('pt')) ??
+                null;
+            if (ptVoice) utterance.voice = ptVoice;
+        }
+        window.speechSynthesis.speak(utterance);
+        _startChromeResumeWorkaround();
+    };
+
+    const voices = window.speechSynthesis.getVoices();
+    if (voices.length > 0) {
+        doSpeak();
+    } else {
+        const timeout = setTimeout(() => {
+            window.speechSynthesis.onvoiceschanged = null;
+            doSpeak();
+        }, 2000);
+        window.speechSynthesis.onvoiceschanged = () => {
+            clearTimeout(timeout);
+            window.speechSynthesis.onvoiceschanged = null;
+            doSpeak();
+        };
+    }
+}
+
+/**
+ * Enfileira uma mensagem para ser falada em pt-BR.
+ * Não cancela a fala atual — aguarda a vez na fila.
+ * Retorna false se Web Speech API não estiver disponível.
+ */
 function speakPtBR(text: string): boolean {
     if (typeof window === 'undefined' || !window.speechSynthesis) {
         console.warn('[TTS] Web Speech API não disponível neste navegador.');
         return false;
     }
     try {
-        window.speechSynthesis.cancel();
-        const utterance = new SpeechSynthesisUtterance(text);
-        utterance.lang = 'pt-BR';
-        utterance.rate = 0.92;
-        utterance.pitch = 1.0;
-        utterance.volume = 1.0;
-
-        const doSpeak = () => {
-            const voices = window.speechSynthesis.getVoices();
-            if (voices.length > 0) {
-                const ptVoice =
-                    voices.find(v => v.lang === 'pt-BR') ??
-                    voices.find(v => v.lang.startsWith('pt')) ??
-                    null;
-                if (ptVoice) utterance.voice = ptVoice;
-            }
-            window.speechSynthesis.speak(utterance);
-        };
-
-        const voices = window.speechSynthesis.getVoices();
-        if (voices.length > 0) {
-            doSpeak();
-        } else {
-            const timeout = setTimeout(() => {
-                window.speechSynthesis.onvoiceschanged = null;
-                doSpeak();
-            }, 2000);
-            window.speechSynthesis.onvoiceschanged = () => {
-                clearTimeout(timeout);
-                window.speechSynthesis.onvoiceschanged = null;
-                doSpeak();
-            };
-        }
+        ttsState.queue.push(text);
+        _processQueue();
         return true;
     } catch (err) {
-        console.warn('[TTS] Erro ao sintetizar voz:', err);
+        console.warn('[TTS] Erro ao enfileirar voz:', err);
         return false;
     }
 }
