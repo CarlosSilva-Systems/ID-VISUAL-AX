@@ -49,11 +49,6 @@ services:
       - "5173:5173"
     env_file:
       - .env
-    volumes:
-      # Monta o código fonte para hot-reload em desenvolvimento
-      - ./frontend:/app
-      # Preserva node_modules do container (evita conflito com host)
-      - /app/node_modules
     depends_on:
       - api
 
