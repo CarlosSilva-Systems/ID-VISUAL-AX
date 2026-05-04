@@ -1,0 +1,57 @@
+# docker-compose.prod.yml
+# Configuração otimizada para ambiente de produção
+# Uso: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+
+services:
+  db:
+    restart: always
+    # Em produção, considere usar um banco gerenciado (AWS RDS, Azure Database, etc.)
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+    # Backup automático recomendado
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # Opcional: adicionar volume para backups
+      # - ./backups:/backups
+
+  redis:
+    restart: always
+    # Em produção, considere Redis gerenciado ou cluster
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-changeme}
+
+  mosquitto:
+    restart: always
+
+  api:
+    restart: always
+    # Produção: múltiplos workers para melhor performance
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
+    environment:
+      - ENVIRONMENT=production
+    # Sem bind mounts em produção - código está no container
+    volumes:
+      - ota_firmware:/app/storage/ota/firmware
+      # Opcional: logs persistentes
+      # - ./logs/api:/app/logs
+
+  frontend:
+    restart: always
+    # Sem bind mounts em produção
+    environment:
+      - NODE_ENV=production
+
+  # Opcional: adicionar nginx como reverse proxy
+  # nginx:
+  #   image: nginx:alpine
+  #   restart: always
+  #   ports:
+  #     - "80:80"
+  #     - "443:443"
+  #   volumes:
+  #     - ./nginx.conf:/etc/nginx/nginx.conf:ro
+  #     - ./ssl:/etc/nginx/ssl:ro
+  #   depends_on:
+  #     - api
+  #     - frontend

@@ -1,0 +1,20 @@
+# docker-compose.override.yml
+# Este arquivo é carregado automaticamente pelo Docker Compose em ambientes de desenvolvimento
+# Adiciona bind mounts para hot-reload durante o desenvolvimento
+# Em produção, este arquivo não deve existir ou deve ser ignorado com: docker compose -f docker-compose.yml up
+
+services:
+  frontend:
+    volumes:
+      # Bind mount do código fonte — Vite HMR reflete mudanças sem rebuild
+      # NOTA: Em Windows com OneDrive, estes mounts podem causar erros de I/O
+      # Se encontrar erros "EIO: i/o error", remova ou renomeie este arquivo
+      - ./frontend/src:/app/src
+      - ./frontend/public:/app/public
+
+  api:
+    # Reload automático do FastAPI em desenvolvimento
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    volumes:
+      # Bind mount do código Python para hot-reload
+      - ./backend/app:/app/app
