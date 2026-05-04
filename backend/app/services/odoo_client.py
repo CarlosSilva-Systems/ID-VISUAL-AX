@@ -17,8 +17,20 @@ class OdooClient:
         self.secret = secret # Decrypted secret
         self.uid = None
         self.company_ids = company_ids or []
-        # Reduzido timeout para 15s - 60s era excessivo e causava hangs na UI
-        self.session = httpx.AsyncClient(timeout=15.0, follow_redirects=True)
+        # Timeout diferenciado por tipo de operação para melhor performance
+        self.session = httpx.AsyncClient(
+            timeout=httpx.Timeout(
+                connect=5.0,   # Conexão deve ser rápida
+                read=30.0,     # Leitura pode demorar (queries complexas)
+                write=15.0,    # Escrita moderada
+                pool=5.0       # Pool rápido
+            ),
+            follow_redirects=True,
+            limits=httpx.Limits(
+                max_connections=100,      # Pool de conexões
+                max_keepalive_connections=20
+            )
+        )
         self.session_id = None
 
     async def close(self):
@@ -31,6 +43,63 @@ class OdooClient:
     async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
         """Garante fechamento da sessão HTTP mesmo em caso de exceção."""
         await self.close()
+
+    def _validate_domain(self, domain: List) -> None:
+        """
+        Valida estrutura de domain Odoo para prevenir injection.
+        
+        Domain válido: [['field', 'operator', value], '&', '|', '!']
+        Operadores válidos: =, !=, >, <, >=, <=, like, ilike, in, not in, etc.
+        """
+        if not isinstance(domain, list):
+            raise ValueError("Domain deve ser uma lista")
+        
+        valid_operators = {
+            '=', '!=', '>', '<', '>=', '<=',
+            'like', 'ilike', '=like', '=ilike',
+            'in', 'not in', 'child_of', 'parent_of',
+            '=?', '!='
+        }
+        
+        for clause in domain:
+            # Operadores lógicos são strings simples
+            if isinstance(clause, str):
+                if clause not in ['&', '|', '!']:
+                    raise ValueError(f"Operador lógico inválido: {clause}")
+                continue
+            
+            # Cláusulas devem ser listas/tuplas de 3 elementos
+            if not isinstance(clause, (list, tuple)):
+                raise ValueError(f"Cláusula deve ser lista ou tupla: {clause}")
+            
+            if len(clause) != 3:
+                raise ValueError(f"Cláusula deve ter exatamente 3 elementos [field, operator, value]: {clause}")
+            
+            field, operator, value = clause
+            
+            # Validar field (deve ser string sem caracteres perigosos)
+            if not isinstance(field, str):
+                raise ValueError(f"Field deve ser string: {field}")
+            if any(char in field for char in [';', '--', '/*', '*/', 'DROP', 'DELETE', 'UPDATE']):
+                raise ValueError(f"Field contém caracteres/palavras proibidos: {field}")
+            
+            # Validar operator
+            if not isinstance(operator, str) or operator not in valid_operators:
+                raise ValueError(f"Operador inválido: {operator}. Válidos: {valid_operators}")
+    
+    def _validate_fields(self, fields: Optional[List[str]]) -> None:
+        """Valida lista de fields para prevenir vazamento de dados."""
+        if fields is None:
+            return
+        
+        if not isinstance(fields, list):
+            raise ValueError("Fields deve ser uma lista")
+        
+        for field in fields:
+            if not isinstance(field, str):
+                raise ValueError(f"Field deve ser string: {field}")
+            if any(char in field for char in [';', '--', '/*', '*/', 'DROP', 'DELETE']):
+                raise ValueError(f"Field contém caracteres proibidos: {field}")
 
     async def _call_with_retry(self, func, *args, **kwargs):
         """Helper para executar chamadas com retentativa e backoff exponencial."""
@@ -170,7 +239,15 @@ class OdooClient:
     async def search_read(self, model: str, domain: List, fields: List[str] = None, limit: int = 0, offset: int = 0, order: str = None) -> List[Dict]:
         """
         Generic search_read that tries JSON-2 first, then falls back to RPC.
+        
+        Validações de segurança:
+        - Domain structure validation (previne injection)
+        - Fields validation (previne vazamento de dados)
         """
+        # Validar inputs antes de enviar ao Odoo
+        self._validate_domain(domain)
+        self._validate_fields(fields)
+        
         kwargs = {"fields": fields, "limit": limit, "offset": offset}
         if order:
             kwargs["order"] = order
