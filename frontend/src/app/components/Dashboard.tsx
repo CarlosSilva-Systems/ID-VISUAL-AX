@@ -348,7 +348,7 @@ export function Dashboard({ onCreateBatch }: DashboardProps) {
   const [activeBatchesError, setActiveBatchesError] = useState<string | null>(null);
 
   // Batch action confirmation state
-  const [confirmAction, setConfirmAction] = useState<{ batchId: string; type: 'finalize' | 'delete' } | null>(null);
+  const [confirmAction, setConfirmAction] = useState<{ batchId: string; type: 'finalize' | 'delete' | 'force-complete' } | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
 
   // Bulk complete state
@@ -439,6 +439,23 @@ export function Dashboard({ onCreateBatch }: DashboardProps) {
     }
   };
 
+  const handleForceCompleteBatch = async (batchId: string) => {
+    setActionLoading(batchId);
+    try {
+      const res = await api.forceCompleteBatch(batchId);
+      if (res.pending_tasks_count > 0) {
+        toast.success(`Lote concluído! (${res.pending_tasks_count} tarefa(s) pendente(s) ignorada(s)). Andon TV notificado.`);
+      } else {
+        toast.success('Lote concluído com sucesso! Andon TV notificado.');
+      }
+      setActiveBatches(prev => prev.filter(b => b.batch_id !== batchId));
+    } catch (err: any) {
+      toast.error(`Erro ao concluir lote: ${err.message}`);
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   const handleCreateBatch = async () => {
     if (selectedIds.size === 0) return;
     setIsCreatingBatch(true);
@@ -463,9 +480,16 @@ export function Dashboard({ onCreateBatch }: DashboardProps) {
     if (selectedIds.size === 0) return;
     setIsBulkCompleting(true);
     try {
-      // Filtra apenas IDs que são request_ids (UUIDs) — itens do Odoo usam odoo_mo_id (número)
-      // e itens manuais usam o request_id (UUID). Enviamos todos e o backend ignora os inválidos.
-      const ids = Array.from(selectedIds);
+      // Resolve os identificadores corretos para cada item selecionado.
+      // - Itens manuais: item.request_id é um UUID → usa diretamente
+      // - Itens do Odoo: item.id é o odoo_mo_id numérico → backend busca pelo odoo_mo_id
+      const allItems = [...odooMOs, ...manualRequests];
+      const ids = Array.from(selectedIds).map(selectedId => {
+        const item = allItems.find(i => i.id === selectedId);
+        // Prefere request_id (UUID) quando disponível; senão usa o id (pode ser odoo_mo_id)
+        return (item?.request_id as string | undefined) ?? selectedId;
+      });
+
       const res = await api.bulkCompleteRequests(ids);
 
       if (res.success_count > 0) {
@@ -559,11 +583,25 @@ export function Dashboard({ onCreateBatch }: DashboardProps) {
                       <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
                         <div className="h-full bg-blue-500 rounded-full" style={{ width: `${batch.progress_pct}%` }} />
                       </div>
+                      <p className="text-[10px] text-slate-400 mt-1 text-right">{batch.progress_pct.toFixed(0)}% concluído</p>
                     </div>
                   )}
                   <div className="flex items-center gap-2">
                     <button onClick={() => onCreateBatch(batch.batch_id)} className="flex-1 px-3 py-2 bg-blue-600 text-white rounded-lg font-bold text-xs hover:bg-blue-700">Retomar</button>
-                    <button onClick={() => setConfirmAction({ batchId: batch.batch_id, type: 'finalize' })} className="px-3 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700"><CheckCircle size={14} /></button>
+                    <button
+                      onClick={() => setConfirmAction({ batchId: batch.batch_id, type: 'finalize' })}
+                      className="px-3 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700"
+                      title="Finalizar lote (valida pendências)"
+                    >
+                      <CheckCircle size={14} />
+                    </button>
+                    <button
+                      onClick={() => setConfirmAction({ batchId: batch.batch_id, type: 'force-complete' })}
+                      className="px-3 py-2 bg-emerald-100 text-emerald-700 rounded-lg hover:bg-emerald-200"
+                      title="Marcar como Concluído (ignora pendências)"
+                    >
+                      <CheckSquare size={14} />
+                    </button>
                     <button onClick={() => setConfirmAction({ batchId: batch.batch_id, type: 'delete' })} className="px-3 py-2 bg-rose-100 text-rose-600 rounded-lg hover:bg-rose-200"><Trash2 size={14} /></button>
                   </div>
                 </div>
@@ -736,20 +774,36 @@ export function Dashboard({ onCreateBatch }: DashboardProps) {
             <div className="p-6 text-center space-y-4">
               <div className={cn(
                 "w-16 h-16 rounded-full mx-auto flex items-center justify-center",
-                confirmAction.type === 'finalize' ? "bg-emerald-100 text-emerald-600" : "bg-rose-100 text-rose-600"
+                confirmAction.type === 'finalize' ? "bg-emerald-100 text-emerald-600"
+                  : confirmAction.type === 'force-complete' ? "bg-emerald-100 text-emerald-700"
+                  : "bg-rose-100 text-rose-600"
               )}>
-                {confirmAction.type === 'finalize' ? <CheckCircle2 size={32} /> : <Trash2 size={32} />}
+                {confirmAction.type === 'finalize' ? <CheckCircle2 size={32} />
+                  : confirmAction.type === 'force-complete' ? <CheckSquare size={32} />
+                  : <Trash2 size={32} />}
               </div>
               <div>
                 <h3 className="text-xl font-bold text-slate-800">
-                  {confirmAction.type === 'finalize' ? 'Finalizar Lote?' : 'Apagar Lote?'}
+                  {confirmAction.type === 'finalize' ? 'Finalizar Lote?'
+                    : confirmAction.type === 'force-complete' ? 'Marcar Lote como Concluído?'
+                    : 'Apagar Lote?'}
                 </h3>
                 <p className="text-sm text-slate-500 mt-2">
                   {confirmAction.type === 'finalize'
                     ? 'Tem certeza que testou tudo e deseja concluir todas as pendências referentes a este lote no Odoo?'
+                    : confirmAction.type === 'force-complete'
+                    ? 'O lote será marcado como Concluído mesmo que haja tarefas pendentes. Use quando a ID Visual foi feita manualmente.'
                     : 'Tem certeza que deseja apagar este lote em andamento? As MOs voltarão para a fila.'
                   }
                 </p>
+                {confirmAction.type === 'force-complete' && (
+                  <div className="mt-3 flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg text-left">
+                    <AlertTriangle size={14} className="text-amber-600 mt-0.5 flex-shrink-0" />
+                    <p className="text-xs text-amber-700">
+                      As atividades no Odoo <strong>não serão fechadas automaticamente</strong>. Feche-as manualmente se necessário.
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
             <div className="p-4 bg-slate-50 border-t border-slate-100 flex gap-3">
@@ -764,6 +818,8 @@ export function Dashboard({ onCreateBatch }: DashboardProps) {
                 onClick={async () => {
                    if (confirmAction.type === 'finalize') {
                      await handleFinalizeBatch(confirmAction.batchId);
+                   } else if (confirmAction.type === 'force-complete') {
+                     await handleForceCompleteBatch(confirmAction.batchId);
                    } else {
                      await handleCancelBatch(confirmAction.batchId);
                    }
@@ -771,7 +827,9 @@ export function Dashboard({ onCreateBatch }: DashboardProps) {
                 }}
                 className={cn(
                   "flex-1 px-4 py-2 font-bold text-white rounded-lg transition-colors shadow-sm flex items-center justify-center",
-                  confirmAction.type === 'finalize' ? "bg-emerald-600 hover:bg-emerald-700 focus:ring-2 focus:ring-emerald-500/20" : "bg-rose-600 hover:bg-rose-700 focus:ring-2 focus:ring-rose-500/20",
+                  confirmAction.type === 'delete'
+                    ? "bg-rose-600 hover:bg-rose-700 focus:ring-2 focus:ring-rose-500/20"
+                    : "bg-emerald-600 hover:bg-emerald-700 focus:ring-2 focus:ring-emerald-500/20",
                   actionLoading === confirmAction.batchId && "opacity-70 cursor-not-allowed"
                 )}
               >

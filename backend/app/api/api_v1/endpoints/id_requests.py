@@ -385,8 +385,11 @@ async def bulk_complete_requests(
     fluxo de lote/matriz) e precisam apenas registrar a conclusão no sistema
     para que o Andon TV seja notificado.
 
+    Aceita dois formatos de identificador:
+    - UUID (request_id): busca diretamente pelo IDRequest.id
+    - Inteiro como string (odoo_mo_id): busca o IDRequest mais recente pelo odoo_mo_id
+
     Regras:
-    - Aceita apenas UUIDs válidos.
     - Ignora silenciosamente IDs não encontrados ou já concluídos/cancelados.
     - Seta status = 'concluida', finished_at e concluido_em com o timestamp atual.
     - Dispara update_sync_version("andon_version") para notificar o Andon TV.
@@ -407,15 +410,41 @@ async def bulk_complete_requests(
     ]
 
     for rid in request_ids:
+        req: Optional[IDRequest] = None
+
+        # Tenta interpretar como UUID primeiro
         try:
             req_uuid = uuid.UUID(rid)
+            stmt = select(IDRequest).where(IDRequest.id == req_uuid)
+            result = await session.exec(stmt)
+            req = result.first()
         except ValueError:
-            error_ids.append(rid)
-            continue
+            # Não é UUID — tenta como odoo_mo_id (inteiro)
+            try:
+                odoo_id = int(rid)
+                # Busca o IDRequest mais recente para este odoo_mo_id
+                stmt = (
+                    select(IDRequest)
+                    .where(IDRequest.odoo_mo_id == odoo_id)
+                    .order_by(IDRequest.created_at.desc())
+                )
+                result = await session.exec(stmt)
+                req = result.first()
 
-        stmt = select(IDRequest).where(IDRequest.id == req_uuid)
-        result = await session.exec(stmt)
-        req = result.first()
+                # Fallback: busca via ManufacturingOrder se odoo_mo_id não estiver preenchido
+                if not req:
+                    from app.models.manufacturing import ManufacturingOrder
+                    stmt_mo = (
+                        select(IDRequest)
+                        .join(ManufacturingOrder, IDRequest.mo_id == ManufacturingOrder.id)
+                        .where(ManufacturingOrder.odoo_id == odoo_id)
+                        .order_by(IDRequest.created_at.desc())
+                    )
+                    result_mo = await session.exec(stmt_mo)
+                    req = result_mo.first()
+            except (ValueError, TypeError):
+                error_ids.append(rid)
+                continue
 
         if not req:
             skipped_ids.append(rid)

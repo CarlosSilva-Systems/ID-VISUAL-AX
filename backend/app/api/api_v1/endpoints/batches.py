@@ -808,6 +808,95 @@ async def cancel_batch(
     }
 
 
+@router.patch("/{batch_id}/force-complete", response_model=Dict[str, Any])
+async def force_complete_batch(
+    batch_id: UUID,
+    session: AsyncSession = Depends(deps.get_session),
+    current_user: Any = Depends(deps.get_current_user),
+) -> Any:
+    """
+    Força a conclusão de um lote ativo, ignorando pendências de tarefas.
+
+    Caso de uso: operadores que fizeram a ID Visual de forma manual (fora do
+    fluxo de lote/matriz) e precisam registrar a conclusão no sistema para
+    notificar o Andon TV.
+
+    Diferenças em relação ao /finalize:
+    - NÃO valida pendências de tarefas (Poka-yoke desativado intencionalmente)
+    - NÃO fecha atividades no Odoo (operador fez manualmente)
+    - Marca o lote como FINALIZED e todos os IDRequests como 'concluida'
+    - Retorna lista de pendências encontradas (apenas informativo, não bloqueia)
+    """
+    from app.models.id_request import IDRequestStatus
+    from app.services.id_request_service import update_id_request_status
+
+    batch = await session.get(Batch, batch_id)
+    if not batch:
+        raise HTTPException(status_code=404, detail="Lote não encontrado")
+
+    if batch.status == BatchStatus.FINALIZED:
+        return {
+            "batch_id": str(batch.id),
+            "batch_status": batch.status.value,
+            "finalized_at": batch.finalized_at.isoformat() if batch.finalized_at else None,
+            "pending_tasks_count": 0,
+            "message": "Lote já estava finalizado.",
+        }
+
+    if batch.status != BatchStatus.ACTIVE:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Apenas lotes ativos podem ser concluídos. Status atual: {batch.status.value}",
+        )
+
+    # Buscar IDRequests do lote
+    req_stmt = select(IDRequest).where(IDRequest.batch_id == batch.id)
+    req_result = await session.exec(req_stmt)
+    requests = req_result.all()
+
+    if not requests:
+        raise HTTPException(status_code=400, detail="Lote não possui IDRequests")
+
+    # Contar pendências (apenas informativo — não bloqueia)
+    pending_tasks_count = 0
+    BLOCKED_STATUSES = {"nao_iniciado", "montado", "bloqueado"}
+    for req in requests:
+        task_stmt = select(IDRequestTask).where(IDRequestTask.request_id == req.id)
+        task_result = await session.exec(task_stmt)
+        tasks = task_result.all()
+        for task in tasks:
+            if task.status not in ("nao_aplicavel", "impresso"):
+                pending_tasks_count += 1
+
+    # Finalizar lote e todos os IDRequests
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    batch.status = BatchStatus.FINALIZED
+    batch.finalized_at = now
+    session.add(batch)
+
+    for req in requests:
+        update_id_request_status(req, IDRequestStatus.CONCLUIDA)
+        session.add(req)
+
+    await session.commit()
+
+    # Notifica Andon TV (evento IDVISUAL_DONE para cada request)
+    update_sync_version("andon_version")
+    update_sync_version("odoo_version")
+
+    return {
+        "batch_id": str(batch.id),
+        "batch_status": batch.status.value,
+        "finalized_at": batch.finalized_at.isoformat(),
+        "pending_tasks_count": pending_tasks_count,
+        "message": (
+            f"Lote concluído com {pending_tasks_count} tarefa(s) pendente(s) ignorada(s)."
+            if pending_tasks_count > 0
+            else "Lote concluído com sucesso."
+        ),
+    }
+
+
 class AddItemsRequest(BaseModel):
     mo_ids: List[int]  # Odoo IDs das MOs a adicionar
 

@@ -320,6 +320,31 @@ export const api = {
         return data;
     },
 
+    /**
+     * Força a conclusão de um lote, ignorando pendências de tarefas.
+     * Usado quando o operador fez a ID Visual manualmente e quer apenas registrar.
+     */
+    forceCompleteBatch: async (batchId: string): Promise<{
+        batch_id: string;
+        batch_status: string;
+        finalized_at: string;
+        pending_tasks_count: number;
+        message: string;
+    }> => {
+        const response = await fetch(`${API_URL}/batches/${batchId}/force-complete`, {
+            method: 'PATCH',
+            headers: getHeaders(),
+        });
+
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            const error = new Error(data.detail?.message || data.detail || `API Error: ${response.statusText}`);
+            (error as any).status = response.status;
+            throw error;
+        }
+        return data;
+    },
+
     // ── Production Portal ──
     searchMOs: async (query: string, signal?: AbortSignal) => {
         const url = `${API_URL}/production/search?q=${encodeURIComponent(query)}`;
