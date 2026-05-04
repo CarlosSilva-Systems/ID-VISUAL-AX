@@ -322,13 +322,15 @@ export const api = {
 
     /**
      * Força a conclusão de um lote, ignorando pendências de tarefas.
-     * Usado quando o operador fez a ID Visual manualmente e quer apenas registrar.
+     * Fecha atividades 'Imprimir ID Visual' no Odoo normalmente.
      */
     forceCompleteBatch: async (batchId: string): Promise<{
         batch_id: string;
         batch_status: string;
         finalized_at: string;
         pending_tasks_count: number;
+        odoo_activities_closed: number;
+        errors: Array<{ odoo_mo_id: number; mo_name: string; reason: string }>;
         message: string;
     }> => {
         const response = await fetch(`${API_URL}/batches/${batchId}/force-complete`, {

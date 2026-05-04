@@ -443,10 +443,13 @@ export function Dashboard({ onCreateBatch }: DashboardProps) {
     setActionLoading(batchId);
     try {
       const res = await api.forceCompleteBatch(batchId);
+      const odooInfo = res.odoo_activities_closed > 0
+        ? ` ${res.odoo_activities_closed} atividade(s) Odoo fechada(s).`
+        : '';
       if (res.pending_tasks_count > 0) {
-        toast.success(`Lote concluído! (${res.pending_tasks_count} tarefa(s) pendente(s) ignorada(s)). Andon TV notificado.`);
+        toast.success(`Lote concluído! (${res.pending_tasks_count} tarefa(s) pendente(s) ignorada(s)).${odooInfo} Andon TV notificado.`);
       } else {
-        toast.success('Lote concluído com sucesso! Andon TV notificado.');
+        toast.success(`Lote concluído com sucesso!${odooInfo} Andon TV notificado.`);
       }
       setActiveBatches(prev => prev.filter(b => b.batch_id !== batchId));
     } catch (err: any) {
@@ -800,7 +803,7 @@ export function Dashboard({ onCreateBatch }: DashboardProps) {
                   <div className="mt-3 flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg text-left">
                     <AlertTriangle size={14} className="text-amber-600 mt-0.5 flex-shrink-0" />
                     <p className="text-xs text-amber-700">
-                      As atividades no Odoo <strong>não serão fechadas automaticamente</strong>. Feche-as manualmente se necessário.
+                      Tarefas pendentes serão ignoradas. As atividades no Odoo serão fechadas normalmente.
                     </p>
                   </div>
                 )}

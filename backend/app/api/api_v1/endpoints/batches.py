@@ -818,17 +818,17 @@ async def force_complete_batch(
     Força a conclusão de um lote ativo, ignorando pendências de tarefas.
 
     Caso de uso: operadores que fizeram a ID Visual de forma manual (fora do
-    fluxo de lote/matriz) e precisam registrar a conclusão no sistema para
-    notificar o Andon TV.
+    fluxo de lote/matriz) e precisam registrar a conclusão no sistema.
 
-    Diferenças em relação ao /finalize:
+    Comportamento idêntico ao /finalize, exceto:
     - NÃO valida pendências de tarefas (Poka-yoke desativado intencionalmente)
-    - NÃO fecha atividades no Odoo (operador fez manualmente)
-    - Marca o lote como FINALIZED e todos os IDRequests como 'concluida'
-    - Retorna lista de pendências encontradas (apenas informativo, não bloqueia)
+    - Fecha atividades 'Imprimir ID Visual' no Odoo normalmente
+    - Retorna contagem de pendências ignoradas (apenas informativo)
     """
     from app.models.id_request import IDRequestStatus
     from app.services.id_request_service import update_id_request_status
+    from app.services.odoo_client import OdooClient
+    from app.core.config import settings
 
     batch = await session.get(Batch, batch_id)
     if not batch:
@@ -840,6 +840,8 @@ async def force_complete_batch(
             "batch_status": batch.status.value,
             "finalized_at": batch.finalized_at.isoformat() if batch.finalized_at else None,
             "pending_tasks_count": 0,
+            "odoo_activities_closed": 0,
+            "errors": [],
             "message": "Lote já estava finalizado.",
         }
 
@@ -859,7 +861,6 @@ async def force_complete_batch(
 
     # Contar pendências (apenas informativo — não bloqueia)
     pending_tasks_count = 0
-    BLOCKED_STATUSES = {"nao_iniciado", "montado", "bloqueado"}
     for req in requests:
         task_stmt = select(IDRequestTask).where(IDRequestTask.request_id == req.id)
         task_result = await session.exec(task_stmt)
@@ -868,7 +869,7 @@ async def force_complete_batch(
             if task.status not in ("nao_aplicavel", "impresso"):
                 pending_tasks_count += 1
 
-    # Finalizar lote e todos os IDRequests
+    # Finalizar lote e todos os IDRequests localmente
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     batch.status = BatchStatus.FINALIZED
     batch.finalized_at = now
@@ -879,16 +880,52 @@ async def force_complete_batch(
         session.add(req)
 
     await session.commit()
+    await session.refresh(batch)
 
     # Notifica Andon TV (evento IDVISUAL_DONE para cada request)
     update_sync_version("andon_version")
     update_sync_version("odoo_version")
+
+    # Fechar atividades 'Imprimir ID Visual' no Odoo (igual ao /finalize)
+    odoo_errors = []
+    odoo_closed_count = 0
+
+    async with OdooClient(
+        url=settings.ODOO_URL,
+        db=settings.ODOO_DB,
+        auth_type="jsonrpc_password",
+        login=settings.ODOO_SERVICE_LOGIN,
+        secret=settings.ODOO_SERVICE_PASSWORD,
+    ) as client:
+        activity_type_id = await client.get_activity_type_id("Imprimir ID Visual")
+
+        for req in requests:
+            mo = await session.get(ManufacturingOrder, req.mo_id)
+            if not mo:
+                continue
+            try:
+                activities = await client.find_activities_for_mo(
+                    odoo_mo_id=mo.odoo_id,
+                    activity_type_id=activity_type_id or 0,
+                )
+                if activities:
+                    activity_ids = [a["id"] for a in activities]
+                    await client.close_activities(activity_ids)
+                    odoo_closed_count += len(activity_ids)
+            except Exception as e:
+                odoo_errors.append({
+                    "odoo_mo_id": mo.odoo_id,
+                    "mo_name": mo.name,
+                    "reason": str(e),
+                })
 
     return {
         "batch_id": str(batch.id),
         "batch_status": batch.status.value,
         "finalized_at": batch.finalized_at.isoformat(),
         "pending_tasks_count": pending_tasks_count,
+        "odoo_activities_closed": odoo_closed_count,
+        "errors": odoo_errors,
         "message": (
             f"Lote concluído com {pending_tasks_count} tarefa(s) pendente(s) ignorada(s)."
             if pending_tasks_count > 0

@@ -379,11 +379,11 @@ async def bulk_complete_requests(
     current_user: Any = Depends(deps.get_current_user),
 ) -> Any:
     """
-    Marca múltiplos IDRequests como 'concluida' de uma vez.
+    Marca múltiplos IDRequests como 'concluida' e fecha as atividades no Odoo.
 
     Caso de uso: operadores que fazem a ID Visual de forma manual (sem usar o
-    fluxo de lote/matriz) e precisam apenas registrar a conclusão no sistema
-    para que o Andon TV seja notificado.
+    fluxo de lote/matriz) e precisam registrar a conclusão para notificar o
+    Andon TV e fechar a atividade 'Imprimir ID Visual' no Odoo.
 
     Aceita dois formatos de identificador:
     - UUID (request_id): busca diretamente pelo IDRequest.id
@@ -392,15 +392,18 @@ async def bulk_complete_requests(
     Regras:
     - Ignora silenciosamente IDs não encontrados ou já concluídos/cancelados.
     - Seta status = 'concluida', finished_at e concluido_em com o timestamp atual.
+    - Fecha atividades 'Imprimir ID Visual' no Odoo para cada IDRequest concluído.
     - Dispara update_sync_version("andon_version") para notificar o Andon TV.
-    - Retorna contagem de sucesso e falha.
     """
+    from app.services.odoo_client import OdooClient
+    from app.core.config import settings
+
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     success_ids: List[str] = []
     skipped_ids: List[str] = []
     error_ids: List[str] = []
 
-    # Statuses que podem ser concluídos (não faz sentido concluir cancelados/já concluídos)
+    # Statuses que podem ser concluídos
     completable_statuses = [
         IDRequestStatus.NOVA.value,
         IDRequestStatus.TRIAGEM.value,
@@ -408,6 +411,9 @@ async def bulk_complete_requests(
         IDRequestStatus.EM_PROGRESSO.value,
         IDRequestStatus.BLOQUEADA.value,
     ]
+
+    # Coleta os IDRequests resolvidos para fechar no Odoo depois
+    completed_requests: List[IDRequest] = []
 
     for rid in request_ids:
         req: Optional[IDRequest] = None
@@ -422,7 +428,6 @@ async def bulk_complete_requests(
             # Não é UUID — tenta como odoo_mo_id (inteiro)
             try:
                 odoo_id = int(rid)
-                # Busca o IDRequest mais recente para este odoo_mo_id
                 stmt = (
                     select(IDRequest)
                     .where(IDRequest.odoo_mo_id == odoo_id)
@@ -431,9 +436,8 @@ async def bulk_complete_requests(
                 result = await session.exec(stmt)
                 req = result.first()
 
-                # Fallback: busca via ManufacturingOrder se odoo_mo_id não estiver preenchido
+                # Fallback: busca via ManufacturingOrder
                 if not req:
-                    from app.models.manufacturing import ManufacturingOrder
                     stmt_mo = (
                         select(IDRequest)
                         .join(ManufacturingOrder, IDRequest.mo_id == ManufacturingOrder.id)
@@ -453,21 +457,19 @@ async def bulk_complete_requests(
         current_status = req.status.value if hasattr(req.status, "value") else req.status
 
         if current_status not in completable_statuses:
-            # Já concluído, entregue ou cancelado — ignora silenciosamente
             skipped_ids.append(rid)
             continue
 
         req.status = IDRequestStatus.CONCLUIDA.value
         req.finished_at = now
         req.concluido_em = now
-        # Se nunca foi iniciado, registra o início como agora também
         if not req.started_at:
             req.started_at = now
             req.iniciado_em = now
 
         session.add(req)
+        completed_requests.append(req)
 
-        # Log de auditoria
         log = HistoryLog(
             entity_type="id_request",
             entity_id=req.id,
@@ -481,16 +483,61 @@ async def bulk_complete_requests(
         session.add(log)
         success_ids.append(rid)
 
-    if success_ids:
-        await session.commit()
-        # Notifica o Andon TV sobre as conclusões (dispara evento IDVISUAL_DONE)
-        update_sync_version("andon_version")
-        update_sync_version("odoo_version")
+    if not completed_requests:
+        return {
+            "success_count": 0,
+            "skipped_count": len(skipped_ids),
+            "error_count": len(error_ids),
+            "odoo_activities_closed": 0,
+            "odoo_errors": [],
+            "success_ids": success_ids,
+            "skipped_ids": skipped_ids,
+            "error_ids": error_ids,
+        }
+
+    await session.commit()
+    update_sync_version("andon_version")
+    update_sync_version("odoo_version")
+
+    # Fechar atividades 'Imprimir ID Visual' no Odoo para cada IDRequest concluído
+    odoo_closed_count = 0
+    odoo_errors: List[dict] = []
+
+    async with OdooClient(
+        url=settings.ODOO_URL,
+        db=settings.ODOO_DB,
+        auth_type="jsonrpc_password",
+        login=settings.ODOO_SERVICE_LOGIN,
+        secret=settings.ODOO_SERVICE_PASSWORD,
+    ) as client:
+        activity_type_id = await client.get_activity_type_id("Imprimir ID Visual")
+
+        for req in completed_requests:
+            mo = await session.get(ManufacturingOrder, req.mo_id)
+            if not mo or not mo.odoo_id:
+                continue
+            try:
+                activities = await client.find_activities_for_mo(
+                    odoo_mo_id=mo.odoo_id,
+                    activity_type_id=activity_type_id or 0,
+                )
+                if activities:
+                    activity_ids = [a["id"] for a in activities]
+                    await client.close_activities(activity_ids)
+                    odoo_closed_count += len(activity_ids)
+            except Exception as e:
+                odoo_errors.append({
+                    "odoo_mo_id": mo.odoo_id,
+                    "mo_name": mo.name,
+                    "reason": str(e),
+                })
 
     return {
         "success_count": len(success_ids),
         "skipped_count": len(skipped_ids),
         "error_count": len(error_ids),
+        "odoo_activities_closed": odoo_closed_count,
+        "odoo_errors": odoo_errors,
         "success_ids": success_ids,
         "skipped_ids": skipped_ids,
         "error_ids": error_ids,
