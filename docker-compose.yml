@@ -49,10 +49,10 @@ services:
       - "5173:5173"
     env_file:
       - .env
-    volumes:
-      # Bind mount do código fonte — Vite HMR reflete mudanças sem rebuild
-      - ./frontend/src:/app/src
-      - ./frontend/public:/app/public
+    # Volumes comentados temporariamente devido a bug do Docker Desktop no Windows com OneDrive
+    # volumes:
+    #   - ./frontend/src:/app/src
+    #   - ./frontend/public:/app/public
     depends_on:
       - api
 
