@@ -592,9 +592,15 @@ export function Dashboard({ onCreateBatch }: DashboardProps) {
                   <div className="flex items-center gap-2">
                     <button onClick={() => onCreateBatch(batch.batch_id)} className="flex-1 px-3 py-2 bg-blue-600 text-white rounded-lg font-bold text-xs hover:bg-blue-700">Retomar</button>
                     <button
-                      onClick={() => setConfirmAction({ batchId: batch.batch_id, type: 'finalize' })}
-                      className="px-3 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700"
-                      title="Finalizar lote (valida pendências)"
+                      onClick={() => batch.is_complete && setConfirmAction({ batchId: batch.batch_id, type: 'finalize' })}
+                      disabled={!batch.is_complete}
+                      className={cn(
+                        "px-3 py-2 rounded-lg transition-colors",
+                        batch.is_complete
+                          ? "bg-emerald-600 text-white hover:bg-emerald-700 cursor-pointer"
+                          : "bg-slate-200 text-slate-400 cursor-not-allowed"
+                      )}
+                      title={batch.is_complete ? "Finalizar lote" : `Aguardando conclusão das tarefas (${batch.progress_pct.toFixed(0)}%)`}
                     >
                       <CheckCircle size={14} />
                     </button>
