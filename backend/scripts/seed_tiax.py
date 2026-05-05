@@ -43,7 +43,7 @@ async def seed_tiax():
                 "id": uuid.uuid4(),
                 "username": "tiax2026",
                 "full_name": "TI Administrador AX",
-                "role": "ti",
+                "role": "TI",
                 "hashed_password": get_password_hash("*depti_AX*"),
                 "is_local": True,
                 "is_active": True,

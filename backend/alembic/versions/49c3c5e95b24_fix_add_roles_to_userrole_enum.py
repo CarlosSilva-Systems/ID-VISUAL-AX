@@ -22,10 +22,10 @@ depends_on: Union[str, Sequence[str], None] = None
 def upgrade() -> None:
     # Postgres ENUM add value cannot run inside a transaction in some cases
     # but here we try op.execute with individual statements
-    op.execute("ALTER TYPE userrole ADD VALUE IF NOT EXISTS 'ti'")
-    op.execute("ALTER TYPE userrole ADD VALUE IF NOT EXISTS 'producao'")
-    op.execute("ALTER TYPE userrole ADD VALUE IF NOT EXISTS 'engenharia'")
-    op.execute("ALTER TYPE userrole ADD VALUE IF NOT EXISTS 'gerencia'")
+    op.execute("ALTER TYPE userrole ADD VALUE IF NOT EXISTS 'TI'")
+    op.execute("ALTER TYPE userrole ADD VALUE IF NOT EXISTS 'PRODUCAO'")
+    op.execute("ALTER TYPE userrole ADD VALUE IF NOT EXISTS 'ENGENHARIA'")
+    op.execute("ALTER TYPE userrole ADD VALUE IF NOT EXISTS 'GERENCIA'")
 
 
 def downgrade() -> None:

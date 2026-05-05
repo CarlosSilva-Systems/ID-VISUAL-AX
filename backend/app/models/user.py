@@ -9,13 +9,13 @@ _now = lambda: datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 class UserRole(str, Enum):
-    OPERATOR = "operator"
-    RESPONSIBLE = "responsible"
-    ADMIN = "admin"
-    TI = "ti"
-    PRODUCAO = "producao"
-    ENGENHARIA = "engenharia"
-    GERENCIA = "gerencia"
+    OPERATOR = "OPERATOR"
+    RESPONSIBLE = "RESPONSIBLE"
+    ADMIN = "ADMIN"
+    TI = "TI"
+    PRODUCAO = "PRODUCAO"
+    ENGENHARIA = "ENGENHARIA"
+    GERENCIA = "GERENCIA"
 
 
 class UserBase(SQLModel):

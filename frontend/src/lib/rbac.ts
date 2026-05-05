@@ -3,7 +3,7 @@ import { User } from "../app/types";
 export const canAccessRoute = (user: User | null, path: string): boolean => {
   if (!user) return false;
   
-  const role = user.role || "operator";
+  const role = (user.role || "operator").toLowerCase();
   const isTI = role === "ti" || role === "admin" || user.is_admin;
   
   if (isTI) return true;
