@@ -42,13 +42,14 @@ async def login_access_token(
     from app.services.odoo_utils import get_active_odoo_db
     from app.models.user import User as UserModel, UserRole
     
+    from app.core.security import verify_password
     def sanitize_error_message(error: str) -> str:
         """Remove credenciais de mensagens de erro."""
         sanitized = error.replace(settings.ODOO_SERVICE_PASSWORD or "", "***")
         sanitized = sanitized.replace(settings.ODOO_SERVICE_LOGIN or "", "***")
         return sanitized
     
-    async def _ensure_local_user(username: str, auth_source: str) -> None:
+    async def _ensure_local_user(username: str, auth_source: str, role: UserRole = UserRole.OPERATOR) -> None:
         """Creates a local User record if it doesn't exist (JIT sync at login)."""
         try:
             stmt = select(UserModel).where(UserModel.username == username)
@@ -58,7 +59,7 @@ async def login_access_token(
                 local_user = UserModel(
                     username=username,
                     hashed_password=f"EXTERNAL_AUTH_{auth_source.upper()}",
-                    role=UserRole.OPERATOR,
+                    role=role,
                     is_active=True
                 )
                 session.add(local_user)
@@ -66,6 +67,24 @@ async def login_access_token(
                 logger.info(f"Login JIT: Created local user '{username}' (source: {auth_source})")
         except Exception as e:
             logger.warning(f"Login JIT: Failed to create local user '{username}': {e}")
+    
+    # --- Local Bypass Check ---
+    login_clean = form_data.username.strip()
+    
+    # Check if there is a local user
+    stmt = select(UserModel).where(UserModel.username == login_clean, UserModel.is_local == True)
+    result = await session.execute(stmt)
+    local_user = result.scalars().first()
+    
+    if local_user:
+        # Validate password using passlib
+        if not verify_password(form_data.password, local_user.hashed_password):
+            raise HTTPException(status_code=401, detail="Credenciais inválidas para conta de sistema.")
+            
+        return {
+            "access_token": create_access_token(subject=login_clean),
+            "token_type": "bearer",
+        }
     
     # Obter banco ativo dinamicamente
     active_db = await get_active_odoo_db(session)
@@ -214,7 +233,8 @@ async def read_users_me(
         "uid_odoo": None,
         "id": None,
         "employee_id": None,
-        "roles": []
+        "roles": [],       # Odoo groups
+        "role": "operator" # Local RBAC role
     }
 
     # --- JIT User Sync (ensures local UUID for Reports/Agent) ---
@@ -233,7 +253,21 @@ async def read_users_me(
             session.add(local_user)
             await session.commit()
             await session.refresh(local_user)
+        
         profile["id"] = local_user.id
+        profile["role"] = local_user.role
+        
+        # Se for usuário local gerido (is_local=True), definimos is_admin e name
+        if local_user.is_local:
+            profile["auth_source"] = "local"
+            profile["name"] = local_user.full_name or local_user.username
+            if local_user.role in [UserRole.TI, UserRole.ADMIN]:
+                profile["is_admin"] = True
+        else:
+            # Override rules for backward compatibility or legacy checks
+            if local_user.role == UserRole.TI:
+                profile["is_admin"] = True
+            
     except Exception as e:
         logger.warning(f"Auth /me: JIT user sync failed for '{subject}': {e}")
 

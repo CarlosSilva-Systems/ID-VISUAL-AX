@@ -80,6 +80,19 @@ async def require_current_user(
     return current_user
 
 
+async def require_ti_role(
+    current_user: User = Depends(require_current_user),
+) -> User:
+    """Exige que o usuário tenha o papel de TI."""
+    from app.models.user import UserRole
+    if current_user.role not in [UserRole.TI, UserRole.ADMIN]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Acesso restrito à equipe de TI.",
+        )
+    return current_user
+
+
 
 async def get_odoo_client(
     session: AsyncSession = Depends(get_session),
