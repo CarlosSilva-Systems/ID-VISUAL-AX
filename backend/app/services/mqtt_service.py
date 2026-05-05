@@ -411,6 +411,7 @@ async def _handle_button(mac: str, color: str, payload_raw: bytes):
             andon_status = res_status.scalars().first()
             if andon_status:
                 andon_status.status = "verde"
+                andon_status.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
                 andon_status.updated_by = f"ESP32 {device.device_name}"
             else:
                 session.add(AndonStatus(
@@ -419,7 +420,8 @@ async def _handle_button(mac: str, color: str, payload_raw: bytes):
                     status="verde",
                     updated_by=f"ESP32 {device.device_name}",
                 ))
-
+            
+            # Commit antes de enviar sinal MQTT e WebSocket para evitar race conditions
             await session.commit()
             logger.info(f"MQTT button: {len(active_calls)} chamados resolvidos para workcenter {device.workcenter_id} via botão verde")
             # Notificar Andon TV — versão incrementada após commit

@@ -280,9 +280,10 @@ async def get_workcenters_status(
             status_color = "cinza"
             status_reason = "Mesa disponível"
 
-            # PAUSA tem precedência absoluta — se o operador pausou, mostra cinza
-            # independente de chamados ativos (vermelho/amarelo ficam suspensos)
-            if is_manually_paused:
+            # 1. PAUSA tem precedência se o operador pausou E não há chamados Críticos/Alerta ativos
+            # Se houver chamado RED/YELLOW, eles devem aparecer mesmo que a OP esteja pausada no Odoo,
+            # pois indicam um problema físico na mesa que requer atenção.
+            if is_manually_paused and not red_calls and not yellow_stop_calls:
                 status_color = "cinza"
                 status_reason = "Produção pausada"
             elif red_calls:
@@ -367,6 +368,8 @@ async def trigger_andon_basic(
     from app.api.api_v1.endpoints.sync import update_sync_version
     
     # 1. Atualizar o cache de status
+    # Se o status for verde, limpamos qualquer estado de pausa anterior
+    # (redefine updated_by para o usuário atual em vez de manter 'prev:...')
     await update_or_create_status(
         session, 
         req.workcenter_id, 
