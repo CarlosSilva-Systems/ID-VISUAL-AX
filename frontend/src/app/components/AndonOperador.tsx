@@ -224,7 +224,7 @@ export const AndonOperador: React.FC<AndonOperadorProps> = ({ workcenter, onBack
                 >
                     <PackageOpen className="w-8 h-8 sm:w-16 sm:h-16" />
                     <div className="text-sm sm:text-2xl font-black uppercase tracking-widest text-center">
-                        Falta<br />Material
+                        Alerta
                     </div>
                 </button>
 

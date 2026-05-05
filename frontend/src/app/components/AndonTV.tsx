@@ -253,7 +253,7 @@ function PanelResumo({ workcenters, calls, idRequests }: {
             <div className="grid grid-cols-4 gap-4">
                 {[
                     { label: 'Produção', count: verdes, color: 'from-emerald-600 to-emerald-500', ring: 'ring-emerald-500/30' },
-                    { label: 'Amarelo', count: amarelos, color: 'from-amber-600 to-amber-400', ring: 'ring-amber-400/30' },
+                    { label: 'Alerta', count: amarelos, color: 'from-amber-600 to-amber-400', ring: 'ring-amber-400/30' },
                     { label: 'Vermelho', count: vermelhos, color: 'from-red-700 to-red-500', ring: 'ring-red-500/40', pulse: hasReds },
                     { label: 'Inativas', count: cinzas, color: 'from-slate-700 to-slate-600', ring: 'ring-slate-600/20' },
                 ].map(({ label, count, color, ring, pulse }) => (

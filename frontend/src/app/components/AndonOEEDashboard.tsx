@@ -364,7 +364,7 @@ export const AndonOEEDashboard: React.FC = () => {
                 <span className="w-2.5 h-2.5 rounded-sm bg-red-500 inline-block" /> Vermelho
               </span>
               <span className="flex items-center gap-1">
-                <span className="w-2.5 h-2.5 rounded-sm bg-amber-400 inline-block" /> Amarelo
+                <span className="w-2.5 h-2.5 rounded-sm bg-amber-400 inline-block" /> Alerta
               </span>
             </div>
           </div>
@@ -394,7 +394,7 @@ export const AndonOEEDashboard: React.FC = () => {
                     contentStyle={{ borderRadius: 12, border: '1px solid #e2e8f0', fontSize: 12 }}
                     formatter={(value: number, name: string) => [
                       value,
-                      name === 'red_calls' ? '🔴 Vermelho' : '🟡 Amarelo',
+                      name === 'red_calls' ? '🔴 Vermelho' : '🟡 Alerta',
                     ]}
                     labelFormatter={l => `📅 ${l}`}
                   />

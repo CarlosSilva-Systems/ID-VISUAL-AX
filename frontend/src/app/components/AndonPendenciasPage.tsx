@@ -165,7 +165,7 @@ export const AndonPendenciasPage: React.FC<AndonPendenciasPageProps> = ({ curren
             >
               <option value="">Todas as cores</option>
               <option value="RED">🔴 Vermelho</option>
-              <option value="YELLOW">🟡 Amarelo</option>
+              <option value="YELLOW">🟡 Alerta</option>
             </select>
             <input
               type="date"
@@ -281,7 +281,7 @@ export const AndonPendenciasPage: React.FC<AndonPendenciasPageProps> = ({ curren
                                 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold',
                                 call.color === 'RED' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'
                               )}>
-                                {call.color === 'RED' ? '🔴 Vermelho' : '🟡 Amarelo'}
+                                {call.color === 'RED' ? '🔴 Vermelho' : '🟡 Alerta'}
                               </span>
                               <span className={cn(
                                 'flex items-center gap-1 text-sm font-semibold',
@@ -340,7 +340,7 @@ export const AndonPendenciasPage: React.FC<AndonPendenciasPageProps> = ({ curren
                                     'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold',
                                     call.color === 'RED' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'
                                   )}>
-                                    {call.color === 'RED' ? '🔴 Vermelho' : '🟡 Amarelo'}
+                                    {call.color === 'RED' ? '🔴 Vermelho' : '🟡 Alerta'}
                                   </span>
                                 </td>
                                 <td className="px-4 py-3 text-sm text-slate-700 font-medium">{call.owner_name || '—'}</td>
