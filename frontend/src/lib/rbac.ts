@@ -25,9 +25,9 @@ export const canAccessRoute = (user: User | null, path: string): boolean => {
   }
 
   if (role === "gerencia") {
-    // Acesso a tudo, menos "Configurações", "Padrões (5S)" e "Dispositivos IoT"
-    const forbidden = ["/admin", "/templates", "/andon/devices"];
-    // Também garantimos que não tenha acesso a rotas restritas de TI se houver outras no futuro
+    // Acesso a tudo, menos "Padrões (5S)" e "Dispositivos IoT"
+    // Liberamos /admin para que a gerência possa gerenciar usuários locais
+    const forbidden = ["/templates", "/andon/devices"];
     return !forbidden.some(f => path.startsWith(f));
   }
 
