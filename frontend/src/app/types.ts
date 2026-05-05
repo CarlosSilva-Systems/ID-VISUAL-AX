@@ -3,7 +3,7 @@ import { LucideIcon, FileText, Tag, Layers, ClipboardCheck, Box, Settings, Shiel
 export interface User {
   username: string;
   user: string; // Alias para compatibilidade com respostas da API
-  role: "operator" | "responsible" | "admin";
+  role: "operator" | "responsible" | "admin" | "ti" | "producao" | "engenharia" | "gerencia";
   is_admin: boolean;
   department: string | null;
   is_odoo_test_mode: boolean;

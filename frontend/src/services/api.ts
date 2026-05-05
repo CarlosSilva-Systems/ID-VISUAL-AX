@@ -782,5 +782,27 @@ export const api = {
     getOTAOnlineDeviceCount: async () => {
         return api.get('/ota/devices/count');
     },
+
+    // ── Local User Management ──
+    getLocalUsers: async () => {
+        return api.get('/user/local');
+    },
+
+    createLocalUser: async (payload: {
+        username: string;
+        full_name: string;
+        password: string;
+        role: string;
+    }) => {
+        return api.post('/user/local', payload);
+    },
+
+    updateLocalUserPassword: async (userId: string, newPassword: string) => {
+        return api.patch(`/user/local/${userId}/password`, { new_password: newPassword });
+    },
+
+    deleteLocalUser: async (userId: string) => {
+        return api.delete(`/user/local/${userId}`);
+    },
 };
 
