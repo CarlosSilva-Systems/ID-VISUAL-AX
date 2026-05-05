@@ -24,6 +24,7 @@ import { DynamicDashboard } from './pages/reports/DynamicDashboard';
 import { Fabrication, User } from './types';
 import { api } from '../services/api';
 import { pollingManager } from '../services/pollingManager';
+import { canAccessRoute } from '../lib/rbac';
 
 import { DataProvider } from './contexts/DataContext';
 
@@ -111,45 +112,84 @@ function AppContent() {
     );
   }
 
-  return (
-    <>
-      <Toaster position="top-right" richColors />
-      <Routes>
-        <Route path="/andon-tv" element={<AndonTV />} />
-        <Route path="/*" element={
-          <Layout user={currentUser}>
-            <Routes>
-              <Route path="/" element={<Navigate to="/id-visual/dashboard" replace />} />
-              <Route path="/id-visual/dashboard" element={<Dashboard onCreateBatch={handleCreateBatch} />} />
-              <Route path="/id-visual/solicitacoes" element={<Solicitacoes onCreateBatch={handleCreateBatch} />} />
-              <Route path="/id-visual/producao" element={<VisaoProducao />} />
-              <Route path="/id-visual/analytics" element={<IDVisualAnalytics />} />
-              <Route path="/andon/painel" element={<AndonGrid username={currentUser?.username || ''} />} />
-              <Route path="/andon/pendencias" element={<AndonPendenciasPage currentUser={currentUser?.username || ''} />} />
-              <Route path="/andon/dashboard" element={<AndonOEEDashboard />} />
-              <Route path="/andon/dashboard/:wcId" element={<AndonWorkcenterDetail currentUser={currentUser?.username || ''} />} />
-              <Route path="/andon/devices" element={<DevicesPage />} />
-              <Route path="/templates" element={<Padroes5S />} />
-              <Route path="/mpr/analytics" element={<MPRAnalyticsDashboard />} />
-              <Route path="/relatorios" element={<MyReports />} />
-              <Route path="/relatorios/visualizar/:id" element={<DynamicDashboard />} />
+    const ProtectedRoute = ({ path, children }: { path: string, children: React.ReactNode }) => {
+      // Allow dynamic paths via base match in some cases, but canAccessRoute expects the raw path
+      if (!canAccessRoute(currentUser, path)) {
+        const fallback = currentUser?.role === 'producao' ? '/id-visual/producao' : '/id-visual/dashboard';
+        return <Navigate to={fallback} replace />;
+      }
+      return <>{children}</>;
+    };
 
-              <Route path="/admin" element={<Configuracoes user={currentUser} />} />
-              <Route path="/admin/ota-progress" element={
-                <OTAProgressDashboard onClose={() => navigate('/admin')} />
-              } />
-              <Route path="/id-visual/batch/:batchId" element={
-                <ActiveBatch
-                  onBack={() => navigate('/id-visual/dashboard')}
-                />
-              } />
-              <Route path="*" element={<Navigate to="/id-visual/dashboard" replace />} />
-            </Routes>
-          </Layout>
-        } />
-      </Routes>
-    </>
-  );
+    return (
+      <>
+        <Toaster position="top-right" richColors />
+        <Routes>
+          <Route path="/andon-tv" element={
+            <ProtectedRoute path="/andon-tv"><AndonTV /></ProtectedRoute>
+          } />
+          <Route path="/*" element={
+            <Layout user={currentUser}>
+              <Routes>
+                <Route path="/" element={<Navigate to="/id-visual/dashboard" replace />} />
+                <Route path="/id-visual/dashboard" element={
+                  <ProtectedRoute path="/id-visual/dashboard"><Dashboard onCreateBatch={handleCreateBatch} /></ProtectedRoute>
+                } />
+                <Route path="/id-visual/solicitacoes" element={
+                  <ProtectedRoute path="/id-visual/solicitacoes"><Solicitacoes onCreateBatch={handleCreateBatch} /></ProtectedRoute>
+                } />
+                <Route path="/id-visual/producao" element={
+                  <ProtectedRoute path="/id-visual/producao"><VisaoProducao /></ProtectedRoute>
+                } />
+                <Route path="/id-visual/analytics" element={
+                  <ProtectedRoute path="/id-visual/analytics"><IDVisualAnalytics /></ProtectedRoute>
+                } />
+                <Route path="/andon/painel" element={
+                  <ProtectedRoute path="/andon/painel"><AndonGrid username={currentUser?.username || ''} /></ProtectedRoute>
+                } />
+                <Route path="/andon/pendencias" element={
+                  <ProtectedRoute path="/andon/pendencias"><AndonPendenciasPage currentUser={currentUser?.username || ''} /></ProtectedRoute>
+                } />
+                <Route path="/andon/dashboard" element={
+                  <ProtectedRoute path="/andon/dashboard"><AndonOEEDashboard /></ProtectedRoute>
+                } />
+                <Route path="/andon/dashboard/:wcId" element={
+                  <ProtectedRoute path="/andon/dashboard"><AndonWorkcenterDetail currentUser={currentUser?.username || ''} /></ProtectedRoute>
+                } />
+                <Route path="/andon/devices" element={
+                  <ProtectedRoute path="/andon/devices"><DevicesPage /></ProtectedRoute>
+                } />
+                <Route path="/templates" element={
+                  <ProtectedRoute path="/templates"><Padroes5S /></ProtectedRoute>
+                } />
+                <Route path="/mpr/analytics" element={
+                  <ProtectedRoute path="/mpr/analytics"><MPRAnalyticsDashboard /></ProtectedRoute>
+                } />
+                <Route path="/relatorios" element={
+                  <ProtectedRoute path="/relatorios"><MyReports /></ProtectedRoute>
+                } />
+                <Route path="/relatorios/visualizar/:id" element={
+                  <ProtectedRoute path="/relatorios"><DynamicDashboard /></ProtectedRoute>
+                } />
+  
+                <Route path="/admin" element={
+                  <ProtectedRoute path="/admin"><Configuracoes user={currentUser} /></ProtectedRoute>
+                } />
+                <Route path="/admin/ota-progress" element={
+                  <ProtectedRoute path="/admin"><OTAProgressDashboard onClose={() => navigate('/admin')} /></ProtectedRoute>
+                } />
+                <Route path="/id-visual/batch/:batchId" element={
+                  <ProtectedRoute path="/id-visual/batch">
+                    <ActiveBatch onBack={() => navigate('/id-visual/dashboard')} />
+                  </ProtectedRoute>
+                } />
+                <Route path="*" element={<Navigate to="/id-visual/dashboard" replace />} />
+              </Routes>
+            </Layout>
+          } />
+        </Routes>
+      </>
+    );
 }
 
 export default function App() {
