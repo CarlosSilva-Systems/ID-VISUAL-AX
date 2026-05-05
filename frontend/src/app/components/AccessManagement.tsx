@@ -41,6 +41,9 @@ export function AccessManagement() {
     password: '',
     role: 'producao'
   });
+  // Estado separado para o valor bruto do input do username
+  // Evita o bug de cursor resetar ao aplicar toLowerCase no onChange
+  const [rawUsername, setRawUsername] = useState('');
 
   // Reset password state
   const [resetUserId, setResetUserId] = useState<string | null>(null);
@@ -73,6 +76,7 @@ export function AccessManagement() {
       toast.success('Usuário criado com sucesso!');
       setShowAddModal(false);
       setNewUserData({ username: '', full_name: '', password: '', role: 'producao' });
+      setRawUsername('');
       loadUsers();
     } catch (err: any) {
       toast.error('Erro ao criar usuário: ' + err.message);
@@ -211,8 +215,17 @@ export function AccessManagement() {
                 <input
                   required
                   type="text"
-                  value={newUserData.username}
-                  onChange={(e) => setNewUserData({ ...newUserData, username: e.target.value.toLowerCase().replace(/\s/g, '') })}
+                  value={rawUsername}
+                  onChange={(e) => {
+                    // Atualiza o valor bruto para exibir sem resetar cursor
+                    setRawUsername(e.target.value);
+                  }}
+                  onBlur={(e) => {
+                    // Aplica transformção só ao sair do campo
+                    const clean = e.target.value.toLowerCase().replace(/\s/g, '');
+                    setRawUsername(clean);
+                    setNewUserData({ ...newUserData, username: clean });
+                  }}
                   placeholder="ex: producao_setor_a"
                   className="w-full p-3 rounded-xl border border-slate-100 bg-slate-50 font-bold text-sm focus:bg-white focus:ring-4 focus:ring-blue-500/10 focus:border-blue-600 transition-all outline-none"
                 />

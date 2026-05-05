@@ -785,7 +785,7 @@ export const api = {
 
     // ── Local User Management ──
     getLocalUsers: async () => {
-        return api.get('/user/local');
+        return api.get('/user/local/');
     },
 
     createLocalUser: async (payload: {
@@ -794,7 +794,11 @@ export const api = {
         password: string;
         role: string;
     }) => {
-        return api.post('/user/local', payload);
+        // Backend espera o enum em MAIÚSCULAS (ex: 'PRODUCAO', 'TI', 'GERENCIA', 'ENGENHARIA')
+        return api.post('/user/local/', {
+            ...payload,
+            role: payload.role.toUpperCase(),
+        });
     },
 
     updateLocalUserPassword: async (userId: string, newPassword: string) => {
