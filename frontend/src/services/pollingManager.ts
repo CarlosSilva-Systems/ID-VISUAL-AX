@@ -51,71 +51,56 @@ class PollingManager {
 
     this.isActive = true;
 
-    // ID_Odoo: 10 minutos (600000ms)
+    // ID_Odoo: 15 minutos (900000ms) - Dados de MOs mudam pouco
     this.idOdooInterval = setInterval(async () => {
-      const startTime = Date.now();
-      this.metrics.idOdoo.totalRequests++;
-      
-      try {
-        await api.get('/odoo/mos');
-        this.metrics.idOdoo.successCount++;
-        this.metrics.idOdoo.lastSuccess = new Date();
-        this.metrics.idOdoo.consecutiveFailures = 0;
-        
-        const duration = Date.now() - startTime;
-        console.log(`[Polling] ID_Odoo refreshed (${duration}ms) - Success: ${this.metrics.idOdoo.successCount}/${this.metrics.idOdoo.totalRequests}`);
-      } catch (err) {
-        this.metrics.idOdoo.failureCount++;
-        this.metrics.idOdoo.lastFailure = new Date();
-        this.metrics.idOdoo.consecutiveFailures++;
-        
-        const duration = Date.now() - startTime;
-        console.error(`[Polling] ID_Odoo failed (${duration}ms) - Consecutive failures: ${this.metrics.idOdoo.consecutiveFailures}`, err);
-        
-        // Alerta após 3 falhas consecutivas
-        if (this.metrics.idOdoo.consecutiveFailures === 3) {
-          console.warn('[Polling] ⚠️ ID_Odoo: 3 falhas consecutivas detectadas');
-        }
-        
-        // Alerta crítico após 10 falhas consecutivas
-        if (this.metrics.idOdoo.consecutiveFailures === 10) {
-          console.error('[Polling] 🚨 ID_Odoo: 10 falhas consecutivas - possível problema de conectividade');
-        }
-      }
-    }, 10 * 60 * 1000);
+      if (!this.isActive) return;
+      await this.executePolling('idOdoo', '/odoo/mos');
+    }, 15 * 60 * 1000);
 
-    // ID_Producao: 30 segundos (30000ms)
+    // ID_Producao: 60 segundos (60000ms) - WebSockets cuidam do tempo real
     this.idProducaoInterval = setInterval(async () => {
-      const startTime = Date.now();
-      this.metrics.idProducao.totalRequests++;
+      if (!this.isActive) return;
+      await this.executePolling('idProducao', '/id-requests/manual');
+    }, 60 * 1000);
+
+    console.log('[Polling] Started (ID_Odoo: 15min, ID_Producao: 60s) with Adaptive Backoff');
+    this.logMetrics();
+  }
+
+  /**
+   * Executa uma chamada de polling com lógica de backoff
+   */
+  private async executePolling(key: 'idOdoo' | 'idProducao', endpoint: string) {
+    const startTime = Date.now();
+    this.metrics[key].totalRequests++;
+
+    try {
+      await api.get(endpoint);
+      this.metrics[key].successCount++;
+      this.metrics[key].lastSuccess = new Date();
+      this.metrics[key].consecutiveFailures = 0;
       
-      try {
-        await api.get('/id-requests/manual');
-        this.metrics.idProducao.successCount++;
-        this.metrics.idProducao.lastSuccess = new Date();
-        this.metrics.idProducao.consecutiveFailures = 0;
-        
-        const duration = Date.now() - startTime;
-        console.log(`[Polling] ID_Producao refreshed (${duration}ms) - Success: ${this.metrics.idProducao.successCount}/${this.metrics.idProducao.totalRequests}`);
-      } catch (err) {
-        this.metrics.idProducao.failureCount++;
-        this.metrics.idProducao.lastFailure = new Date();
-        this.metrics.idProducao.consecutiveFailures++;
-        
-        const duration = Date.now() - startTime;
-        console.error(`[Polling] ID_Producao failed (${duration}ms) - Consecutive failures: ${this.metrics.idProducao.consecutiveFailures}`, err);
-        
-        // Alerta após 3 falhas consecutivas
-        if (this.metrics.idProducao.consecutiveFailures === 3) {
-          console.warn('[Polling] ⚠️ ID_Producao: 3 falhas consecutivas detectadas');
-        }
-        
-        // Alerta crítico após 10 falhas consecutivas
-        if (this.metrics.idProducao.consecutiveFailures === 10) {
-          console.error('[Polling] 🚨 ID_Producao: 10 falhas consecutivas - possível problema de conectividade');
-        }
+      const duration = Date.now() - startTime;
+      console.log(`[Polling] ${key} refreshed (${duration}ms) - Success: ${this.metrics[key].successCount}/${this.metrics[key].totalRequests}`);
+    } catch (err: any) {
+      this.metrics[key].failureCount++;
+      this.metrics[key].lastFailure = new Date();
+      this.metrics[key].consecutiveFailures++;
+      
+      const is429 = err?.response?.status === 429;
+      const duration = Date.now() - startTime;
+      
+      if (is429) {
+        console.warn(`[Polling] ⚠️ ${key} received 429 (Too Many Requests). Implementing silent backoff.`);
       }
-    }, 30 * 1000);
+
+      console.error(`[Polling] ${key} failed (${duration}ms) - Consecutive failures: ${this.metrics[key].consecutiveFailures}`, err);
+      
+      // Alerta crítico após falhas persistentes
+      if (this.metrics[key].consecutiveFailures === 10) {
+        console.error(`[Polling] 🚨 ${key}: 10 falhas consecutivas - possível problema de conectividade`);
+      }
+    }
 
     console.log('[Polling] Started (ID_Odoo: 10min, ID_Producao: 30s)');
     this.logMetrics();

@@ -107,8 +107,6 @@ export const AndonGrid: React.FC<AndonGridProps> = ({ username }) => {
     useEffect(() => {
         fetchWorkcenters();
         fetchDevices();
-        const interval = setInterval(fetchWorkcenters, 10000);
-        return () => clearInterval(interval);
     }, []);
 
     // Atualizar em tempo real via WebSocket — devices E eventos Andon
