@@ -20,6 +20,7 @@ import { api } from '../../services/api';
 import { DatabaseSelector } from './DatabaseSelector';
 import { OTASettings } from './OTASettings';
 import { ConfirmModal } from './ConfirmModal';
+import { AccessManagement } from './AccessManagement';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -57,6 +58,10 @@ export function Configuracoes({ user }: ConfiguracoesProps) {
     { id: 'odoo' as const, label: 'Integração Odoo', icon: Server },
     { id: 'ota' as const, label: 'Atualizações OTA', icon: Cpu },
   ];
+
+  if (user?.role === 'ti') {
+    tabs.push({ id: 'permissoes' as const, label: 'Gestão de Acessos', icon: ShieldCheck });
+  }
 
   useEffect(() => {
     const loadData = async () => {
@@ -347,6 +352,8 @@ export function Configuracoes({ user }: ConfiguracoesProps) {
               <OTASettings />
             </div>
           )}
+
+          {activeTab === 'permissoes' && <AccessManagement />}
         </div>
       </div>
 

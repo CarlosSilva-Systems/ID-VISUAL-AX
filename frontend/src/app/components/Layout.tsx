@@ -27,6 +27,7 @@ import {
 import { useLocation, useNavigate, Link } from "react-router-dom";
 import { cn, Button } from "./ui";
 import { api } from "../../services/api";
+import { canAccessRoute } from "../../lib/rbac";
 import { AgentSidebar } from "./AgentSidebar";
 import { ConnectionBadge } from "./ConnectionBadge";
 import { User as UserType, AppNotification } from "../types";
@@ -191,7 +192,7 @@ export const Layout = ({ children, user }: LayoutProps) => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isNotifOpen]);
 
-  const menuStructure: (MenuGroup | MenuItem)[] = [
+  const menuStructureRaw: (MenuGroup | MenuItem)[] = [
     {
       id: "id-visual",
       label: "ID Visual",
@@ -232,6 +233,21 @@ export const Layout = ({ children, user }: LayoutProps) => {
     },
     { id: "config", label: "Configurações", icon: Settings, path: "/admin" },
   ];
+
+  const menuStructure = menuStructureRaw.map(node => {
+    if ('items' in node) {
+      return {
+        ...node,
+        items: node.items.filter(item => canAccessRoute(user, item.path || ""))
+      };
+    }
+    return node;
+  }).filter(node => {
+    if ('items' in node) {
+      return node.items.length > 0;
+    }
+    return canAccessRoute(user, node.path || "");
+  });
 
   // Auto-expand group if child is active
   useEffect(() => {
