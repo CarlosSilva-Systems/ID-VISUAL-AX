@@ -15,14 +15,20 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!username || !password) {
+        
+        const cleanUsername = username.trim();
+        const cleanPassword = password.trim();
+
+        if (!cleanUsername || !cleanPassword) {
             toast.error('Preencha usuário e senha');
             return;
         }
 
+        if (isLoading) return;
+
         setIsLoading(true);
         try {
-            await api.login(username, password);
+            await api.login(cleanUsername, cleanPassword);
             // Busca perfil após login sucesso
             const me = await api.getMe();
             onLoginSuccess(me);

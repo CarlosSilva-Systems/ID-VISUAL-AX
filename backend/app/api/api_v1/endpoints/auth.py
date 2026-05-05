@@ -69,7 +69,11 @@ async def login_access_token(
             logger.warning(f"Login JIT: Failed to create local user '{username}': {e}")
     
     # --- Local Bypass Check ---
-    login_clean = form_data.username.strip()
+    login_input = form_data.username.strip()
+    login_clean = login_input.lower()
+    
+    # Debug log to trace 401 issues
+    logger.info(f"[Auth Diagnostic] Attempting login for '{login_input}' (normalized: '{login_clean}')")
     
     # Check if there is a local user
     stmt = select(UserModel).where(UserModel.username == login_clean, UserModel.is_local == True)
@@ -77,14 +81,19 @@ async def login_access_token(
     local_user = result.scalars().first()
     
     if local_user:
+        logger.info(f"[Auth Diagnostic] Local user FOUND for '{login_clean}'. Validating password...")
         # Validate password using passlib
         if not verify_password(form_data.password, local_user.hashed_password):
+            logger.warning(f"[Auth Diagnostic] Password MISMATCH for local user '{login_clean}'")
             raise HTTPException(status_code=401, detail="Credenciais inválidas para conta de sistema.")
             
+        logger.info(f"[Auth Diagnostic] Password OK for local user '{login_clean}'. Generating token...")
         return {
             "access_token": create_access_token(subject=login_clean),
             "token_type": "bearer",
         }
+    
+    logger.info(f"[Auth Diagnostic] No local user found for '{login_clean}'. Proceeding to Odoo/Employee flow...")
     
     # Obter banco ativo dinamicamente
     active_db = await get_active_odoo_db(session)
