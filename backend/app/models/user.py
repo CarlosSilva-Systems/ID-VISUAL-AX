@@ -12,6 +12,10 @@ class UserRole(str, Enum):
     OPERATOR = "operator"
     RESPONSIBLE = "responsible"
     ADMIN = "admin"
+    TI = "ti"
+    PRODUCAO = "producao"
+    ENGENHARIA = "engenharia"
+    GERENCIA = "gerencia"
 
 
 class UserBase(SQLModel):
@@ -20,6 +24,7 @@ class UserBase(SQLModel):
     department: Optional[str] = Field(default=None, index=True)
     role: UserRole = Field(default=UserRole.OPERATOR)
     is_active: bool = Field(default=True)
+    is_local: bool = Field(default=False)
 
     is_odoo_test_mode: bool = Field(default=False)
     odoo_test_url: Optional[str] = Field(default=None)
