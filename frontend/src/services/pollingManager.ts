@@ -63,7 +63,9 @@ class PollingManager {
       await this.executePolling('idProducao', '/id-requests/manual');
     }, 60 * 1000);
 
-    console.log('[Polling] Started (ID_Odoo: 15min, ID_Producao: 60s)');
+    if (import.meta.env.DEV) {
+      console.log('[Polling] Started (ID_Odoo: 15min, ID_Producao: 60s)');
+    }
     this.logMetrics();
   }
 
@@ -102,7 +104,9 @@ class PollingManager {
       }
     }
 
-    console.log('[Polling] Status Updated');
+    if (import.meta.env.DEV) {
+      console.log('[Polling] Status Updated');
+    }
     this.logMetrics();
   }
 
@@ -150,28 +154,30 @@ class PollingManager {
    * Loga métricas atuais no console.
    */
   private logMetrics() {
-    console.log('[Polling] Metrics:', {
-      idOdoo: {
-        total: this.metrics.idOdoo.totalRequests,
-        success: this.metrics.idOdoo.successCount,
-        failure: this.metrics.idOdoo.failureCount,
-        successRate: this.metrics.idOdoo.totalRequests > 0 
-          ? `${((this.metrics.idOdoo.successCount / this.metrics.idOdoo.totalRequests) * 100).toFixed(1)}%`
-          : 'N/A',
-        lastSuccess: this.metrics.idOdoo.lastSuccess?.toISOString() || 'Never',
-        consecutiveFailures: this.metrics.idOdoo.consecutiveFailures
-      },
-      idProducao: {
-        total: this.metrics.idProducao.totalRequests,
-        success: this.metrics.idProducao.successCount,
-        failure: this.metrics.idProducao.failureCount,
-        successRate: this.metrics.idProducao.totalRequests > 0
-          ? `${((this.metrics.idProducao.successCount / this.metrics.idProducao.totalRequests) * 100).toFixed(1)}%`
-          : 'N/A',
-        lastSuccess: this.metrics.idProducao.lastSuccess?.toISOString() || 'Never',
-        consecutiveFailures: this.metrics.idProducao.consecutiveFailures
-      }
-    });
+    if (import.meta.env.DEV) {
+      console.log('[Polling] Metrics:', {
+        idOdoo: {
+          total: this.metrics.idOdoo.totalRequests,
+          success: this.metrics.idOdoo.successCount,
+          failure: this.metrics.idOdoo.failureCount,
+          successRate: this.metrics.idOdoo.totalRequests > 0 
+            ? `${((this.metrics.idOdoo.successCount / this.metrics.idOdoo.totalRequests) * 100).toFixed(1)}%`
+            : 'N/A',
+          lastSuccess: this.metrics.idOdoo.lastSuccess?.toISOString() || 'Never',
+          consecutiveFailures: this.metrics.idOdoo.consecutiveFailures
+        },
+        idProducao: {
+          total: this.metrics.idProducao.totalRequests,
+          success: this.metrics.idProducao.successCount,
+          failure: this.metrics.idProducao.failureCount,
+          successRate: this.metrics.idProducao.totalRequests > 0
+            ? `${((this.metrics.idProducao.successCount / this.metrics.idProducao.totalRequests) * 100).toFixed(1)}%`
+            : 'N/A',
+          lastSuccess: this.metrics.idProducao.lastSuccess?.toISOString() || 'Never',
+          consecutiveFailures: this.metrics.idProducao.consecutiveFailures
+        }
+      });
+    }
   }
 }
 
