@@ -203,7 +203,7 @@ async def get_workcenters_status(
     try:
         # Buscar dados cacheados (30s TTL)
         odoo_wcs, all_wos, production_map = await _fetch_workcenters_data(
-            str(id(session)),  # Session ID para cache key
+            "global_view",     # Chave estática (compartilhada entre todas as sessões)
             settings.ODOO_URL  # URL para cache key
         )
         
