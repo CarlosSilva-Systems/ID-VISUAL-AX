@@ -106,6 +106,7 @@ export interface Fabrication {
   odoo_mo_id?: string; // Odoo MO ID for document lookups
   deadline_date?: string;
   source?: 'odoo' | 'producao';
+  product_category_label?: string;
 }
 
 export const PACKAGES_CONFIG: Record<PackageType, string[]> = {

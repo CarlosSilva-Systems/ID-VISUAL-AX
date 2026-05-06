@@ -142,6 +142,11 @@ function DashboardRow({ item, isSelected, onToggle, onViewDocs, isMobile, isDocs
               </span>
             )}
             <PriorityChip priority={item.priority} />
+            {item.product_category_label && (
+              <span className="px-1.5 py-0.5 bg-blue-50 text-blue-700 border border-blue-200 rounded text-[9px] font-bold uppercase">
+                {item.product_category_label}
+              </span>
+            )}
           </div>
           {/* Checkbox com área de toque 44×44px */}
           <button
@@ -261,6 +266,12 @@ function DashboardRow({ item, isSelected, onToggle, onViewDocs, isMobile, isDocs
 
           <PriorityChip priority={item.priority} />
           <StatusChip status={item.status} />
+
+          {item.product_category_label && (
+            <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded text-[10px] font-bold tracking-wider shadow-sm">
+              {item.product_category_label}
+            </span>
+          )}
 
           {item.packageType && (
             <span className="px-2 py-0.5 bg-indigo-100 text-indigo-700 rounded text-[10px] font-bold tracking-wider">
