@@ -114,6 +114,26 @@ async def get_or_refresh(
             return local_mo
 
         odoo_mo = mos_data[0]
+        
+        # Busca categoria do produto (categ_id)
+        product_category_id = None
+        product_val = odoo_mo.get("product_id")
+        if product_val:
+            pid = product_val[0] if isinstance(product_val, (list, tuple)) else product_val
+            try:
+                prod_data = await odoo_client.search_read(
+                    "product.product", 
+                    domain=[["id", "=", pid]], 
+                    fields=["categ_id"], 
+                    limit=1
+                )
+                if prod_data and prod_data[0].get("categ_id"):
+                    cat_val = prod_data[0]["categ_id"]
+                    product_category_id = cat_val[0] if isinstance(cat_val, (list, tuple)) else cat_val
+                    logger.debug(f"[MOCache] Categoria identificada para produto {pid}: {product_category_id}")
+            except Exception as e:
+                logger.warning(f"[MOCache] Falha ao buscar categoria do produto {pid}: {e}")
+
         now = datetime.now(timezone.utc).replace(tzinfo=None)
 
         # Extrai campos do Odoo com segurança
@@ -171,6 +191,7 @@ async def get_or_refresh(
                 _extract_product_name(odoo_mo.get("product_id"))
                 or local_mo.product_name
             )
+            local_mo.product_category_id = product_category_id or local_mo.product_category_id
             local_mo.last_sync_at = now
             session.add(local_mo)
         else:
@@ -184,6 +205,7 @@ async def get_or_refresh(
                 date_start=_parse_date(odoo_mo.get("date_start")),
                 state=odoo_mo.get("state", "unknown"),
                 company_id=int(odoo_mo["company_id"][0]) if isinstance(odoo_mo.get("company_id"), (list, tuple)) else None,
+                product_category_id=product_category_id,
                 last_sync_at=now,
             )
             session.add(local_mo)
