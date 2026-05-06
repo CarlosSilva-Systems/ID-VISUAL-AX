@@ -115,7 +115,33 @@ function AppContent() {
     const ProtectedRoute = ({ path, children }: { path: string, children: React.ReactNode }) => {
       // Allow dynamic paths via base match in some cases, but canAccessRoute expects the raw path
       if (!canAccessRoute(currentUser, path)) {
-        const fallback = currentUser?.role === 'producao' ? '/id-visual/producao' : '/id-visual/dashboard';
+        const normalizedRole = (currentUser?.role || '').toLowerCase();
+        const fallback = normalizedRole === 'producao' ? '/id-visual/producao' : '/id-visual/dashboard';
+        
+        if (path === fallback) {
+          console.error(`Infinite redirect loop detected! Role: ${normalizedRole}, Path: ${path}`);
+          return (
+            <div className="flex flex-col h-screen w-full items-center justify-center bg-slate-50 p-4">
+              <div className="text-center max-w-md bg-white p-8 rounded-xl shadow border border-slate-200">
+                <h2 className="text-2xl font-bold text-red-600 mb-4">Acesso Negado</h2>
+                <p className="text-slate-700 mb-6">
+                  Seu perfil de usuário não tem permissão para acessar a página inicial padrão. 
+                  Entre em contato com a equipe de TI ou Gerência de Acessos.
+                </p>
+                <button 
+                  onClick={() => { 
+                    localStorage.removeItem('id_visual_token'); 
+                    window.location.href = '/'; 
+                  }}
+                  className="w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors font-medium"
+                >
+                  Voltar para o Login
+                </button>
+              </div>
+            </div>
+          );
+        }
+
         return <Navigate to={fallback} replace />;
       }
       return <>{children}</>;

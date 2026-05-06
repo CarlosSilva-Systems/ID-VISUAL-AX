@@ -95,3 +95,6 @@ hardware/compile_commands.json
 # Backups locais de firmware
 hardware/src/*.backup_*
 hardware/include/*.backup_*
+
+# Pastas de scratch e testes avulsos
+backend/scratch/
