@@ -18,6 +18,7 @@ class ManufacturingOrderBase(SQLModel):
     date_start: Optional[datetime] = Field(default=None, index=True)
     state: str = Field(index=True)
     company_id: Optional[int] = None
+    product_category_id: Optional[int] = Field(default=None, index=True)
 
 
 class ManufacturingOrder(ManufacturingOrderBase, table=True):
