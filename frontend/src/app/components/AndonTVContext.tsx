@@ -219,24 +219,37 @@ function _processQueue() {
 
     const doSpeak = () => {
         const voices = window.speechSynthesis.getVoices();
+        let selected: SpeechSynthesisVoice | null = null;
+
         if (voices.length > 0) {
             const ptVoices = voices.filter(v => v.lang === 'pt-BR' || v.lang.startsWith('pt'));
 
-            // Prioridade 1: vozes neurais online (Microsoft Francisca Online, Google, etc.)
-            // Identificadas por "Online" ou "Natural" no nome — muito mais naturais
-            const onlineVoice = ptVoices.find(v =>
-                /online|natural/i.test(v.name) && !v.localService
+            // P1: "Francisca" explicitamente — a voz feminina neural preferida
+            selected ??= ptVoices.find(v => /francisca/i.test(v.name)) ?? null;
+
+            // P2: qualquer voz neural feminina reconhecida pelo nome
+            selected ??= ptVoices.find(v => /leila|vitoria|heloisa|camila/i.test(v.name)) ?? null;
+
+            // P3: qualquer voz com "Natural" ou "Online" no nome (normalmente neurais)
+            selected ??= ptVoices.find(v => /natural|online/i.test(v.name)) ?? null;
+
+            // P4: qualquer voz pt-BR como fallback (comportamento anterior)
+            selected ??= ptVoices.find(v => v.lang === 'pt-BR') ?? null;
+
+            // P5: qualquer voz pt-* como último recurso
+            selected ??= ptVoices[0] ?? null;
+
+            // Log de diagnóstico — visível no DevTools da TV (F12 → Console)
+            console.info(
+                '[TTS] Vozes pt disponíveis:',
+                ptVoices.map(v => `"${v.name}" [${v.lang}] local=${v.localService}`),
+                '→ Selecionada:',
+                selected ? `"${selected.name}"` : 'nenhuma (usando padrão do SO)'
             );
 
-            // Prioridade 2: qualquer voz pt-BR (pode ser offline — comportamento atual)
-            const ptBRVoice = ptVoices.find(v => v.lang === 'pt-BR');
-
-            // Prioridade 3: qualquer voz pt-* como último recurso
-            const ptFallback = ptVoices[0] ?? null;
-
-            const selected = onlineVoice ?? ptBRVoice ?? ptFallback;
             if (selected) utterance.voice = selected;
         }
+
         window.speechSynthesis.speak(utterance);
         _startChromeResumeWorkaround();
     };
