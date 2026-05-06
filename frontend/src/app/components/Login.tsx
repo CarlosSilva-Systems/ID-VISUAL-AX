@@ -64,6 +64,7 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
                                 onChange={(e) => setUsername(e.target.value)}
                                 className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all font-medium"
                                 placeholder="ex: operador1@id.com"
+                                autoComplete="username"
                                 disabled={isLoading}
                             />
                         </div>
@@ -81,6 +82,7 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
                                 onChange={(e) => setPassword(e.target.value)}
                                 className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all font-medium"
                                 placeholder="••••••••"
+                                autoComplete="current-password"
                                 disabled={isLoading}
                             />
                         </div>
