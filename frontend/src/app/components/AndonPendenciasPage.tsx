@@ -12,6 +12,7 @@ import { EmptyState } from './EmptyState';
 import { SkeletonListItem } from './SkeletonLoader';
 import { useBreakpoint } from '@/hooks/useBreakpoint';
 import { cn } from '@/lib/utils';
+import { formatDateTime as formatDate } from '../../lib/date';
 
 interface AndonPendenciasPageProps {
   currentUser: string;
@@ -90,10 +91,6 @@ export const AndonPendenciasPage: React.FC<AndonPendenciasPageProps> = ({ curren
     });
   };
 
-  const formatDate = (iso: string) => {
-    if (!iso) return '—';
-    return new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
-  };
 
   const formatDuration = (minutes?: number) => {
     if (minutes == null) return '—';
