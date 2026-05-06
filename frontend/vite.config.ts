@@ -24,6 +24,34 @@ export default defineConfig({
     setupFiles: ['./src/test-setup.ts'],
     css: false,
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'vendor-react': ['react', 'react-dom', 'react-router-dom'],
+          'vendor-ui': ['lucide-react', '@radix-ui/react-accordion', '@radix-ui/react-alert-dialog', '@radix-ui/react-avatar', '@radix-ui/react-dialog', '@radix-ui/react-dropdown-menu', '@radix-ui/react-popover', '@radix-ui/react-select', '@radix-ui/react-tooltip'],
+          'vendor-charts': ['recharts'],
+          'vendor-utils': ['date-fns', 'lodash', 'clsx', 'tailwind-merge'],
+        },
+      },
+    },
+    commonjsOptions: {
+      include: [/node_modules/],
+    },
+    chunkSizeWarningLimit: 1000,
+  },
+  optimizeDeps: {
+    include: [
+      'react',
+      'react-dom',
+      'react-router-dom',
+      'lucide-react',
+      'recharts',
+      'date-fns',
+      'clsx',
+      'tailwind-merge',
+    ],
+  },
   server: {
     port: 5173,
     strictPort: true,
