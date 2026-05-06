@@ -24,7 +24,7 @@ from app.models.id_request import IDRequest, IDRequestStatus, IDRequestTask, Pac
 from app.models.manufacturing import ManufacturingOrder
 from app.services.odoo_client import OdooClient
 from app.services.odoo_utils import normalize_many2one_display
-from app.services.status_mappers import map_mrp_state
+from app.services.status_mappers import map_mrp_state, map_product_category
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -173,6 +173,7 @@ class MOSearchResult(BaseModel):
     date_start: Optional[str] = None
     state: str
     has_id_activity: bool = False
+    product_category_label: Optional[str] = None
 
 
 class ManualRequestPayload(BaseModel):
@@ -265,6 +266,23 @@ async def search_mos(
             )
             id_activity_map = {a["res_id"] for a in activities}
 
+        # --- Novo: Buscar categorias dos produtos em lote ---
+        product_category_map: Dict[int, int] = {}
+        pids = list({m["product_id"][0] for m in mos if isinstance(m.get("product_id"), (list, tuple))})
+        if pids:
+            try:
+                prods_data = await client.search_read(
+                    "product.product",
+                    domain=[["id", "in", pids]],
+                    fields=["id", "categ_id"],
+                )
+                for p in prods_data:
+                    cat_val = p.get("categ_id")
+                    if cat_val:
+                        product_category_map[p["id"]] = cat_val[0] if isinstance(cat_val, (list, tuple)) else cat_val
+            except Exception as e:
+                logger.warning(f"Falha ao buscar categorias dos produtos na busca: {e}")
+
         # ── Step 4: Map Results ──
         final_list = []
         for mo in mos:
@@ -285,7 +303,10 @@ async def search_mos(
                     product_qty=mo.get('product_qty', 0.0),
                     date_start=mo.get('date_start'),
                     state=mo.get('state', ''),
-                    has_id_activity=has_act
+                    has_id_activity=has_act,
+                    product_category_label=map_product_category(
+                        product_category_map.get(mo["product_id"][0]) if isinstance(mo.get("product_id"), (list, tuple)) else None
+                    )
                 ))
             except Exception as e:
                 logger.error(f"Error processing MO {mo.get('id')}: {e}")
@@ -591,6 +612,7 @@ class ProductionRequestResponse(BaseModel):
     product_qty: float = 0
     priority: str = "normal"
     nao_consta_em: Optional[datetime] = None
+    product_category_label: Optional[str] = None
 
 
 @router.get("/requests", response_model=List[ProductionRequestResponse])
@@ -656,6 +678,7 @@ async def get_production_requests(
             product_qty=mo.product_qty,
             priority=req.priority or "normal",
             nao_consta_em=req.nao_consta_em,
+            product_category_label=map_product_category(mo.product_category_id),
         ))
 
     return response
