@@ -24,7 +24,7 @@ interface SolicitacoesProps {
 }
 
 export function Solicitacoes({ onCreateBatch }: SolicitacoesProps) {
-  const { manualRequests, loadingRequests, refreshManualRequests } = useData();
+  const { manualRequests, loadingRequests, refreshManualRequests, refreshMOs } = useData();
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isTransferring, setIsTransferring] = useState(false);
   const breakpoint = useBreakpoint();
@@ -59,6 +59,8 @@ export function Solicitacoes({ onCreateBatch }: SolicitacoesProps) {
 
       setSelectedIds(new Set());
       refreshManualRequests(true);
+      // Força atualização imediata da fila do dashboard (sem aguardar polling de 30s)
+      refreshMOs(true);
       window.dispatchEvent(new Event('manual-request-updated'));
       setSelectedItem(null);
     } catch (err: unknown) {
