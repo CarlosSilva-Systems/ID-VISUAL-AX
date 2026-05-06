@@ -13,7 +13,7 @@ from app.models.audit import HistoryLog
 from app.models.system_setting import SystemSetting
 from app.services.odoo_client import OdooClient
 from app.services.odoo_utils import normalize_many2one_display
-from app.services.status_mappers import map_mrp_state
+from app.services.status_mappers import map_mrp_state, map_product_category
 from app.core.config import settings
 from app.api.api_v1.endpoints.sync import update_sync_version
 from app.schemas.id_request import ManualRequestResponse
@@ -109,7 +109,8 @@ async def get_manual_requests(
             "created_at": req.created_at,
             "mo_state": str(current_state),
             "mo_state_label": str(status_info["label"]),
-            "mo_state_variant": str(status_info["variant"])
+            "mo_state_variant": str(status_info["variant"]),
+            "product_category_label": map_product_category(mo.product_category_id)
         })
     return response
 

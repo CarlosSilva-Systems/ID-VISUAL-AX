@@ -14,6 +14,7 @@ from app.core.config import settings
 from app.api.deps import get_session, get_odoo_client, get_current_user
 from app.models.id_request import IDRequest, IDRequestStatus
 from app.models.manufacturing import ManufacturingOrder
+from app.services.status_mappers import map_product_category
 
 import logging
 
@@ -139,6 +140,23 @@ async def get_odoo_mos(
                     fields=safe_fields
                 )
 
+        # ── Step 3.5: Fetch Product Categories in Bulk ──
+        product_category_map: dict = {}
+        pids = list({m["product_id"][0] for m in odoo_mos if isinstance(m.get("product_id"), (list, tuple))})
+        if pids:
+            try:
+                prods_data = await client.search_read(
+                    "product.product",
+                    domain=[["id", "in", pids]],
+                    fields=["id", "categ_id"],
+                )
+                for p in prods_data:
+                    cat_val = p.get("categ_id")
+                    if cat_val:
+                        product_category_map[p["id"]] = cat_val[0] if isinstance(cat_val, (list, tuple)) else cat_val
+            except Exception as e:
+                logger.warning(f"Failed to fetch product categories in bulk: {e}")
+
         # ── Step 4: Process & Merge ──
         final_list = []
         mo_map = {m['id']: m for m in odoo_mos}
@@ -166,6 +184,9 @@ async def get_odoo_mos(
                 "activity_summary": act.get('summary'),
                 "activity_date_deadline": act.get('date_deadline'),
                 "origin": mo.get('origin'),
+                "product_category_label": map_product_category(
+                    product_category_map.get(mo["product_id"][0]) if isinstance(mo.get("product_id"), (list, tuple)) else None
+                ),
                 "source": "odoo",
                 "from_production": False,
                 "production_requester": None

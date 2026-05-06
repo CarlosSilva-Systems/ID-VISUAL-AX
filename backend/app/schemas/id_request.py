@@ -20,3 +20,4 @@ class ManualRequestResponse(BaseModel):
     mo_state: str
     mo_state_label: str
     mo_state_variant: str
+    product_category_label: Optional[str] = None

@@ -108,6 +108,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     docs: { diagrama: false, legenda: false },
                     from_production: mo.from_production,
                     production_requester: mo.production_requester,
+                    product_category_label: mo.product_category_label,
                     source: mo.from_production ? 'producao' : 'odoo'
                 };
             });
@@ -151,6 +152,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     requester_name: req.requester_name,
                     notes: req.notes,
                     request_id: req.request_id,
+                    product_category_label: req.product_category_label,
                     source: 'producao'
                 };
             });
