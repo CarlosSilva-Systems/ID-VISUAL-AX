@@ -227,16 +227,19 @@ function _processQueue() {
             // P1: "Francisca" explicitamente — a voz feminina neural preferida
             selected ??= ptVoices.find(v => /francisca/i.test(v.name)) ?? null;
 
-            // P2: qualquer voz neural feminina reconhecida pelo nome
-            selected ??= ptVoices.find(v => /leila|vitoria|heloisa|camila/i.test(v.name)) ?? null;
+            // P2: Vozes neurais femininas conhecidas por nome
+            selected ??= ptVoices.find(v => /maria|leila|vitoria|heloisa|camila/i.test(v.name)) ?? null;
 
-            // P3: qualquer voz com "Natural" ou "Online" no nome (normalmente neurais)
+            // P3: Busca heurística por vozes femininas (alguns browsers incluem "female" ou "feminino")
+            selected ??= ptVoices.find(v => /female|feminino/i.test(v.name)) ?? null;
+
+            // P4: qualquer voz com "Natural" ou "Online" no nome (normalmente neurais)
             selected ??= ptVoices.find(v => /natural|online/i.test(v.name)) ?? null;
 
-            // P4: qualquer voz pt-BR como fallback (comportamento anterior)
+            // P5: qualquer voz pt-BR como fallback (comportamento anterior)
             selected ??= ptVoices.find(v => v.lang === 'pt-BR') ?? null;
 
-            // P5: qualquer voz pt-* como último recurso
+            // P6: qualquer voz pt-* como último recurso
             selected ??= ptVoices[0] ?? null;
 
             // Log de diagnóstico — visível no DevTools da TV (F12 → Console)

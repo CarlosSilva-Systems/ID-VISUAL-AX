@@ -63,7 +63,7 @@ class PollingManager {
       await this.executePolling('idProducao', '/id-requests/manual');
     }, 60 * 1000);
 
-    console.log('[Polling] Started (ID_Odoo: 15min, ID_Producao: 60s) with Adaptive Backoff');
+    console.log('[Polling] Started (ID_Odoo: 15min, ID_Producao: 60s)');
     this.logMetrics();
   }
 
@@ -102,7 +102,7 @@ class PollingManager {
       }
     }
 
-    console.log('[Polling] Started (ID_Odoo: 10min, ID_Producao: 30s)');
+    console.log('[Polling] Status Updated');
     this.logMetrics();
   }
 
