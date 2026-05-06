@@ -220,15 +220,27 @@ function _processQueue() {
     const doSpeak = () => {
         const voices = window.speechSynthesis.getVoices();
         if (voices.length > 0) {
-            const ptVoice =
-                voices.find(v => v.lang === 'pt-BR') ??
-                voices.find(v => v.lang.startsWith('pt')) ??
-                null;
-            if (ptVoice) utterance.voice = ptVoice;
+            const ptVoices = voices.filter(v => v.lang === 'pt-BR' || v.lang.startsWith('pt'));
+
+            // Prioridade 1: vozes neurais online (Microsoft Francisca Online, Google, etc.)
+            // Identificadas por "Online" ou "Natural" no nome — muito mais naturais
+            const onlineVoice = ptVoices.find(v =>
+                /online|natural/i.test(v.name) && !v.localService
+            );
+
+            // Prioridade 2: qualquer voz pt-BR (pode ser offline — comportamento atual)
+            const ptBRVoice = ptVoices.find(v => v.lang === 'pt-BR');
+
+            // Prioridade 3: qualquer voz pt-* como último recurso
+            const ptFallback = ptVoices[0] ?? null;
+
+            const selected = onlineVoice ?? ptBRVoice ?? ptFallback;
+            if (selected) utterance.voice = selected;
         }
         window.speechSynthesis.speak(utterance);
         _startChromeResumeWorkaround();
     };
+
 
     const voices = window.speechSynthesis.getVoices();
     if (voices.length > 0) {
