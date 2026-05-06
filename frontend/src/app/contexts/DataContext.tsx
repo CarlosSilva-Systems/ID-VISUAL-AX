@@ -29,16 +29,7 @@ const memoPromise = <T,>(fn: () => Promise<T>) => {
     };
 };
 
-const formatDate = (dateStr: string | null | undefined): string => {
-    if (!dateStr) return '-';
-    try {
-        // Se já vier com T ou for apenas YYYY-MM-DD
-        const date = new Date(dateStr.includes('T') ? dateStr : dateStr + 'T00:00:00');
-        return date.toLocaleDateString('pt-BR');
-    } catch (e) {
-        return dateStr;
-    }
-};
+import { formatDate } from '../../lib/date';
 
 export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const [odooMOs, setOdooMOs] = useState<Fabrication[]>([]);
