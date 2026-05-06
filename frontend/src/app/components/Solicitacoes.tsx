@@ -134,10 +134,13 @@ export function Solicitacoes({ onCreateBatch }: SolicitacoesProps) {
           <label className="text-[10px] font-black uppercase text-slate-400">Obra</label>
           <p className="font-bold text-slate-800">{formatObraDisplayName(selectedItem.obra)}</p>
         </div>
-        <div className="p-4 bg-slate-50 rounded-lg">
-          <label className="text-[10px] font-black uppercase text-slate-400">Status</label>
           <div className="mt-1"><StatusBadge status={selectedItem.status} /></div>
-        </div>
+        {selectedItem.product_category_label && (
+          <div className="p-4 bg-indigo-50 rounded-lg border border-indigo-100">
+            <label className="text-[10px] font-black uppercase text-indigo-600">Tipo de Quadro</label>
+            <p className="font-bold text-indigo-800">{selectedItem.product_category_label}</p>
+          </div>
+        )}
       </div>
       <div className="px-6 pb-6 pt-2 flex-shrink-0">
         <button
@@ -262,6 +265,11 @@ export function Solicitacoes({ onCreateBatch }: SolicitacoesProps) {
                 <div className="mb-1">
                   <span className="text-sm font-bold text-slate-800">{item.requester_name}</span>
                   <span className="text-xs text-slate-500 ml-2 font-medium">{item.mo_number}</span>
+                  {item.product_category_label && (
+                    <span className="ml-2 px-1.5 py-0.5 bg-indigo-50 text-indigo-700 border border-indigo-100 rounded text-[8px] font-bold uppercase">
+                      {item.product_category_label}
+                    </span>
+                  )}
                 </div>
 
                 {/* Linha 3: Obra (secundária) */}
@@ -336,7 +344,14 @@ export function Solicitacoes({ onCreateBatch }: SolicitacoesProps) {
                       </td>
                       <td className="p-4">
                         <div className="flex flex-col">
-                          <span className="text-sm font-bold text-slate-800">{item.mo_number}</span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-bold text-slate-800">{item.mo_number}</span>
+                            {item.product_category_label && (
+                              <span className="px-1.5 py-0.5 bg-indigo-50 text-indigo-700 border border-indigo-100 rounded text-[8px] font-bold uppercase">
+                                {item.product_category_label}
+                              </span>
+                            )}
+                          </div>
                           <span className="text-xs text-slate-500">{formatObraDisplayName(item.obra)}</span>
                         </div>
                       </td>
