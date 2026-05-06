@@ -59,7 +59,7 @@ export function Configuracoes({ user }: ConfiguracoesProps) {
     { id: 'ota' as const, label: 'Atualizações OTA', icon: Cpu },
   ];
 
-  if (user?.role === 'ti' || user?.role === 'gerencia' || user?.is_admin) {
+  if (user?.role === 'ti' || user?.is_admin) {
     tabs.push({ id: 'permissoes' as const, label: 'Gestão de Acessos', icon: ShieldCheck });
   }
 

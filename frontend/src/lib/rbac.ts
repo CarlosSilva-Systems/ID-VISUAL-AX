@@ -25,9 +25,14 @@ export const canAccessRoute = (user: User | null, path: string): boolean => {
   }
 
   if (role === "gerencia") {
-    // Acesso a tudo, menos "Padrões (5S)" e "Dispositivos IoT"
-    // Liberamos /admin para que a gerência possa gerenciar usuários locais
-    const forbidden = ["/templates", "/andon/devices"];
+    // Acesso a tudo, menos "Padrões (5S)", "Dispositivos IoT" e "Configurações"
+    // Conforme solicitado, gerência não deve ver o módulo de configurações (/admin)
+    const forbidden = ["/templates", "/andon/devices", "/admin"];
+    
+    // Bloqueio específico para a conta gerenteax2026 (extra safety)
+    const username = (user.username || "").toLowerCase();
+    if (username.includes("gerenteax2026") && path.startsWith("/admin")) return false;
+    
     return !forbidden.some(f => path.startsWith(f));
   }
 
