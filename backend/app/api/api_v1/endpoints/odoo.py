@@ -33,7 +33,7 @@ def _extract_product_name(product_val: Any) -> str | None:
     return None
 
 @router.get("/mos", response_model=List[dict])
-@limiter.limit("6/minute")
+@limiter.limit("30/minute")
 async def get_odoo_mos(
     request: Request,
     session: AsyncSession = Depends(get_session),
@@ -42,32 +42,20 @@ async def get_odoo_mos(
     """
     Fetch Manufacturing Orders (MOs) that have a pending 'Imprimir ID Visual' activity.
     AND pending Manual Requests from local DB.
-    Sorted by activity deadline (urgency) and then date_start.
-    
-    Uses get_odoo_client() dependency to ensure Service_Account and Active_Database are used.
     
     Otimizações:
-    - Cache de 5 minutos (reduz carga no Odoo)
-    - Queries paralelizadas (activity_type + activities em paralelo)
-    - Limit de 200 atividades (evita queries pesadas)
-    - Rate limit de 6 req/min por cliente
+    - Cache de 5 minutos para resultados (60s se vazio)
+    - Rate limit aumentado para 30 req/min
     """
     from app.services.cache_service import get_cache, cache_key as make_cache_key
     import asyncio
     
     async def _fetch_odoo_mos_data(odoo_url: str, odoo_db: str):
-        """
-        Busca MOs do Odoo com cache manual de 5 minutos.
-        
-        Cache manual (em vez de @cached decorator) para garantir que resultados vazios
-        nunca sejam armazenados, evitando que race conditions com o Odoo bloqueiem a
-        aparição de IDs recém-transferidas pelo TTL completo.
-        """
         # Gera chave de cache determinística
         _cache_key = f"odoo_mos:{make_cache_key(odoo_url, odoo_db)}"
         _cache = get_cache()
         
-        # Tenta retornar do cache (apenas resultados não-vazios foram armazenados)
+        # Tenta retornar do cache
         cached_value = await _cache.get(_cache_key)
         if cached_value is not None:
             logger.debug(f"Cache HIT: {_cache_key}")
@@ -107,9 +95,10 @@ async def get_odoo_mos(
         activity_type_id = await fetch_activity_type()
         activities = await fetch_activities(activity_type_id)
         
-        # Resultados vazios NÃO são cacheados, pois podem ser race conditions com o Odoo
-        # (atividade recém-criada ainda não visível). Retorna tupla vazia sem cachear.
+        # Resultados vazios: cacheamos por apenas 60s para evitar hammering no Odoo,
+        # mas permitindo que novos dados apareçam em tempo razoável.
         if not activities:
+            await _cache.set(_cache_key, ([], []), ttl_seconds=60)
             return [], []
 
         # Deduplicate res_ids
@@ -183,10 +172,8 @@ async def get_odoo_mos(
             }
             final_list.append(item)
         
-        # Apenas cacheia resultados com dados reais — nunca resultados vazios,
-        # para não bloquear a aparição de IDs recém-transferidas (race condition Odoo).
-        if final_list:
-            await _cache.set(_cache_key, (final_list, odoo_res_ids), ttl_seconds=300)
+        # Cacheia resultados por 5 minutos
+        await _cache.set(_cache_key, (final_list, odoo_res_ids), ttl_seconds=300)
         
         return final_list, odoo_res_ids
     
