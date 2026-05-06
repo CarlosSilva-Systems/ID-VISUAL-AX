@@ -24,6 +24,7 @@ _DOC_CACHE_TTL_SECONDS = 300  # 5 minutos
 
 # Estrutura: { product_id: (timestamp, normalized_docs_list) }
 _product_docs_cache: Dict[int, Tuple[float, List[Dict[str, Any]]]] = {}
+_mo_docs_cache: Dict[int, Tuple[float, List[Dict[str, Any]]]] = {}
 # Lock por product_id para evitar thundering herd (múltiplos cliques simultâneos)
 _product_docs_locks: Dict[int, asyncio.Lock] = {}
 
@@ -43,6 +44,15 @@ def _cache_get(product_id: int) -> Optional[List[Dict[str, Any]]]:
 
 def _cache_set(product_id: int, docs: List[Dict[str, Any]]) -> None:
     _product_docs_cache[product_id] = (time.monotonic(), docs)
+
+def _cache_get_mo(mo_id: int) -> Optional[List[Dict[str, Any]]]:
+    entry = _mo_docs_cache.get(mo_id)
+    if entry and (time.monotonic() - entry[0]) < _DOC_CACHE_TTL_SECONDS:
+        return entry[1]
+    return None
+
+def _cache_set_mo(mo_id: int, docs: List[Dict[str, Any]]) -> None:
+    _mo_docs_cache[mo_id] = (time.monotonic(), docs)
 
 # --- Utilities ---
 
@@ -104,83 +114,116 @@ async def list_mo_documents(
 
         product_id = product_raw[0] if isinstance(product_raw, (list, tuple)) else product_raw
 
-        # 2. Verifica cache antes de ir ao Odoo
-        cached_docs = _cache_get(product_id)
-        if cached_docs is not None:
-            logger.debug(f"Cache hit para product_id={product_id} (MO {odoo_mo_id})")
-            # Reescreve as URLs com o odoo_mo_id correto (URLs são por MO, não por produto)
-            normalized = _rewrite_urls(cached_docs, odoo_mo_id)
-            return {
-                "mo_id": odoo_mo_id,
-                "product_id": product_id,
-                "documents": normalized,
-                "total": len(normalized),
-                "cached": True,
-            }
-
-        # 3. Sem cache — busca no Odoo com lock para evitar thundering herd
-        lock = _get_product_lock(product_id)
-        async with lock:
-            # Double-check após adquirir o lock (outro request pode ter populado)
+        # 2. Busca documentos do produto (com cache)
+        product_docs = []
+        if product_id:
             cached_docs = _cache_get(product_id)
             if cached_docs is not None:
-                normalized = _rewrite_urls(cached_docs, odoo_mo_id)
-                return {
-                    "mo_id": odoo_mo_id,
-                    "product_id": product_id,
-                    "documents": normalized,
-                    "total": len(normalized),
-                    "cached": True,
-                }
+                logger.debug(f"Cache hit para product_id={product_id} (MO {odoo_mo_id})")
+                product_docs = cached_docs
+            else:
+                lock = _get_product_lock(product_id)
+                async with lock:
+                    cached_docs = _cache_get(product_id)
+                    if cached_docs is not None:
+                        product_docs = cached_docs
+                    else:
+                        docs = await client.get_product_documents(product_id)
+                        base_docs = []
+                        att_ids_to_fetch: List[int] = []
+                        for d in docs:
+                            doc_id = f"{d['model']}_{d['odoo_id']}"
+                            raw_att = d.get('ir_attachment_id')
+                            att_id: Optional[int] = None
+                            if isinstance(raw_att, (list, tuple)) and len(raw_att) >= 1:
+                                att_id = int(raw_att[0])
+                            elif isinstance(raw_att, int):
+                                att_id = raw_att
 
-            docs = await client.get_product_documents(product_id)
+                            if att_id:
+                                att_ids_to_fetch.append(att_id)
 
-            # Normaliza sem URLs (serão adicionadas dinamicamente)
-            # Coleta attachment_ids para buscar share URLs do módulo Documents
-            base_docs = []
-            att_ids_to_fetch: List[int] = []
-            for d in docs:
-                doc_id = f"{d['model']}_{d['odoo_id']}"
-                raw_att = d.get('ir_attachment_id')
-                att_id: Optional[int] = None
-                if isinstance(raw_att, (list, tuple)) and len(raw_att) >= 1:
-                    att_id = int(raw_att[0])
-                elif isinstance(raw_att, int):
-                    att_id = raw_att
+                            base_docs.append({
+                                "id": doc_id,
+                                "odoo_document_id": d['odoo_id'],
+                                "attachment_id": d.get('ir_attachment_id'),
+                                "attachment_id_int": att_id,
+                                "name": d['name'],
+                                "mimetype": d['mimetype'],
+                                "size": d['size'],
+                                "checksum": d['checksum'],
+                                "is_previewable": is_previewable(d['mimetype']),
+                                "odoo_share_url": None,
+                            })
 
-                if att_id:
-                    att_ids_to_fetch.append(att_id)
+                        if att_ids_to_fetch:
+                            share_map = await client.get_document_share_urls(att_ids_to_fetch)
+                            for doc in base_docs:
+                                att_id_int = doc.get("attachment_id_int")
+                                if att_id_int and att_id_int in share_map:
+                                    doc["odoo_share_url"] = share_map[att_id_int]
 
-                base_docs.append({
+                        _cache_set(product_id, base_docs)
+                        product_docs = base_docs
+
+        # 3. Busca documentos da MO (com cache independente)
+        mo_docs = []
+        cached_mo_docs = _cache_get_mo(odoo_mo_id)
+        if cached_mo_docs is not None:
+            mo_docs = cached_mo_docs
+        else:
+            raw_mo_docs = await client.search_read(
+                'ir.attachment',
+                domain=[['res_model', '=', 'mrp.production'], ['res_id', '=', odoo_mo_id]],
+                fields=['id', 'name', 'mimetype', 'file_size', 'checksum', 'write_date']
+            )
+            mo_docs_list = []
+            att_ids_to_fetch_mo: List[int] = []
+            for d in raw_mo_docs:
+                doc_id = f"ir.attachment_{d['id']}"
+                att_ids_to_fetch_mo.append(d['id'])
+                mo_docs_list.append({
                     "id": doc_id,
-                    "odoo_document_id": d['odoo_id'],
-                    "attachment_id": d.get('ir_attachment_id'),
-                    "attachment_id_int": att_id,
+                    "odoo_document_id": d['id'],
+                    "attachment_id": d['id'],
+                    "attachment_id_int": d['id'],
                     "name": d['name'],
                     "mimetype": d['mimetype'],
-                    "size": d['size'],
-                    "checksum": d['checksum'],
+                    "size": d.get('file_size', 0),
+                    "checksum": d.get('checksum'),
                     "is_previewable": is_previewable(d['mimetype']),
-                    "odoo_share_url": None,  # preenchido abaixo
+                    "odoo_share_url": None,
                 })
-
-            # Busca share URLs do módulo Documents (silencioso se não disponível)
-            if att_ids_to_fetch:
-                share_map = await client.get_document_share_urls(att_ids_to_fetch)
-                for doc in base_docs:
+            
+            if att_ids_to_fetch_mo:
+                share_map_mo = await client.get_document_share_urls(att_ids_to_fetch_mo)
+                for doc in mo_docs_list:
                     att_id_int = doc.get("attachment_id_int")
-                    if att_id_int and att_id_int in share_map:
-                        doc["odoo_share_url"] = share_map[att_id_int]
+                    if att_id_int and att_id_int in share_map_mo:
+                        doc["odoo_share_url"] = share_map_mo[att_id_int]
+                        
+            _cache_set_mo(odoo_mo_id, mo_docs_list)
+            mo_docs = mo_docs_list
 
-            _cache_set(product_id, base_docs)
+        # Combina os documentos (Produto + MO)
+        all_docs = product_docs + mo_docs
+        
+        # Remove duplicatas baseadas no checksum ou name (caso anexado em ambos)
+        seen = set()
+        unique_docs = []
+        for d in all_docs:
+            key = d.get('checksum') or d.get('name')
+            if key not in seen:
+                seen.add(key)
+                unique_docs.append(d)
 
-        normalized = _rewrite_urls(base_docs, odoo_mo_id)
+        normalized = _rewrite_urls(unique_docs, odoo_mo_id)
         return {
             "mo_id": odoo_mo_id,
             "product_id": product_id,
             "documents": normalized,
             "total": len(normalized),
-            "cached": False,
+            "cached": (cached_docs is not None) if product_id else True,
         }
 
     except HTTPException:
