@@ -500,11 +500,14 @@ class OdooClient:
             if not actual_fields:
                 actual_fields = ['id', 'name']
 
-            if target_model == 'product.document' and 'ir_attachment_id' in target_schema:
+            include_attachment = (
+                target_model == 'product.document' and 'ir_attachment_id' in target_schema
+            )
+            if include_attachment:
                 actual_fields.append('ir_attachment_id')
 
-            try:
-                docs = await self.search_read(target_model, domain=[['id', 'in', ids]], fields=actual_fields)
+            async def _do_fetch(fields_to_use: List[str]) -> List[Dict[str, Any]]:
+                docs = await self.search_read(target_model, domain=[['id', 'in', ids]], fields=fields_to_use)
                 result = []
                 for d in docs:
                     result.append({
@@ -519,7 +522,23 @@ class OdooClient:
                         "ir_attachment_id": d.get('ir_attachment_id'),
                     })
                 return result
+
+            try:
+                return await _do_fetch(actual_fields)
             except Exception as e:
+                err_str = str(e)
+                # Se o erro for de acesso ao ir.attachment, tenta sem o campo
+                if include_attachment and ('ir.attachment' in err_str or 'AccessError' in err_str or 'acesso' in err_str.lower()):
+                    logger.warning(
+                        f"AccessError ao buscar ir_attachment_id em {target_model} — "
+                        f"retentando sem o campo (verifique permissão do usuário de serviço no Odoo)."
+                    )
+                    try:
+                        fields_without_att = [f for f in actual_fields if f != 'ir_attachment_id']
+                        return await _do_fetch(fields_without_att)
+                    except Exception as e2:
+                        logger.error(f"Fallback também falhou ao buscar {target_model}: {e2}")
+                        return []
                 logger.error(f"Error fetching documents from {target_model}: {e}")
                 return []
 
@@ -535,7 +554,40 @@ class OdooClient:
             else:
                 all_docs.extend(r)
 
-        # 6. Deduplica por checksum ou name+id
+        # 6. Busca documentos vinculados via módulo Documents (documents.document → product_id)
+        # Este é o caminho utilizado quando o upload é feito pelo app Documents do Odoo,
+        # em vez do botão "Documentos" na ficha do produto (product.document).
+        try:
+            module_docs = await self.search_read(
+                'documents.document',
+                domain=[['product_id', '=', product_id], ['type', '!=', 'folder']],
+                fields=['id', 'name', 'mimetype', 'file_size', 'checksum', 'write_date', 'attachment_id', 'access_token']
+            )
+            for d in module_docs:
+                raw_att = d.get('attachment_id')
+                att_id: Optional[int] = None
+                if isinstance(raw_att, (list, tuple)) and raw_att:
+                    att_id = int(raw_att[0])
+                elif isinstance(raw_att, int):
+                    att_id = raw_att
+
+                all_docs.append({
+                    "id": f"documents.document_{d['id']}",
+                    "odoo_id": d['id'],
+                    "model": "documents.document",
+                    "name": d.get('name', 'unnamed'),
+                    "mimetype": d.get('mimetype', 'application/octet-stream'),
+                    "size": d.get('file_size', 0),
+                    "checksum": d.get('checksum'),
+                    "last_modified": d.get('write_date'),
+                    "ir_attachment_id": att_id,
+                    "_odoo_share_token": d.get('access_token'),  # usado abaixo para montar URL
+                })
+        except Exception as e:
+            logger.warning(f"get_product_documents: falha ao buscar documents.document para product_id={product_id}: {e}")
+
+        # 7. Deduplica por checksum ou name+id
+
         seen: set = set()
         unique_docs: List[Dict[str, Any]] = []
         for d in all_docs:

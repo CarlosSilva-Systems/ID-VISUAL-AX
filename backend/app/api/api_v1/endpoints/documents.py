@@ -132,16 +132,23 @@ async def list_mo_documents(
                         base_docs = []
                         att_ids_to_fetch: List[int] = []
                         for d in docs:
-                            doc_id = f"{d['model']}_{d['odoo_id']}"
-                            raw_att = d.get('ir_attachment_id')
-                            att_id: Optional[int] = None
-                            if isinstance(raw_att, (list, tuple)) and len(raw_att) >= 1:
-                                att_id = int(raw_att[0])
-                            elif isinstance(raw_att, int):
-                                att_id = raw_att
+                            # get_product_documents já formata o id como "{model}_{odoo_id}"
+                            doc_id = d['id']
+                            att_id: Optional[int] = d.get('ir_attachment_id')
+                            if isinstance(att_id, (list, tuple)) and att_id:
+                                att_id = int(att_id[0])
+                            elif not isinstance(att_id, int):
+                                att_id = None
 
                             if att_id:
                                 att_ids_to_fetch.append(att_id)
+
+                            # Para documentos do módulo Documents, o token de acesso já vem embutido
+                            share_token = d.get('_odoo_share_token')
+                            odoo_share_url = (
+                                f"{settings.ODOO_URL.rstrip('/')}/odoo/documents/{share_token}"
+                                if share_token else None
+                            )
 
                             base_docs.append({
                                 "id": doc_id,
@@ -153,15 +160,21 @@ async def list_mo_documents(
                                 "size": d['size'],
                                 "checksum": d['checksum'],
                                 "is_previewable": is_previewable(d['mimetype']),
-                                "odoo_share_url": None,
+                                "odoo_share_url": odoo_share_url,
                             })
 
-                        if att_ids_to_fetch:
-                            share_map = await client.get_document_share_urls(att_ids_to_fetch)
+                        # Para docs sem token embutido, busca via get_document_share_urls
+                        remaining_att_ids = [
+                            att_id for doc, att_id in zip(base_docs, att_ids_to_fetch)
+                            if doc.get('odoo_share_url') is None and att_id
+                        ]
+                        if remaining_att_ids:
+                            share_map = await client.get_document_share_urls(remaining_att_ids)
                             for doc in base_docs:
-                                att_id_int = doc.get("attachment_id_int")
-                                if att_id_int and att_id_int in share_map:
-                                    doc["odoo_share_url"] = share_map[att_id_int]
+                                if doc.get('odoo_share_url') is None:
+                                    att_id_int = doc.get("attachment_id_int")
+                                    if att_id_int and att_id_int in share_map:
+                                        doc["odoo_share_url"] = share_map[att_id_int]
 
                         _cache_set(product_id, base_docs)
                         product_docs = base_docs
