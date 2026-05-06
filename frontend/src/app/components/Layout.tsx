@@ -201,7 +201,7 @@ export const Layout = ({ children, user }: LayoutProps) => {
         { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, path: "/id-visual/dashboard" },
         { id: "requests", label: "Solicitações (ID)", icon: ClipboardList, path: "/id-visual/solicitacoes", badge: manualCount > 0 ? (manualCount > 99 ? '99+' : manualCount) : null },
         { id: "production", label: "Produção", icon: Factory, path: "/id-visual/producao" },
-        { id: "analytics", label: "Indicadores", icon: BarChart3, path: "/id-visual/analytics" },
+        { id: "analytics", label: "Indicadores ID", icon: BarChart3, path: "/id-visual/analytics" },
       ]
     },
     {
@@ -217,7 +217,7 @@ export const Layout = ({ children, user }: LayoutProps) => {
           path: "/andon/pendencias",
           badge: pendingJustificationCount > 0 ? (pendingJustificationCount > 99 ? '99+' : pendingJustificationCount) : null
         },
-        { id: "andon-oee", label: "Indicadores", icon: BarChart3, path: "/andon/dashboard" },
+        { id: "andon-oee", label: "Indicadores OEE", icon: BarChart3, path: "/andon/dashboard" },
         { id: "andon-devices", label: "Dispositivos IoT", icon: Cpu, path: "/andon/devices" },
       ]
     },
@@ -430,10 +430,6 @@ export const Layout = ({ children, user }: LayoutProps) => {
           {/* Elementos do lado direito — ocultos quando busca está expandida em mobile */}
           <div className={cn("flex items-center gap-3", isSearchOpen && "hidden md:flex")}>
             {/* Badge Odoo — oculto em mobile */}
-            <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-emerald-50 text-emerald-700 rounded-lg border border-emerald-100">
-              <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
-              <span className="text-xs font-bold uppercase tracking-wider">Odoo Conectado</span>
-            </div>
 
             <ConnectionBadge />
 
