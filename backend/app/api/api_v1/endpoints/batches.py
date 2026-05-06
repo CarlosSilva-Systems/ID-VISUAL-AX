@@ -20,6 +20,7 @@ from app.schemas.matrix_view import (
 )
 from app.api.api_v1.endpoints.sync import update_sync_version
 from app.services.task_service import initialize_request_tasks
+from app.services.cache_service import invalidate_cache_pattern
 
 logger = logging.getLogger(__name__)
 
@@ -725,6 +726,7 @@ async def finalize_batch(
     update_sync_version("andon_version")
     # Invalidar cache geral de ordens
     update_sync_version("odoo_version")
+    await invalidate_cache_pattern("odoo_mos:")
     
     # C) CLOSE ODOO ACTIVITIES
     odoo_errors = []
@@ -801,6 +803,7 @@ async def cancel_batch(
     
     # Invalidate cache
     update_sync_version("odoo_version")
+    await invalidate_cache_pattern("odoo_mos:")
 
     return {
         "batch_id": str(batch.id),
@@ -885,6 +888,7 @@ async def force_complete_batch(
     # Notifica Andon TV (evento IDVISUAL_DONE para cada request)
     update_sync_version("andon_version")
     update_sync_version("odoo_version")
+    await invalidate_cache_pattern("odoo_mos:")
 
     # Fechar atividades 'Imprimir ID Visual' no Odoo (igual ao /finalize)
     odoo_errors = []

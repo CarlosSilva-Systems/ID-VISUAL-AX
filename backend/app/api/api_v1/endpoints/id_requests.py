@@ -18,6 +18,7 @@ from app.core.config import settings
 from app.api.api_v1.endpoints.sync import update_sync_version
 from app.schemas.id_request import ManualRequestResponse
 from app.services.task_service import initialize_request_tasks
+from app.services.cache_service import invalidate_cache_pattern
 
 logger = logging.getLogger(__name__)
 
@@ -334,6 +335,7 @@ async def transfer_manual_request(
     update_sync_version("requests_version")
     # Notificar Andon TV sobre transferência (dispara evento IDVISUAL_TRANSFERRED)
     update_sync_version("andon_version")
+    await invalidate_cache_pattern("odoo_mos:")
     
     return {
         "created_activity": created,
@@ -498,6 +500,7 @@ async def bulk_complete_requests(
     await session.commit()
     update_sync_version("andon_version")
     update_sync_version("odoo_version")
+    await invalidate_cache_pattern("odoo_mos:")
 
     # Fechar atividades 'Imprimir ID Visual' no Odoo para cada IDRequest concluído
     odoo_closed_count = 0
