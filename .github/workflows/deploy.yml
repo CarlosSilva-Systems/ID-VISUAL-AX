@@ -73,74 +73,63 @@ jobs:
           cache-from: type=gha,scope=mosquitto
           cache-to: type=gha,mode=max,scope=mosquitto
 
-  # ── Job 2: Deploy no Servidor Ubuntu ───────────────────────────────────────
+  # ── Job 2: Deploy no Servidor Ubuntu (Self-Hosted Runner) ──────────────────
   deploy:
     name: Deploy — Servidor Ubuntu
-    runs-on: ubuntu-latest
+    # Roda diretamente no servidor de produção via self-hosted runner.
+    # Não precisa de SSH externo — os comandos executam localmente na máquina.
+    runs-on: self-hosted
     needs: build-and-push   # Só roda se o build passou
+
+    env:
+      DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+      COMPOSE_FILE: docker-compose.ci.yml
 
     steps:
       - name: Checkout do código
         uses: actions/checkout@v4
 
-      # Copia o docker-compose.ci.yml para o servidor antes de subir os containers
-      - name: Copiar docker-compose.ci.yml para o servidor
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          key: ${{ secrets.DEPLOY_SSH_KEY }}
-          source: "docker-compose.ci.yml"
-          target: ${{ secrets.DEPLOY_PATH }}
+      - name: Login no GitHub Container Registry
+        run: |
+          echo "${{ secrets.GH_PAT }}" | docker login ghcr.io \
+            -u ${{ github.repository_owner }} --password-stdin
 
-      # Conecta no servidor e executa o deploy
-      - name: Deploy via SSH
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          key: ${{ secrets.DEPLOY_SSH_KEY }}
-          script: |
-            set -e
-            cd ${{ secrets.DEPLOY_PATH }}
+      - name: Pull das novas imagens
+        run: |
+          docker compose \
+            -f "$GITHUB_WORKSPACE/$COMPOSE_FILE" \
+            --env-file "$DEPLOY_PATH/.env" \
+            pull
 
-            echo "🔐 Autenticando no GHCR..."
-            echo "${{ secrets.GH_PAT }}" | docker login ghcr.io -u ${{ github.repository_owner }} --password-stdin
+      - name: Subir containers (zero-downtime replace)
+        run: |
+          docker compose \
+            -f "$GITHUB_WORKSPACE/$COMPOSE_FILE" \
+            --env-file "$DEPLOY_PATH/.env" \
+            up -d
 
-            echo "📦 Fazendo pull das novas imagens..."
-            docker compose -f docker-compose.ci.yml pull
+      - name: Logout do registry e limpeza de imagens antigas
+        run: |
+          docker logout ghcr.io
+          docker image prune -f
 
-            echo "🚀 Subindo containers (zero-downtime replace)..."
-            docker compose -f docker-compose.ci.yml up -d
-
-            echo "🔒 Logout do registry..."
-            docker logout ghcr.io
-
-            echo "🧹 Removendo imagens antigas..."
-            docker image prune -f
-
-            echo "✅ Deploy concluído em $(date '+%Y-%m-%d %H:%M:%S')"
-
-      # Verifica se a API está respondendo após o deploy
       - name: Health Check da API
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          key: ${{ secrets.DEPLOY_SSH_KEY }}
-          script: |
-            echo "⏳ Aguardando containers iniciarem..."
-            sleep 15
+        run: |
+          echo "⏳ Aguardando containers iniciarem (15s)..."
+          sleep 15
 
-            echo "🔍 Status dos containers:"
-            docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+          echo "🔍 Status dos containers:"
+          docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
 
-            echo ""
-            echo "🔍 Verificando API..."
-            if curl -sf http://localhost:8000/ > /dev/null 2>&1; then
-              echo "✅ API respondendo normalmente"
-            else
-              echo "⚠️  API não respondeu — verificando logs:"
-              docker logs id_visual_api --tail=30
-              exit 1
-            fi
+          echo ""
+          echo "🔍 Verificando API..."
+          if curl -sf http://localhost:8000/ > /dev/null 2>&1; then
+            echo "✅ API respondendo normalmente"
+          else
+            echo "⚠️  API não respondeu — verificando logs:"
+            docker logs id_visual_api --tail=30
+            exit 1
+          fi
+
+          echo ""
+          echo "✅ Deploy concluído em $(date '+%Y-%m-%d %H:%M:%S')"
