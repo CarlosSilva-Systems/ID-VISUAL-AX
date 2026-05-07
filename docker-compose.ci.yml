@@ -1,0 +1,82 @@
+# =============================================================================
+# docker-compose.ci.yml — Compose para o servidor de produção
+#
+# DIFERENÇA DO docker-compose.yml (desenvolvimento):
+#   - Usa imagens pré-buildadas do GHCR (não faz build local)
+#   - restart: unless-stopped em todos os serviços
+#   - Sem bind mounts de código-fonte
+#   - Frontend servido pelo Nginx (porta 5173→80)
+#
+# USO: docker compose -f docker-compose.ci.yml up -d
+# =============================================================================
+
+services:
+
+  db:
+    image: postgres:15-alpine
+    container_name: id_visual_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-odoo_backend}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - id_visual_net
+
+  redis:
+    image: redis:7-alpine
+    container_name: id_visual_redis
+    restart: unless-stopped
+    networks:
+      - id_visual_net
+
+  mosquitto:
+    image: ghcr.io/carlossilva-systems/id-visual-ax-mosquitto:latest
+    container_name: id_visual_mosquitto
+    restart: unless-stopped
+    ports:
+      - "1883:1883"
+    networks:
+      - id_visual_net
+
+  api:
+    image: ghcr.io/carlossilva-systems/id-visual-ax-api:latest
+    container_name: id_visual_api
+    restart: unless-stopped
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    volumes:
+      # Volume persistente para firmware OTA dos ESP32
+      - ota_firmware:/app/storage/ota/firmware
+    depends_on:
+      - db
+      - redis
+      - mosquitto
+    networks:
+      - id_visual_net
+
+  frontend:
+    image: ghcr.io/carlossilva-systems/id-visual-ax-frontend:latest
+    container_name: id_visual_frontend
+    restart: unless-stopped
+    ports:
+      # Nginx (porta 80 interna) exposto na porta 5173 do host
+      - "5173:80"
+    depends_on:
+      - api
+    networks:
+      - id_visual_net
+
+networks:
+  id_visual_net:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  ota_firmware:
+    driver: local
