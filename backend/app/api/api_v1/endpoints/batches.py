@@ -21,6 +21,7 @@ from app.schemas.matrix_view import (
 from app.api.api_v1.endpoints.sync import update_sync_version
 from app.services.task_service import initialize_request_tasks
 from app.services.cache_service import invalidate_cache_pattern
+from app.services.status_mappers import map_product_category
 
 logger = logging.getLogger(__name__)
 
@@ -290,6 +291,7 @@ async def get_batch_matrix(
             sla_text="24h", # Placeholder or calculated
             quantity=mo.product_qty or 1.0,
             date_start=mo.date_start,
+            product_category_label=map_product_category(mo.product_category_id),
             cells=cells
         ))
 

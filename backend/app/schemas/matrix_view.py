@@ -36,6 +36,7 @@ class MatrixRow(BaseModel):
     sla_text: Optional[str] = None
     quantity: float
     date_start: Optional[datetime] = None
+    product_category_label: Optional[str] = None
     cells: Dict[str, MatrixCell] = Field(default_factory=dict)
 
 class BatchStats(BaseModel):
