@@ -50,6 +50,8 @@ COPY --from=builder /opt/venv /opt/venv
 COPY app/ ./app/
 COPY alembic/ ./alembic/
 COPY alembic.ini ./
+# Scripts utilitários (seed, migrações manuais, etc.)
+COPY scripts/ ./scripts/
 
 EXPOSE 8000
 
