@@ -94,19 +94,19 @@ jobs:
           echo "${{ secrets.GH_PAT }}" | docker login ghcr.io \
             -u ${{ github.repository_owner }} --password-stdin
 
+      - name: Preparar diretório de deploy
+        # Copia o docker-compose.ci.yml para o DEPLOY_PATH onde o .env já existe.
+        # O Docker Compose procura o .env na mesma pasta do compose file,
+        # por isso rodamos tudo a partir do DEPLOY_PATH.
+        run: cp "$GITHUB_WORKSPACE/$COMPOSE_FILE" "$DEPLOY_PATH/$COMPOSE_FILE"
+
       - name: Pull das novas imagens
-        run: |
-          docker compose \
-            -f "$GITHUB_WORKSPACE/$COMPOSE_FILE" \
-            --env-file "$DEPLOY_PATH/.env" \
-            pull
+        working-directory: ${{ secrets.DEPLOY_PATH }}
+        run: docker compose -f "$COMPOSE_FILE" pull
 
       - name: Subir containers (zero-downtime replace)
-        run: |
-          docker compose \
-            -f "$GITHUB_WORKSPACE/$COMPOSE_FILE" \
-            --env-file "$DEPLOY_PATH/.env" \
-            up -d
+        working-directory: ${{ secrets.DEPLOY_PATH }}
+        run: docker compose -f "$COMPOSE_FILE" up -d
 
       - name: Logout do registry e limpeza de imagens antigas
         run: |
