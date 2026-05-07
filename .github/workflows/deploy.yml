@@ -10,6 +10,8 @@ env:
   REGISTRY: ghcr.io
   # Nome do repositório em minúsculas (obrigatório para GHCR)
   REPO: carlossilva-systems/id-visual-ax
+  # Força o uso do Node.js 24 nas actions (evita avisos de depreciação)
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   # ── Job 1: Build e Push das imagens Docker ─────────────────────────────────
