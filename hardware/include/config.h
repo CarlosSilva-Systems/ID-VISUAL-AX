@@ -5,7 +5,7 @@
 // ═══════════════════════════════════════════════════════════
 
 // ─── Versão ────────────────────────────────────────────────
-#define FIRMWARE_VERSION    "2.4.0"
+#define FIRMWARE_VERSION    "2.4.1"
 #define FIRMWARE_BUILD_DATE __DATE__
 
 // ─── WiFi ──────────────────────────────────────────────────
@@ -35,7 +35,7 @@
 #define MESH_MAX_CHILDREN   4
 
 // ─── MQTT Broker ───────────────────────────────────────────
-#define MQTT_BROKER         "192.168.10.55"
+#define MQTT_BROKER         "192.168.1.28"   // Servidor de produção ax-producao
 #define MQTT_PORT           1883
 #define MQTT_BUFFER_SIZE    512
 #define MQTT_BLINK_MS       1000UL
