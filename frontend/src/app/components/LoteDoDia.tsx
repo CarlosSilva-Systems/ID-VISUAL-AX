@@ -92,6 +92,7 @@ export function LoteDoDia({ initialFabrications, onBack }: LoteDoDiaProps) {
               sla: row.sla_text || '24h',
               status: 'Em Lote',
               mrp_state: 'Em Produção',
+              product_category_label: row.product_category_label,
               tasks: tasks,
               docs: { diagrama: false, legenda: false }
             };
@@ -291,6 +292,11 @@ export function LoteDoDia({ initialFabrications, onBack }: LoteDoDiaProps) {
                     <span className="px-2 py-0.5 bg-indigo-50 text-indigo-600 rounded font-bold uppercase tracking-tighter text-[10px]">
                       {item.packageType}
                     </span>
+                    {item.product_category_label && (
+                      <span className="px-2 py-0.5 bg-blue-50 text-blue-700 border border-blue-200 rounded font-bold uppercase tracking-tighter text-[10px]">
+                        {item.product_category_label}
+                      </span>
+                    )}
                   </div>
                 </div>
                 <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -400,6 +406,11 @@ export function LoteDoDia({ initialFabrications, onBack }: LoteDoDiaProps) {
                         <span className="px-1.5 py-0.5 bg-indigo-100 text-indigo-700 rounded text-[9px] font-black uppercase tracking-tighter">
                           {fab.packageType}
                         </span>
+                        {fab.product_category_label && (
+                          <span className="px-1.5 py-0.5 bg-blue-50 text-blue-700 border border-blue-200 rounded text-[9px] font-black uppercase tracking-tighter">
+                            {fab.product_category_label}
+                          </span>
+                        )}
                         <button
                           onClick={() => floatingViewer.toggle(fab.odoo_mo_id || fab.id, fab.mo_number, 'diagrama')}
                           disabled={!fab.odoo_mo_id}

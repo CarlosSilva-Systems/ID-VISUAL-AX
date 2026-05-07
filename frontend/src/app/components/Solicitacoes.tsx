@@ -134,7 +134,10 @@ export function Solicitacoes({ onCreateBatch }: SolicitacoesProps) {
           <label className="text-[10px] font-black uppercase text-slate-400">Obra</label>
           <p className="font-bold text-slate-800">{formatObraDisplayName(selectedItem.obra)}</p>
         </div>
+        <div className="p-4 bg-slate-50 rounded-lg">
+          <label className="text-[10px] font-black uppercase text-slate-400">Status</label>
           <div className="mt-1"><StatusBadge status={selectedItem.status} /></div>
+        </div>
         {selectedItem.product_category_label && (
           <div className="p-4 bg-indigo-50 rounded-lg border border-indigo-100">
             <label className="text-[10px] font-black uppercase text-indigo-600">Tipo de Quadro</label>
