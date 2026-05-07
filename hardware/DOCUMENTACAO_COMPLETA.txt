@@ -1,0 +1,774 @@
+﻿================================================================================
+DOCUMENTACAO TECNICA COMPLETA - FIRMWARE ESP32 ANDON v2.4.1
+Sistema ID Visual AX
+================================================================================
+
+Data: 2026-05-07
+Autor: Equipe de Desenvolvimento AX
+Versao do Firmware: 2.4.1
+
+
+INDICE
+================================================================================
+
+1. VISAO GERAL DO SISTEMA
+2. ARQUITETURA E DESIGN
+3. ESTRUTURA DO CODIGO
+4. MAQUINA DE ESTADOS
+5. REDE MESH (ESP-MESH)
+6. PROTOCOLO MQTT
+7. SISTEMA DE BOTOES E LEDS
+8. ATUALIZACAO OTA
+9. CONFIGURACAO E PINOUT
+10. TROUBLESHOOTING
+11. GUIA DE MANUTENCAO
+
+
+================================================================================
+1. VISAO GERAL DO SISTEMA
+================================================================================
+
+O Sistema Andon ESP32 e um firmware embarcado para microcontroladores ESP32
+que atua como interface fisica de um sistema Andon industrial. Permite que
+operadores de chao de fabrica sinalizem problemas atraves de botoes fisicos
+e visualizem o status atual atraves de LEDs coloridos.
+
+OBJETIVOS PRINCIPAIS:
+- Capturar eventos de botoes (verde, amarelo, vermelho, pause)
+- Controlar LEDs de status (verde, amarelo, vermelho)
+- Comunicacao bidirecional via MQTT com backend
+- Operacao resiliente com fallback para rede mesh
+- Atualizacao remota de firmware (OTA)
+
+CARACTERISTICAS PRINCIPAIS:
+- Arquitetura hibrida WiFi + ESP-MESH
+- Maquina de estados robusta (5 estados)
+- Debounce nao-bloqueante (50ms)
+- Reconexao automatica com backoff exponencial
+- Watchdog timer (60 segundos)
+- Heartbeat periodico (5 minutos)
+- Monitoramento de memoria heap
+
+
+================================================================================
+2. ARQUITETURA E DESIGN
+================================================================================
+
+PRINCIPIO FUNDAMENTAL: Backend como Fonte de Verdade
+
+O backend mantem o estado real do sistema. O ESP32 e apenas uma interface
+fisica que:
+- Detecta pressionamento de botoes
+- Envia eventos via MQTT
+- Recebe comandos de LED
+- Controla LEDs fisicos
+- NAO toma decisoes de negocio
+
+MAQUINA DE ESTADOS:
+
+BOOT -> WIFI_CONNECTING -> MQTT_CONNECTING -> OPERATIONAL
+                        \-> MESH_NODE <------/
+
+Estados:
+- BOOT: Inicializacao do sistema
+- WIFI_CONNECTING: Tentando conectar ao WiFi (timeout 15s)
+- MQTT_CONNECTING: Conectando ao broker MQTT (nó raiz)
+- OPERATIONAL: Funcionando normalmente (nó raiz com MQTT)
+- MESH_NODE: Operando como nó folha (sem WiFi direto)
+
+ARQUITETURA DE REDE MESH:
+
+Topologia:
+- Nos raiz: Tem WiFi direto + MQTT, maximo 4 filhos
+- Nos folha: Sem WiFi, conectados via mesh, maximo 4 filhos
+- Comunicacao: Folhas enviam eventos via mesh, raiz republica no MQTT
+
+Limitacoes:
+- Maximo 4 filhos por no (configuravel, mas >4 causa instabilidade)
+- Latencia adicional: ~50-100ms por hop
+- Throughput: ~1 Mbps compartilhado
+- Recomendacao: Maximo 3-4 hops
+
+
+================================================================================
+3. ESTRUTURA DO CODIGO
+================================================================================
+
+ORGANIZACAO DE ARQUIVOS:
+
+hardware/
+├── include/                 Arquivos de cabecalho (.h)
+│   ├── config.h            Configuracoes principais
+│   ├── ota.h               OTA (Over-The-Air updates)
+│   ├── espnow_comm.h       Comunicacao ESP-NOW
+│   ├── provisioning.h      Provisionamento viral
+│   ├── crypto.h            Criptografia AES-GCM
+│   ├── nvs_storage.h       Armazenamento NVS
+│   ├── rtc_sync.h          Sincronizacao NTP
+│   ├── serial_parser.h     Parser de comandos Serial
+│   └── setup_server.h      Servidor HTTP de configuracao
+├── src/                     Arquivos de implementacao (.cpp)
+│   ├── main.cpp            Arquivo principal (1190 linhas)
+│   ├── ota.cpp             Implementacao OTA
+│   ├── espnow_comm.cpp     Implementacao ESP-NOW
+│   ├── provisioning.cpp    Implementacao provisionamento
+│   ├── crypto.cpp          Implementacao criptografia
+│   ├── nvs_storage.cpp     Implementacao NVS
+│   ├── rtc_sync.cpp        Implementacao RTC/NTP
+│   ├── serial_parser.cpp   Implementacao parser Serial
+│   └── setup_server.cpp    Implementacao servidor HTTP
+└── platformio.ini          Configuracao do PlatformIO
+
+ARQUIVO PRINCIPAL (main.cpp):
+
+Estrutura (1190 linhas):
+- Linhas 1-30: Includes e definicoes
+- Linhas 31-80: Estruturas de dados
+- Linhas 81-150: Variaveis globais
+- Linhas 151-180: Declaracoes antecipadas
+- Linhas 181-250: Utilitarios
+- Linhas 251-450: Controle de LEDs Andon
+- Linhas 451-650: ESP-MESH
+- Linhas 651-700: LED Onboard
+- Linhas 701-800: WiFi
+- Linhas 801-950: MQTT
+- Linhas 951-1050: Estados OPERATIONAL e MESH_NODE
+- Linhas 1051-1120: Botoes e LEDs
+- Linhas 1121-1160: Inicializacao
+- Linhas 1161-1190: setup() e loop()
+
+MODULOS AUXILIARES:
+
+1. OTA (ota.cpp):
+   - Atualizacao remota de firmware
+   - Rollback automatico em caso de falha
+   - Validacao de boot bem-sucedido
+
+2. Provisionamento (provisioning.cpp):
+   - Configuracao de credenciais WiFi via ESP-NOW
+   - Propagacao viral automatica
+   - Criptografia AES-256-GCM
+
+3. Criptografia (crypto.cpp):
+   - AES-256-GCM para payloads
+   - Derivacao de chave via SHA-256
+   - IV aleatorio gerado por hardware
+
+4. Armazenamento NVS (nvs_storage.cpp):
+   - Salvar/carregar credenciais WiFi
+   - Namespace: "provisioning"
+
+5. Sincronizacao RTC (rtc_sync.cpp):
+   - Sincronizacao via NTP
+   - Timezone: UTC-3 (Brasilia)
+   - Validacao de timestamp (anti-replay)
+
+
+================================================================================
+4. MAQUINA DE ESTADOS
+================================================================================
+
+ESTADO: BOOT
+Duracao: ~1 segundo
+Acoes:
+- Inicializa GPIOs
+- Configura watchdog
+- Obtem MAC address
+- Configura MQTT client
+- Jogo de luzes (animacao de boot)
+Transicao: Automatica para WIFI_CONNECTING
+
+ESTADO: WIFI_CONNECTING
+Duracao: Ate 15 segundos (timeout configuravel)
+Acoes:
+- Tenta conectar ao WiFi (sem scan previo)
+- Animacao de onda nos LEDs
+- LED onboard pisca 500ms
+Transicoes:
+- WiFi conecta -> MQTT_CONNECTING
+- Timeout (15s) -> MESH_NODE
+
+ESTADO: MQTT_CONNECTING
+Duracao: Ate 10 tentativas com backoff
+Acoes:
+- Conecta ao broker MQTT
+- Publica status "online" (LWT)
+- Publica discovery
+- Subscreve topicos
+- Solicita estado atual
+- LEDs vermelho/amarelo alternados
+- LED onboard pisca 1000ms
+Transicoes:
+- MQTT conecta -> OPERATIONAL
+- WiFi cai -> WIFI_CONNECTING
+- Max tentativas -> Reinicia ESP32
+
+ESTADO: OPERATIONAL (No Raiz)
+Duracao: Indefinida (operacao normal)
+Acoes:
+- Processa botoes
+- Publica eventos MQTT
+- Recebe comandos LED
+- Atualiza mesh
+- Heartbeat a cada 5 minutos
+- Monitora heap
+- LED onboard aceso fixo
+Transicoes:
+- WiFi cai por 60s -> MESH_NODE
+- MQTT cai -> MQTT_CONNECTING
+
+ESTADO: MESH_NODE (No Folha)
+Duracao: Ate WiFi voltar
+Acoes:
+- Processa botoes
+- Envia eventos via mesh broadcast
+- Atualiza mesh
+- Tenta reconectar WiFi a cada 60s
+- Heartbeat via mesh a cada 5 minutos
+- LED amarelo piscando lento (1s)
+- LED onboard duplo pulso
+Transicoes:
+- WiFi volta -> Para mesh -> WIFI_CONNECTING
+
+
+================================================================================
+5. REDE MESH (ESP-MESH)
+================================================================================
+
+CONFIGURACAO:
+
+MESH_ID: "IDVISUAL_ANDON"
+MESH_PASSWORD: "andon@mesh2024"
+MESH_PORT: 5555
+MESH_CHANNEL: 6 (deve bater com o canal do roteador)
+MESH_MAX_CHILDREN: 4 (maximo de filhos diretos por no)
+
+PAPEIS NA MESH:
+
+No Raiz:
+- Tem conexao WiFi direta ao AP
+- Conectado ao broker MQTT
+- Pode ter ate 4 filhos diretos
+- Republica mensagens mesh no MQTT
+
+No Folha:
+- Sem conexao WiFi direta
+- Conectado a mesh
+- Pode ter ate 4 filhos diretos
+- Roteia mensagens de outros nos
+- Tenta reconectar WiFi periodicamente (60s)
+
+MENSAGENS MESH -> MQTT:
+
+Evento de Botao:
+{type:"button", mac:"AA:BB:CC:DD:EE:FF", color:"green"}
+-> Raiz republica em andon/button/{mac}/green
+
+Discovery:
+{type:"discovery", mac_address:"...", device_name:"...", ...}
+-> Raiz republica em andon/discovery
+
+Heartbeat:
+{type:"heartbeat", mac:"...", heap:N, uptime:N, mesh_nodes:N}
+-> Raiz republica em andon/status/{mac}
+
+Log:
+{type:"log", mac:"...", message:"..."}
+-> Raiz republica em andon/logs/{mac}
+
+
+================================================================================
+6. PROTOCOLO MQTT
+================================================================================
+
+TOPICOS PUBLICADOS PELO ESP32:
+
+andon/discovery
+- QoS: 1, Retain: false
+- Quando: Ao conectar MQTT
+- Payload: JSON com info do dispositivo
+
+andon/status/{mac}
+- QoS: 1, Retain: true
+- Quando: LWT + Heartbeat
+- Payload: "online" / "offline" / JSON
+
+andon/logs/{mac}
+- QoS: 1, Retain: false
+- Quando: Eventos importantes
+- Payload: String de texto
+
+andon/button/{mac}/green
+- QoS: 1, Retain: false
+- Quando: Botao verde pressionado
+- Payload: "PRESSED"
+
+andon/button/{mac}/yellow
+- QoS: 1, Retain: false
+- Quando: Botao amarelo pressionado
+- Payload: "PRESSED"
+
+andon/button/{mac}/red
+- QoS: 1, Retain: false
+- Quando: Botao vermelho pressionado
+- Payload: "PRESSED"
+
+andon/button/{mac}/pause
+- QoS: 1, Retain: false
+- Quando: Botao pause pressionado
+- Payload: "PRESSED"
+
+andon/ota/progress/{mac}
+- QoS: 0, Retain: false
+- Quando: Durante atualizacao OTA
+- Payload: JSON com progresso
+
+TOPICOS SUBSCRITOS PELO ESP32:
+
+andon/state/{mac}
+- QoS: 1
+- Acao: Atualiza LEDs
+- Payload: "GREEN" / "YELLOW" / "RED" / "GRAY" / "UNASSIGNED"
+
+andon/restart/{mac}
+- QoS: 1
+- Acao: Reinicia ESP32
+- Payload: "RESTART"
+
+andon/odoo_error/{mac}
+- QoS: 1
+- Acao: Pisca LEDs em vermelho
+- Payload: qualquer
+
+andon/ota/trigger
+- QoS: 1
+- Acao: Inicia download OTA
+- Payload: JSON {version, url, size}
+
+andon/ota/cancel
+- QoS: 1
+- Acao: Cancela download
+- Payload: qualquer
+
+
+================================================================================
+7. SISTEMA DE BOTOES E LEDS
+================================================================================
+
+PINOUT - BOTOES (INPUT_PULLUP):
+
+GPIO 12  -> Botao Verde
+GPIO 13  -> Botao Amarelo
+GPIO 32  -> Botao Vermelho
+GPIO 33  -> Botao Pause
+
+Conexao: Botao entre GPIO e GND
+Logica: Pressionado = LOW (0V), Solto = HIGH (3.3V)
+Pull-up: Interno (nao precisa resistor externo)
+
+PINOUT - LEDS (OUTPUT):
+
+GPIO 19  -> LED Verde
+GPIO 18  -> LED Amarelo
+GPIO 17  -> LED Vermelho
+GPIO 2   -> LED Onboard (azul)
+
+Conexao: GPIO -> Resistor 220 ohm -> LED -> GND
+Polaridade: Anodo (+) no GPIO, Catodo (-) no GND
+Corrente: ~15mA por LED
+
+DEBOUNCE:
+
+Tempo: 50ms (configuravel em config.h)
+Metodo: Nao-bloqueante baseado em timestamp
+Logica:
+1. Detecta mudanca no GPIO
+2. Aguarda 50ms
+3. Confirma se estado permaneceu estavel
+4. Se sim, registra pressionamento
+
+ESTADOS VISUAIS DOS LEDS:
+
+Estado Andon GREEN:
+- Verde: ACESO
+- Amarelo: APAGADO
+- Vermelho: APAGADO
+
+Estado Andon YELLOW:
+- Verde: APAGADO
+- Amarelo: ACESO
+- Vermelho: APAGADO
+
+Estado Andon RED:
+- Verde: APAGADO
+- Amarelo: APAGADO
+- Vermelho: ACESO
+
+Estado Andon GRAY (pausado):
+- Verde: PISCANDO
+- Amarelo: PISCANDO
+- Vermelho: PISCANDO
+- Frequencia: ~70 BPM (428ms on/off)
+
+Estado Andon UNASSIGNED (nao vinculado):
+- Verde: APAGADO
+- Amarelo: PISCANDO RAPIDO (200ms on/off)
+- Vermelho: APAGADO
+
+Estado WIFI_CONNECTING:
+- Onda: Verde -> Amarelo -> Vermelho -> Pausa -> Repete
+- Intervalo: 250ms por LED
+
+Estado MQTT_CONNECTING:
+- Vermelho e Amarelo alternados
+- Intervalo: 300ms
+
+Estado MESH_NODE:
+- Amarelo piscando lento
+- Intervalo: 1000ms (1s on/off)
+
+Erro Odoo:
+- Todos os LEDs piscando em vermelho rapido
+- Intervalo: 150ms
+- Duracao: 5 segundos
+
+
+================================================================================
+8. ATUALIZACAO OTA
+================================================================================
+
+FUNCIONAMENTO:
+
+1. Backend publica comando em andon/ota/trigger
+2. ESP32 valida payload JSON
+3. ESP32 baixa firmware via HTTP
+4. ESP32 instala na particao OTA
+5. ESP32 reinicia automaticamente
+6. Bootloader valida novo firmware
+7. Se falhar, faz rollback automatico
+
+PAYLOAD OTA TRIGGER:
+
+{
+  "version": "2.5.0",
+  "url": "http://192.168.1.28:8000/static/ota/firmware-2.5.0.bin",
+  "size": 1234567
+}
+
+PAYLOAD OTA PROGRESS:
+
+{
+  "status": "downloading",  // ou "installing", "success", "failed"
+  "progress": 45,            // 0-100
+  "error": null              // ou mensagem de erro
+}
+
+SEGURANCA:
+
+- Validacao de versao (ignora se ja esta na versao)
+- Validacao de payload (rejeita JSON malformado)
+- Timeout de download (5 minutos)
+- Checksum automatico (HTTPUpdate valida integridade)
+- Rollback automatico (bootloader reverte se crashar)
+- Validacao de boot (firmware confirma boot bem-sucedido)
+
+COMANDOS MOSQUITTO:
+
+Publicar comando OTA:
+mosquitto_pub -h 192.168.1.28 -t "andon/ota/trigger" -m '{
+  "version": "2.5.0",
+  "url": "http://192.168.1.28:8000/static/ota/firmware-2.5.0.bin",
+  "size": 1234567
+}'
+
+Monitorar progresso:
+mosquitto_sub -h 192.168.1.28 -t "andon/ota/progress/#" -v
+
+
+================================================================================
+9. CONFIGURACAO E PINOUT
+================================================================================
+
+ARQUIVO: include/config.h
+
+VERSAO:
+#define FIRMWARE_VERSION "2.4.1"
+
+WIFI:
+#define WIFI_SSID "AX-CORPORATIVO"
+#define WIFI_PASSWORD "auto@bacia"
+#define WIFI_TIMEOUT_MS 15000
+#define WIFI_LOSS_FALLBACK_MS 60000
+
+ESP-MESH:
+#define MESH_ID "IDVISUAL_ANDON"
+#define MESH_PASSWORD "andon@mesh2024"
+#define MESH_PORT 5555
+#define MESH_CHANNEL 6
+#define MESH_MAX_CHILDREN 4
+#define WIFI_RETRY_INTERVAL_MS 60000
+
+MQTT:
+#define MQTT_BROKER "192.168.1.28"
+#define MQTT_PORT 1883
+#define MQTT_BUFFER_SIZE 512
+#define MQTT_KEEPALIVE_S 60
+#define MQTT_MAX_RETRIES 10
+
+PINOS - BOTOES:
+#define BTN_VERDE 12
+#define BTN_AMARELO 13
+#define BTN_VERMELHO 32
+#define BTN_PAUSE 33
+
+PINOS - LEDS:
+#define LED_VERDE_PIN 19
+#define LED_AMARELO_PIN 18
+#define LED_VERMELHO_PIN 17
+#define LED_ONBOARD_PIN 2
+
+TIMERS:
+#define DEBOUNCE_MS 50
+#define HEARTBEAT_INTERVAL_MS 300000  // 5 minutos
+#define HEAP_MONITOR_INTERVAL_MS 30000  // 30 segundos
+#define WATCHDOG_TIMEOUT_S 60
+
+BACKOFF:
+#define INITIAL_BACKOFF_MS 5000
+#define MAX_BACKOFF_MS 60000
+
+
+================================================================================
+10. TROUBLESHOOTING
+================================================================================
+
+PROBLEMA: ESP32 nao conecta ao WiFi
+
+Sintomas:
+- LED onboard piscando 500ms indefinidamente
+- LEDs fazendo animacao de onda
+- Serial Monitor mostra "WIFI: timeout"
+
+Solucoes:
+1. Verificar SSID e senha em config.h (case-sensitive)
+2. Verificar se rede e 2.4 GHz (ESP32 nao suporta 5 GHz)
+3. Verificar sinal WiFi (RSSI deve ser > -70 dBm)
+4. Verificar se roteador esta em canal 1-11
+5. Configurar roteador para WPA2 (ESP32 pode ter problemas com WPA3)
+
+Fallback automatico:
+- Apos 15 segundos, ESP32 entra em modo MESH_NODE
+- Continua funcionando via mesh (se houver outros nos)
+
+---
+
+PROBLEMA: ESP32 nao conecta ao MQTT
+
+Sintomas:
+- WiFi conectado (IP obtido)
+- LED onboard piscando 1000ms
+- LEDs vermelho/amarelo alternando
+- Serial Monitor mostra "MQTT: falha rc=X"
+
+Codigos de erro MQTT:
+-4: Timeout de conexao (verificar IP do broker)
+-3: Conexao perdida (verificar rede)
+-2: Falha de conexao (verificar firewall)
+1: Protocolo incorreto (atualizar PubSubClient)
+2: Client ID rejeitado (verificar nome do dispositivo)
+3: Servidor indisponivel (verificar se broker esta rodando)
+4: Credenciais invalidas (verificar usuario/senha)
+5: Nao autorizado (verificar ACLs do broker)
+
+Solucoes:
+1. Verificar se Mosquitto esta rodando:
+   sudo systemctl status mosquitto
+2. Verificar IP do broker em config.h
+3. Pingar o broker: ping 192.168.1.28
+4. Testar porta: telnet 192.168.1.28 1883
+5. Testar conexao MQTT:
+   mosquitto_sub -h 192.168.1.28 -t "andon/#" -v
+
+---
+
+PROBLEMA: Botao nao responde
+
+Sintomas:
+- Pressionar botao nao gera evento
+- Serial Monitor nao mostra "BUTTON: GPIO X"
+
+Solucoes:
+1. Verificar conexao fisica (botao entre GPIO e GND)
+2. Testar com multimetro (solto=HIGH, pressionado=LOW)
+3. Verificar se ESP32 esta em OPERATIONAL ou MESH_NODE
+4. Verificar pino correto em config.h
+5. Testar continuidade do botao
+
+Teste de hardware:
+Adicionar no loop() temporariamente:
+Serial.printf("BTN Verde: %d | Amarelo: %d | Vermelho: %d | Pause: %d\n",
+              digitalRead(BTN_VERDE),
+              digitalRead(BTN_AMARELO),
+              digitalRead(BTN_VERMELHO),
+              digitalRead(BTN_PAUSE));
+delay(500);
+
+Resultado esperado:
+- Botao solto: 1 (HIGH)
+- Botao pressionado: 0 (LOW)
+
+---
+
+PROBLEMA: LED nao acende
+
+Sintomas:
+- Comando MQTT recebido mas LED nao acende
+- Serial Monitor mostra "LED: red=true" mas LED apagado
+
+Solucoes:
+1. Verificar conexao fisica e polaridade (anodo no GPIO, catodo no GND)
+2. Verificar resistor (220 ohm)
+3. Testar LED com bateria 3V
+4. Verificar pino correto em config.h
+5. Verificar se GPIO esta configurado como OUTPUT
+
+Teste de hardware:
+Adicionar no setup() temporariamente:
+pinMode(LED_VERMELHO_PIN, OUTPUT);
+digitalWrite(LED_VERMELHO_PIN, HIGH);
+delay(1000);
+digitalWrite(LED_VERMELHO_PIN, LOW);
+
+---
+
+PROBLEMA: Watchdog reset detectado
+
+Sintomas:
+- ESP32 reinicia sozinho
+- Serial Monitor mostra "AVISO: Reset por watchdog detectado"
+
+Causas:
+1. Loop bloqueado (codigo bloqueante por mais de 60s)
+2. Operacao demorada (download OTA lento, scan WiFi)
+3. Travamento em biblioteca (painlessMesh, PubSubClient)
+
+Solucoes:
+1. Remover delay() longos
+2. Usar timers nao-bloqueantes
+3. Aumentar timeout do watchdog em config.h
+4. Atualizar bibliotecas
+5. Adicionar logs antes de operacoes demoradas
+
+---
+
+PROBLEMA: Heap baixo
+
+Sintomas:
+- Serial Monitor mostra "AVISO: Heap baixo - X bytes"
+- ESP32 fica lento ou trava
+
+Causas:
+1. Vazamento de memoria (alocacoes nao liberadas)
+2. Buffers muito grandes
+3. Fragmentacao de heap
+
+Solucoes:
+1. Verificar new/delete, malloc/free
+2. Usar StaticJsonDocument em vez de DynamicJsonDocument
+3. Reduzir MQTT_BUFFER_SIZE em config.h
+4. Usar buffers estaticos quando possivel
+5. Reiniciar ESP32 periodicamente (ex: 1x por dia)
+
+Heap saudavel:
+- Boot: ~280 KB
+- Operacao: ~240 KB
+- Critico: < 10 KB
+
+
+================================================================================
+11. GUIA DE MANUTENCAO
+================================================================================
+
+ATUALIZACAO DE VERSAO:
+
+1. Editar include/config.h:
+   #define FIRMWARE_VERSION "X.Y.Z"
+
+2. Atualizar cabecalho de src/main.cpp:
+   /**
+    * Versao: X.Y.Z
+    * Data: YYYY-MM-DD
+    */
+
+3. Compilar e testar antes de fazer upload em producao
+
+ADICIONAR NOVO BOTAO:
+
+1. include/config.h:
+   #define BTN_NOVO 14
+
+2. src/main.cpp - Variaveis globais:
+   ButtonState novoButton = {BTN_NOVO, HIGH, 0, false};
+
+3. src/main.cpp - initializeGPIOs():
+   pinMode(BTN_NOVO, INPUT_PULLUP);
+
+4. src/main.cpp - handleOperational() e handleMeshNode():
+   processButton(&novoButton);
+   if (novoButton.pressed) { 
+       publishButtonEvent("novo"); 
+       novoButton.pressed = false; 
+   }
+
+ADICIONAR NOVO LED:
+
+1. include/config.h:
+   #define LED_NOVO_PIN 16
+
+2. src/main.cpp - Variaveis globais:
+   LEDState novoLED = {LED_NOVO_PIN, false};
+
+3. src/main.cpp - initializeGPIOs():
+   pinMode(LED_NOVO_PIN, OUTPUT);
+   digitalWrite(LED_NOVO_PIN, LOW);
+
+4. src/main.cpp - updateAndonLEDs():
+   // Adicionar logica de controle
+
+COMANDOS UTEIS:
+
+Compilar:
+pio run
+
+Upload via USB:
+pio run --target upload
+
+Monitor Serial:
+pio device monitor
+
+Tudo de uma vez:
+pio run --target upload && pio device monitor
+
+MQTT - Subscrever todos os topicos:
+mosquitto_sub -h 192.168.1.28 -t "andon/#" -v
+
+MQTT - Enviar comando de estado:
+mosquitto_pub -h 192.168.1.28 -t "andon/state/AA:BB:CC:DD:EE:FF" -m "GREEN"
+
+Git - Commit (Conventional Commits):
+git commit -m "tipo(escopo): descricao"
+Tipos: feat, fix, refactor, docs, chore, style, test
+
+
+================================================================================
+FIM DA DOCUMENTACAO
+================================================================================
+
+Para mais informacoes, consulte:
+- Codigo fonte em src/ e include/
+- Documentacao Markdown em docs/ (se preferir formato visual)
+- Serial Monitor para logs em tempo real
+- MQTT Explorer para debug de comunicacao
+
+Ultima atualizacao: 2026-05-07
+Versao do firmware: 2.4.1
