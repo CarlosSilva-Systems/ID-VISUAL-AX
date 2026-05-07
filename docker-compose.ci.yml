@@ -65,8 +65,8 @@ services:
     container_name: id_visual_frontend
     restart: unless-stopped
     ports:
-      # Nginx (porta 80 interna) exposto na porta 5173 do host
-      - "5173:80"
+      # Nginx na porta 80 padrão HTTP — acesso via http://192.168.1.28
+      - "80:80"
     depends_on:
       - api
     networks:
