@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { getWebSocketUrl } from '../../services/getWebSocketUrl';
 import { WifiOff, Link, Unlink, X, Cpu } from 'lucide-react';
 import { api } from '../../services/api';
 import { toast } from 'sonner';
@@ -46,9 +47,7 @@ export const IoTDeviceModal: React.FC<Props> = ({
 
   // Conectar ao WebSocket para atualizações em tempo real
   useEffect(() => {
-    const apiUrl = (import.meta as unknown as { env: { VITE_API_URL?: string } }).env.VITE_API_URL || 'http://localhost:8000/api/v1';
-    const wsUrl = apiUrl.replace(/^http/, 'ws') + '/devices/ws';
-    const websocket = new WebSocket(wsUrl);
+    const websocket = new WebSocket(getWebSocketUrl('/devices/ws'));
 
     websocket.onmessage = (event) => {
       try {

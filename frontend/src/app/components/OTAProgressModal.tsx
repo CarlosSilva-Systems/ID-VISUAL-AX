@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { getWebSocketUrl } from '../../services/getWebSocketUrl';
 import { X, CheckCircle2, XCircle, Loader2, Zap } from 'lucide-react';
 import { ESPDeviceEnriched } from '../types';
 
@@ -50,9 +51,7 @@ export const OTAProgressModal: React.FC<OTAProgressModalProps> = ({
   const isDone = status === 'concluido' || status === 'falhou';
 
   useEffect(() => {
-    const apiUrl = (import.meta as any).env.VITE_API_URL || 'http://localhost:8000/api/v1';
-    const wsUrl = apiUrl.replace(/^http/, 'ws') + '/devices/ws';
-    const ws = new WebSocket(wsUrl);
+    const ws = new WebSocket(getWebSocketUrl('/devices/ws'));
     wsRef.current = ws;
 
     ws.onmessage = (event) => {

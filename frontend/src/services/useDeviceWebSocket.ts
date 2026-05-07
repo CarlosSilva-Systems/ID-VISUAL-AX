@@ -1,9 +1,7 @@
 import { useEffect, useRef, useCallback } from 'react';
+import { getWebSocketUrl } from './getWebSocketUrl';
 
-const WS_URL = (() => {
-  const apiUrl = (import.meta as any).env.VITE_API_URL || 'http://localhost:8000/api/v1';
-  return apiUrl.replace(/^http/, 'ws') + '/devices/ws';
-})();
+const WS_URL = getWebSocketUrl('/devices/ws');
 
 export type DeviceEvent =
   | { event: 'device_discovery'; data: { mac_address: string; device_name: string; status: string } }

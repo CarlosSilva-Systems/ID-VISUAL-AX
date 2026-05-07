@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { getWebSocketUrl } from '../../services/getWebSocketUrl';
 import {
   AlertTriangle, Filter, RefreshCw, Clock,
   ChevronDown, ChevronRight, User, Wrench, Factory, CheckCircle2,
@@ -62,9 +63,7 @@ export const AndonPendenciasPage: React.FC<AndonPendenciasPageProps> = ({ curren
   useEffect(() => { fetchPending(); }, [fetchPending]);
 
   useEffect(() => {
-    const apiUrl = (import.meta as any).env.VITE_API_URL || 'http://localhost:8000/api/v1';
-    const wsUrl = apiUrl.replace(/^http/, 'ws') + '/devices/ws';
-    const ws = new WebSocket(wsUrl);
+    const ws = new WebSocket(getWebSocketUrl('/devices/ws'));
     ws.onmessage = (event) => {
       try {
         const msg = JSON.parse(event.data);

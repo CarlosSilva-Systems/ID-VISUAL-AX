@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { getWebSocketUrl } from '../../services/getWebSocketUrl';
 import {
   X,
   Cpu,
@@ -293,9 +294,7 @@ const LogsTab: React.FC<{ device: ESPDeviceEnriched }> = ({ device }) => {
 
   // WebSocket para logs em tempo real
   useEffect(() => {
-    const apiUrl = (import.meta as any).env.VITE_API_URL || 'http://localhost:8000/api/v1';
-    const wsUrl = apiUrl.replace(/^http/, 'ws') + '/devices/ws';
-    const ws = new WebSocket(wsUrl);
+    const ws = new WebSocket(getWebSocketUrl('/devices/ws'));
 
     ws.onmessage = (event) => {
       try {
