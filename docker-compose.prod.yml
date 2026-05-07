@@ -27,7 +27,12 @@ services:
   api:
     restart: always
     # Produção: múltiplos workers para melhor performance
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
+    # Produção: 1 worker para garantir compatibilidade com WebSocket e MQTT background task.
+    # O ws_manager e o MQTT loop são singletons em memória por processo — múltiplos workers
+    # causariam perda silenciosa de ~75% dos eventos WebSocket (cliente conecta no Worker A,
+    # evento MQTT chega no Worker B). Uvicorn assíncrono com 1 worker suporta centenas de
+    # conexões concorrentes sem degradação, pois o gargalo é I/O (DB, Odoo, MQTT), não CPU.
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1
     environment:
       - ENVIRONMENT=production
     # Sem bind mounts em produção - código está no container
