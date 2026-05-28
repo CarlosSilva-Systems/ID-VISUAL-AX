@@ -83,18 +83,16 @@ async def reset_database(
     """
     from sqlalchemy import text
 
-    # Um único statement — mais seguro e atômico
-    truncate_sql = """
-        TRUNCATE TABLE
-            andon_call,
-            andon_event,
-            andon_status,
-            andon_material_request,
-            sync_queue
-        RESTART IDENTITY CASCADE
-    """
-
+    # Tabelas principais que DEVEM existir
+    core_tables = [
+        "andon_call",
+        "andon_status",
+        "sync_queue"
+    ]
+    
+    # Tabelas opcionais que podem ou não existir
     optional_tables = [
+        "andon_material_request",
         "batch",
         "id_request",
         "manufacturing_order",
@@ -104,13 +102,25 @@ async def reset_database(
     ]
 
     try:
-        await session.execute(text(truncate_sql))
+        # Limpar tabelas principais
+        for table in core_tables:
+            try:
+                await session.execute(text(f'TRUNCATE TABLE "{table}" RESTART IDENTITY CASCADE'))
+                logger.info(f"Tabela {table} limpa com sucesso")
+            except Exception as e:
+                logger.warning(f"Erro ao limpar tabela {table}: {e}")
+                # Continua mesmo se falhar - pode não existir
+        
+        # Limpar tabelas opcionais
         for table in optional_tables:
             try:
                 await session.execute(text(f'TRUNCATE TABLE "{table}" RESTART IDENTITY CASCADE'))
+                logger.info(f"Tabela opcional {table} limpa com sucesso")
             except Exception:
                 pass  # tabela pode não existir
+        
         await session.commit()
+        logger.info("Reset de banco de dados concluído com sucesso")
         return {"status": "success", "message": "Dados operacionais resetados com sucesso."}
     except Exception as e:
         await session.rollback()
