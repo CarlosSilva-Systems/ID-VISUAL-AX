@@ -1,7 +1,7 @@
 from fastapi import APIRouter
 from app.api.api_v1.endpoints import (
     health, batches, odoo, production, id_requests, documents, auth, andon, andon_dashboard, sync, webhook, settings as system_settings,
-    mpr_analytics, agent, custom_reports, user_config, users_local, devices, ota, id_visual_analytics, diagnostics, print_labels, print_queue, eplan, print_wago, door_presets
+    mpr_analytics, agent, custom_reports, user_config, users_local, devices, ota, id_visual_analytics, diagnostics, print_labels, print_queue, eplan, print_wago, door_presets, debug_duplicates
 )
 
 api_router = APIRouter()
@@ -31,4 +31,5 @@ api_router.include_router(print_queue.router, prefix="/print", tags=["print_queu
 api_router.include_router(eplan.router, prefix="/id-visual/eplan", tags=["eplan"])
 api_router.include_router(print_wago.router, prefix="/id-visual/print", tags=["print_wago"])
 api_router.include_router(door_presets.router, prefix="/id-visual/door-presets", tags=["door_presets"])
+api_router.include_router(debug_duplicates.router, tags=["debug"])  # TEMPORÁRIO - REMOVER APÓS INVESTIGAÇÃO
 
