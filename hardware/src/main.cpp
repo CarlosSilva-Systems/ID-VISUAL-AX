@@ -100,6 +100,9 @@ unsigned long g_pauseHeldSince = 0;
 // Pause local: estado anterior ao GRAY para restaurar ao despausar
 String g_preGrayStatus = "UNKNOWN";
 
+// Flag para resetar o blink GRAY ao entrar no estado — evita azul contínuo
+bool g_pauseBlinkReset = false;
+
 // Retry WiFi em MESH_NODE: tenta reconectar periodicamente
 Timer wifiRetryTimer = {WIFI_RETRY_INTERVAL_MS, 0};
 
@@ -204,27 +207,32 @@ void updateAndonLEDs() {
     // Atualiza LEDs baseado no status Andon recebido do backend.
     // GRAY é tratado no loop() com blink não-bloqueante — não apaga aqui.
     if (g_andonStatus == "GREEN") {
-        updateLEDState(&greenLED, true);
+        updateLEDState(&greenLED,  true);
         updateLEDState(&yellowLED, false);
-        updateLEDState(&redLED, false);
+        updateLEDState(&redLED,    false);
+        updateLEDState(&blueLED,   false);  // Garante que azul apaga ao sair do GRAY
     } else if (g_andonStatus == "YELLOW") {
-        updateLEDState(&greenLED, false);
+        updateLEDState(&greenLED,  false);
         updateLEDState(&yellowLED, true);
-        updateLEDState(&redLED, false);
+        updateLEDState(&redLED,    false);
+        updateLEDState(&blueLED,   false);
     } else if (g_andonStatus == "RED") {
-        updateLEDState(&greenLED, false);
+        updateLEDState(&greenLED,  false);
         updateLEDState(&yellowLED, false);
-        updateLEDState(&redLED, true);
+        updateLEDState(&redLED,    true);
+        updateLEDState(&blueLED,   false);
     } else if (g_andonStatus == "GRAY") {
-        // Garante que os LEDs começam apagados; o blink é feito no loop()
-        updateLEDState(&greenLED, false);
+        // Garante que os LEDs coloridos começam apagados; o blink azul é feito no loop()
+        updateLEDState(&greenLED,  false);
         updateLEDState(&yellowLED, false);
-        updateLEDState(&redLED, false);
+        updateLEDState(&redLED,    false);
+        // Azul NÃO é apagado aqui — o updatePauseBlink() assume o controle
     } else if (g_andonStatus == "UNASSIGNED") {
         // Não vinculado — apaga tudo; o blink amarelo é feito no loop()
-        updateLEDState(&greenLED, false);
+        updateLEDState(&greenLED,  false);
         updateLEDState(&yellowLED, false);
-        updateLEDState(&redLED, false);
+        updateLEDState(&redLED,    false);
+        updateLEDState(&blueLED,   false);
     }
     // UNKNOWN mantém o estado atual
 }
@@ -260,7 +268,18 @@ void updateOdooErrorBlink() {
 void updatePauseBlink() {
     static unsigned long lastToggle = 0;
     static bool blinkOn = false;
+
     unsigned long now = millis();
+
+    // Reseta o blink sempre que entrar em GRAY (botão ou backend)
+    if (g_pauseBlinkReset) {
+        g_pauseBlinkReset = false;
+        lastToggle = now;
+        blinkOn    = false;
+        digitalWrite(LED_AZUL_PIN, LOW);
+        return;  // Começa apagado; próxima iteração inicia o ciclo
+    }
+
     if (now - lastToggle >= PAUSE_BLINK_HALF_MS) {
         lastToggle = now;
         blinkOn = !blinkOn;
@@ -878,6 +897,10 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
             payloadStr == "UNASSIGNED") {
             g_andonStatus = payloadStr;
             g_lastAndonUpdate = millis();
+            if (payloadStr == "GRAY") {
+                // Sinaliza reset do blink para garantir que começa apagado e sincronizado
+                g_pauseBlinkReset = true;
+            }
             updateAndonLEDs();
             logSerial("ANDON STATE: " + payloadStr);
         }
@@ -1058,8 +1081,9 @@ void handleOperational() {
             logSerial("PAUSE: desativado -> " + g_andonStatus);
         } else {
             // Pausar: salva estado atual e vai para GRAY
-            g_preGrayStatus = g_andonStatus;
-            g_andonStatus   = "GRAY";
+            g_preGrayStatus   = g_andonStatus;
+            g_andonStatus     = "GRAY";
+            g_pauseBlinkReset = true;  // Garante que o blink começa apagado e sincronizado
             // LEDs apagados — o blink GRAY no loop() assume o controle
             digitalWrite(LED_VERDE_PIN,    LOW);
             digitalWrite(LED_AMARELO_PIN,  LOW);
@@ -1114,8 +1138,9 @@ void handleMeshNode() {
             updateAndonLEDs();
             logSerial("PAUSE: desativado -> " + g_andonStatus);
         } else {
-            g_preGrayStatus = g_andonStatus;
-            g_andonStatus   = "GRAY";
+            g_preGrayStatus   = g_andonStatus;
+            g_andonStatus     = "GRAY";
+            g_pauseBlinkReset = true;  // Garante que o blink começa apagado e sincronizado
             digitalWrite(LED_VERDE_PIN,    LOW);
             digitalWrite(LED_AMARELO_PIN,  LOW);
             digitalWrite(LED_VERMELHO_PIN, LOW);
