@@ -103,11 +103,12 @@ Timer wifiRetryTimer = {WIFI_RETRY_INTERVAL_MS, 0};
 ButtonState greenButton  = {BTN_VERDE,    HIGH, 0, false};
 ButtonState yellowButton = {BTN_AMARELO,  HIGH, 0, false};
 ButtonState redButton    = {BTN_VERMELHO, HIGH, 0, false};
-ButtonState pauseButton  = {BTN_PAUSE,    HIGH, 0, false};
+ButtonState blueButton   = {BTN_AZUL,     HIGH, 0, false};
 
 LEDState redLED     = {LED_VERMELHO_PIN, false};
 LEDState yellowLED  = {LED_AMARELO_PIN,  false};
 LEDState greenLED   = {LED_VERDE_PIN,    false};
+LEDState blueLED    = {LED_AZUL_PIN,     false};
 LEDState onboardLED = {LED_ONBOARD_PIN,  false};
 
 Timer heartbeatTimer   = {HEARTBEAT_INTERVAL_MS,    0};
@@ -250,7 +251,7 @@ void updateOdooErrorBlink() {
 }
 
 // Blink não-bloqueante para estado GRAY (pausado).
-// 70 BPM ≈ 857ms por ciclo: 428ms ligado, 428ms desligado.
+// Azul pisca lento ~70 BPM: 428ms ligado, 428ms desligado.
 #define PAUSE_BLINK_HALF_MS 428UL
 
 void updatePauseBlink() {
@@ -260,9 +261,10 @@ void updatePauseBlink() {
     if (now - lastToggle >= PAUSE_BLINK_HALF_MS) {
         lastToggle = now;
         blinkOn = !blinkOn;
-        digitalWrite(LED_VERDE_PIN,    blinkOn ? HIGH : LOW);
-        digitalWrite(LED_AMARELO_PIN,  blinkOn ? HIGH : LOW);
-        digitalWrite(LED_VERMELHO_PIN, blinkOn ? HIGH : LOW);
+        digitalWrite(LED_VERDE_PIN,    LOW);
+        digitalWrite(LED_AMARELO_PIN,  LOW);
+        digitalWrite(LED_VERMELHO_PIN, LOW);
+        digitalWrite(LED_AZUL_PIN,     blinkOn ? HIGH : LOW);
     }
 }
 
@@ -278,30 +280,30 @@ void updateUnassignedBlink() {
         blinkOn = !blinkOn;
         digitalWrite(LED_VERDE_PIN,    LOW);
         digitalWrite(LED_VERMELHO_PIN, LOW);
+        digitalWrite(LED_AZUL_PIN,     LOW);
         digitalWrite(LED_AMARELO_PIN,  blinkOn ? HIGH : LOW);
     }
 }
 
 // Blink não-bloqueante para MQTT_CONNECTING (sem broker).
-// Vermelho e amarelo piscam alternados a cada 300ms — sinal claro de "sem broker".
-#define MQTT_WAIT_BLINK_MS 300UL
-void updateMQTTWaitBlink() {
+// Amarelo e vermelho piscam alternados a cada 500ms — diagonal.
+#define MQTT_WAIT_BLINK_MS 500UL
+void updateMQTTConnectingBlink() {
     static unsigned long lastToggle = 0;
     static bool phase = false;
     unsigned long now = millis();
     if (now - lastToggle >= MQTT_WAIT_BLINK_MS) {
         lastToggle = now;
         phase = !phase;
-        // Fase A: vermelho aceso, amarelo apagado
-        // Fase B: vermelho apagado, amarelo aceso
-        digitalWrite(LED_VERMELHO_PIN, phase ? HIGH : LOW);
-        digitalWrite(LED_AMARELO_PIN,  phase ? LOW  : HIGH);
         digitalWrite(LED_VERDE_PIN,    LOW);
+        digitalWrite(LED_AMARELO_PIN,  phase ? HIGH : LOW);
+        digitalWrite(LED_VERMELHO_PIN, phase ? LOW : HIGH);
+        digitalWrite(LED_AZUL_PIN,     LOW);
     }
 }
 
 // Blink não-bloqueante para MESH_NODE (sem WiFi, operando via mesh).
-// Amarelo pisca lento (1s on/off) — indica "online mas sem WiFi direto".
+// Azul pisca lento (1s on/off) — indica "online mas sem WiFi direto".
 #define MESH_NODE_BLINK_MS 1000UL
 void updateMeshNodeBlink() {
     static unsigned long lastToggle = 0;
@@ -311,79 +313,232 @@ void updateMeshNodeBlink() {
         lastToggle = now;
         blinkOn = !blinkOn;
         digitalWrite(LED_VERDE_PIN,    LOW);
+        digitalWrite(LED_AMARELO_PIN,  LOW);
         digitalWrite(LED_VERMELHO_PIN, LOW);
-        digitalWrite(LED_AMARELO_PIN,  blinkOn ? HIGH : LOW);
+        digitalWrite(LED_AZUL_PIN,     blinkOn ? HIGH : LOW);
     }
 }
 
+// Animação de boot: sequência circular (Verde → Amarelo → Azul → Vermelho) 3x
 void playBootAnimation() {
-    // Jogo de luzes na inicialização: onda contínua
     for (int ciclo = 0; ciclo < 3; ciclo++) {
-        // Verde acende
         digitalWrite(LED_VERDE_PIN, HIGH);
-        delay(200);
-        // Verde apaga enquanto amarelo acende
+        delay(500);
         digitalWrite(LED_VERDE_PIN, LOW);
+        
         digitalWrite(LED_AMARELO_PIN, HIGH);
-        delay(200);
-        // Amarelo apaga enquanto vermelho acende
+        delay(500);
         digitalWrite(LED_AMARELO_PIN, LOW);
+        
+        digitalWrite(LED_AZUL_PIN, HIGH);
+        delay(500);
+        digitalWrite(LED_AZUL_PIN, LOW);
+        
         digitalWrite(LED_VERMELHO_PIN, HIGH);
-        delay(200);
-        // Vermelho apaga
+        delay(500);
         digitalWrite(LED_VERMELHO_PIN, LOW);
-        delay(200);
+        
+        delay(200); // Pausa entre ciclos
     }
 }
 
+// Animação WiFi conectado: Verde pisca 3x + todas acendem (celebração)
 void playWiFiConnectedAnimation() {
-    // Verde pisca 3 vezes quando conecta WiFi
+    // Verde pisca 3x
     for (int i = 0; i < 3; i++) {
         digitalWrite(LED_VERDE_PIN, HIGH);
         delay(200);
         digitalWrite(LED_VERDE_PIN, LOW);
         delay(200);
     }
+    
+    delay(300); // Pausa
+    
+    // Todas acendem juntas (celebração)
+    digitalWrite(LED_VERDE_PIN,    HIGH);
+    digitalWrite(LED_AMARELO_PIN,  HIGH);
+    digitalWrite(LED_VERMELHO_PIN, HIGH);
+    digitalWrite(LED_AZUL_PIN,     HIGH);
+    delay(500);
+    
+    // Todas apagam
+    digitalWrite(LED_VERDE_PIN,    LOW);
+    digitalWrite(LED_AMARELO_PIN,  LOW);
+    digitalWrite(LED_VERMELHO_PIN, LOW);
+    digitalWrite(LED_AZUL_PIN,     LOW);
 }
 
+// Animação Mesh conectado: Alternância vertical (linha inferior ↔ superior) 3x
 void playMeshConnectedAnimation() {
-    // Amarelo pisca 3 vezes quando conecta mesh
     for (int i = 0; i < 3; i++) {
-        digitalWrite(LED_AMARELO_PIN, HIGH);
+        // Linha inferior (Vermelho + Azul)
+        digitalWrite(LED_VERMELHO_PIN, HIGH);
+        digitalWrite(LED_AZUL_PIN,     HIGH);
+        digitalWrite(LED_VERDE_PIN,    LOW);
+        digitalWrite(LED_AMARELO_PIN,  LOW);
+        delay(400);
+        
+        digitalWrite(LED_VERMELHO_PIN, LOW);
+        digitalWrite(LED_AZUL_PIN,     LOW);
         delay(200);
-        digitalWrite(LED_AMARELO_PIN, LOW);
+        
+        // Linha superior (Verde + Amarelo)
+        digitalWrite(LED_VERDE_PIN,    HIGH);
+        digitalWrite(LED_AMARELO_PIN,  HIGH);
+        delay(400);
+        
+        digitalWrite(LED_VERDE_PIN,    LOW);
+        digitalWrite(LED_AMARELO_PIN,  LOW);
         delay(200);
     }
 }
 
+// Pisca vermelho 3 vezes quando desconectado (não-bloqueante)
 void playDisconnectedBlink() {
-    // Pisca vermelho 3 vezes não-bloqueante via estado estático
-    // Chamado pelo timer — executa a sequência ao longo de múltiplos loops
     static uint8_t blinkPhase = 0;
     static unsigned long lastPhaseMs = 0;
     unsigned long now = millis();
 
     if (blinkPhase == 0) {
-        // Início da sequência — inicia fase 1
         blinkPhase = 1;
         lastPhaseMs = now;
         digitalWrite(LED_VERMELHO_PIN, HIGH);
         return;
     }
 
-    if (now - lastPhaseMs < 200) return;
+    if (now - lastPhaseMs < 300) return;
     lastPhaseMs = now;
     blinkPhase++;
 
-    if (blinkPhase <= 6) {
-        // Fases 2-6: alterna vermelho (3 pulsos = 6 transições)
+    if (blinkPhase <= 6) { // 3 pulsos = 6 transições
         bool on = (blinkPhase % 2 == 1);
         digitalWrite(LED_VERMELHO_PIN, on ? HIGH : LOW);
     } else {
-        // Fim — restaura estado do LED vermelho conforme status Andon
         blinkPhase = 0;
         digitalWrite(LED_VERMELHO_PIN, (redLED.state) ? HIGH : LOW);
     }
+}
+
+// Erro: WiFi Timeout - Linha superior tenta 2x → Vermelho indica falha
+void playWiFiTimeoutError() {
+    for (int ciclo = 0; ciclo < 2; ciclo++) {
+        // Linha superior pisca (tentativa)
+        for (int i = 0; i < 2; i++) {
+            digitalWrite(LED_VERDE_PIN,   HIGH);
+            digitalWrite(LED_AMARELO_PIN, HIGH);
+            delay(200);
+            digitalWrite(LED_VERDE_PIN,   LOW);
+            digitalWrite(LED_AMARELO_PIN, LOW);
+            delay(200);
+        }
+        
+        // Vermelho indica erro
+        digitalWrite(LED_VERMELHO_PIN, HIGH);
+        delay(800);
+        digitalWrite(LED_VERMELHO_PIN, LOW);
+        delay(300);
+    }
+}
+
+// Erro: MQTT Falha - Diagonal pisca 3x → Vermelho fixo
+void playMQTTConnectionError() {
+    // Alternância rápida diagonal
+    for (int i = 0; i < 3; i++) {
+        digitalWrite(LED_AMARELO_PIN,  HIGH);
+        digitalWrite(LED_VERMELHO_PIN, LOW);
+        delay(150);
+        digitalWrite(LED_AMARELO_PIN,  LOW);
+        digitalWrite(LED_VERMELHO_PIN, HIGH);
+        delay(150);
+    }
+    
+    // Vermelho fixo (erro)
+    digitalWrite(LED_VERMELHO_PIN, HIGH);
+    delay(1000);
+    
+    // Apaga tudo
+    digitalWrite(LED_VERMELHO_PIN, LOW);
+    delay(500);
+}
+
+// Erro: Heap Baixo - Vermelho pisca 5x → Amarelo confirma
+void playHeapWarningBlink() {
+    // Vermelho pisca urgente
+    for (int i = 0; i < 5; i++) {
+        digitalWrite(LED_VERMELHO_PIN, HIGH);
+        delay(150);
+        digitalWrite(LED_VERMELHO_PIN, LOW);
+        delay(150);
+    }
+    
+    // Amarelo confirma aviso
+    digitalWrite(LED_AMARELO_PIN, HIGH);
+    delay(500);
+    digitalWrite(LED_AMARELO_PIN, LOW);
+}
+
+// Erro: Watchdog Reset - Todas piscam 4x → Vermelho fixo
+void playWatchdogResetWarning() {
+    // Todas piscam (alerta máximo)
+    for (int i = 0; i < 4; i++) {
+        digitalWrite(LED_VERDE_PIN,    HIGH);
+        digitalWrite(LED_AMARELO_PIN,  HIGH);
+        digitalWrite(LED_VERMELHO_PIN, HIGH);
+        digitalWrite(LED_AZUL_PIN,     HIGH);
+        delay(200);
+        
+        digitalWrite(LED_VERDE_PIN,    LOW);
+        digitalWrite(LED_AMARELO_PIN,  LOW);
+        digitalWrite(LED_VERMELHO_PIN, LOW);
+        digitalWrite(LED_AZUL_PIN,     LOW);
+        delay(200);
+    }
+    
+    // Vermelho fixo (erro grave)
+    digitalWrite(LED_VERMELHO_PIN, HIGH);
+    delay(1500);
+    digitalWrite(LED_VERMELHO_PIN, LOW);
+}
+
+// Confirmação: Reset Manual - Todas piscam 3x → Azul confirma
+void playManualResetConfirmation() {
+    for (int i = 0; i < 3; i++) {
+        digitalWrite(LED_VERDE_PIN,    HIGH);
+        digitalWrite(LED_AMARELO_PIN,  HIGH);
+        digitalWrite(LED_VERMELHO_PIN, HIGH);
+        digitalWrite(LED_AZUL_PIN,     HIGH);
+        delay(150);
+        
+        digitalWrite(LED_VERDE_PIN,    LOW);
+        digitalWrite(LED_AMARELO_PIN,  LOW);
+        digitalWrite(LED_VERMELHO_PIN, LOW);
+        digitalWrite(LED_AZUL_PIN,     LOW);
+        delay(150);
+    }
+    
+    // Azul confirma ação do usuário
+    digitalWrite(LED_AZUL_PIN, HIGH);
+    delay(1000);
+    digitalWrite(LED_AZUL_PIN, LOW);
+}
+
+// Confirmação: Restart Remoto - Verde+Azul piscam 2x → Todas confirmam
+void playRemoteRestartConfirmation() {
+    for (int i = 0; i < 2; i++) {
+        digitalWrite(LED_VERDE_PIN, HIGH);
+        digitalWrite(LED_AZUL_PIN,  HIGH);
+        delay(200);
+        digitalWrite(LED_VERDE_PIN, LOW);
+        digitalWrite(LED_AZUL_PIN,  LOW);
+        delay(200);
+    }
+    
+    // Todas acendem (confirmação)
+    digitalWrite(LED_VERDE_PIN,    HIGH);
+    digitalWrite(LED_AMARELO_PIN,  HIGH);
+    digitalWrite(LED_VERMELHO_PIN, HIGH);
+    digitalWrite(LED_AZUL_PIN,     HIGH);
+    delay(500);
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -631,38 +786,19 @@ void beginWiFiConnect() {
 }
 
 void handleWiFiConnecting() {
-    // Animação de onda enquanto procura WiFi
-    static unsigned long lastWaveUpdate = 0;
-    static uint8_t waveStep = 0;
+    // Animação: linha superior oscilando (Verde ↔ Amarelo)
+    static unsigned long lastToggle = 0;
+    static bool showGreen = true;
     unsigned long now = millis();
     
-    if (now - lastWaveUpdate >= 250) {
-        lastWaveUpdate = now;
+    if (now - lastToggle >= 600) {
+        lastToggle = now;
+        showGreen = !showGreen;
         
-        // Ciclo de onda: verde → amarelo → vermelho → (pausa) → repete
-        switch (waveStep % 4) {
-            case 0: // Verde acende, outros apagados
-                digitalWrite(LED_VERDE_PIN, HIGH);
-                digitalWrite(LED_AMARELO_PIN, LOW);
-                digitalWrite(LED_VERMELHO_PIN, LOW);
-                break;
-            case 1: // Amarelo acende, verde apaga, vermelho apagado
-                digitalWrite(LED_VERDE_PIN, LOW);
-                digitalWrite(LED_AMARELO_PIN, HIGH);
-                digitalWrite(LED_VERMELHO_PIN, LOW);
-                break;
-            case 2: // Vermelho acende, amarelo apaga, verde apagado
-                digitalWrite(LED_VERDE_PIN, LOW);
-                digitalWrite(LED_AMARELO_PIN, LOW);
-                digitalWrite(LED_VERMELHO_PIN, HIGH);
-                break;
-            case 3: // Todos apagados (pausa antes de reiniciar)
-                digitalWrite(LED_VERDE_PIN, LOW);
-                digitalWrite(LED_AMARELO_PIN, LOW);
-                digitalWrite(LED_VERMELHO_PIN, LOW);
-                break;
-        }
-        waveStep++;
+        digitalWrite(LED_VERDE_PIN,    showGreen ? HIGH : LOW);
+        digitalWrite(LED_AMARELO_PIN,  showGreen ? LOW : HIGH);
+        digitalWrite(LED_VERMELHO_PIN, LOW);
+        digitalWrite(LED_AZUL_PIN,     LOW);
     }
     
     if (WiFi.status() == WL_CONNECTED) {
@@ -678,6 +814,7 @@ void handleWiFiConnecting() {
     if ((millis() - wifiReconnect.lastAttempt) >= WIFI_TIMEOUT_MS) {
         logSerial("WIFI: timeout (" + String(WIFI_TIMEOUT_MS / 1000) +
                   "s) sem conectar -> MESH_NODE (fallback)");
+        playWiFiTimeoutError(); // Mostra erro de timeout
         WiFi.disconnect(true);
         WiFi.mode(WIFI_OFF);
         resetBackoff(&wifiReconnect);
@@ -765,17 +902,8 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
             // Publica ACK antes de reiniciar para o backend registrar
             String ackTopic = "andon/restart/ack/" + macAddress;
             mqttClient.publish(ackTopic.c_str(), "RESTARTING", false);
-            // Pisca todos os LEDs 2x para sinalizar restart ao operador
-            for (int i = 0; i < 2; i++) {
-                digitalWrite(LED_VERDE_PIN,    HIGH);
-                digitalWrite(LED_AMARELO_PIN,  HIGH);
-                digitalWrite(LED_VERMELHO_PIN, HIGH);
-                delay(200);
-                digitalWrite(LED_VERDE_PIN,    LOW);
-                digitalWrite(LED_AMARELO_PIN,  LOW);
-                digitalWrite(LED_VERMELHO_PIN, LOW);
-                delay(200);
-            }
+            // Animação de confirmação de restart remoto
+            playRemoteRestartConfirmation();
             delay(500);
             ESP.restart();
         }
@@ -783,6 +911,9 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
 }
 
 void handleMQTTConnecting() {
+    // Animação: diagonal (Amarelo ↔ Vermelho)
+    updateMQTTConnectingBlink();
+    
     unsigned long now = millis();
 
     if (WiFi.status() != WL_CONNECTED) {
@@ -837,7 +968,9 @@ void handleMQTTConnecting() {
 
     if (mqttReconnect.attemptCount >= MQTT_MAX_RETRIES) {
         logSerial("MQTT: max tentativas -> reiniciando");
-        delay(500); ESP.restart();
+        playMQTTConnectionError(); // Mostra erro de conexão MQTT
+        delay(500); 
+        ESP.restart();
     }
 
     if (mqttReconnect.attemptCount == 0)
@@ -906,12 +1039,12 @@ void handleOperational() {
     processButton(&greenButton);
     processButton(&yellowButton);
     processButton(&redButton);
-    processButton(&pauseButton);
+    processButton(&blueButton);
 
     if (greenButton.pressed)  { publishButtonEvent("green");  greenButton.pressed  = false; }
     if (yellowButton.pressed) { publishButtonEvent("yellow"); yellowButton.pressed = false; }
     if (redButton.pressed)    { publishButtonEvent("red");    redButton.pressed    = false; }
-    if (pauseButton.pressed)  { publishButtonEvent("pause");  pauseButton.pressed  = false; }
+    if (blueButton.pressed)   { publishButtonEvent("blue");   blueButton.pressed   = false; }
 
     if (checkTimer(&heartbeatTimer)) {
         StaticJsonDocument<128> hb;
@@ -942,12 +1075,12 @@ void handleMeshNode() {
     processButton(&greenButton);
     processButton(&yellowButton);
     processButton(&redButton);
-    processButton(&pauseButton);
+    processButton(&blueButton);
 
     if (greenButton.pressed)  { publishButtonEvent("green");  greenButton.pressed  = false; }
     if (yellowButton.pressed) { publishButtonEvent("yellow"); yellowButton.pressed = false; }
     if (redButton.pressed)    { publishButtonEvent("red");    redButton.pressed    = false; }
-    if (pauseButton.pressed)  { publishButtonEvent("pause");  pauseButton.pressed  = false; }
+    if (blueButton.pressed)   { publishButtonEvent("blue");   blueButton.pressed   = false; }
 
     // Heartbeat + discovery periódico via mesh para o backend ver a folha
     if (checkTimer(&heartbeatTimer)) {
@@ -996,27 +1129,18 @@ void processButton(ButtonState* btn) {
     }
 }
 
-// Verifica se o botão pause está sendo segurado para reset
+// Verifica se o botão azul está sendo segurado para reset
 void checkResetCombo() {
-    bool pauseDown = (digitalRead(BTN_PAUSE) == LOW);
+    bool blueDown = (digitalRead(BTN_AZUL) == LOW);
     unsigned long now = millis();
 
-    if (pauseDown) {
+    if (blueDown) {
         if (g_pauseHeldSince == 0) {
             g_pauseHeldSince = now;
         } else if (now - g_pauseHeldSince >= RESET_HOLD_MS) {
-            logSerial("RESET: botao pause segurado 5s -> reiniciando...");
-            // Pisca todos os LEDs 3x para confirmar o reset
-            for (int i = 0; i < 3; i++) {
-                digitalWrite(LED_VERDE_PIN,    HIGH);
-                digitalWrite(LED_AMARELO_PIN,  HIGH);
-                digitalWrite(LED_VERMELHO_PIN, HIGH);
-                delay(150);
-                digitalWrite(LED_VERDE_PIN,    LOW);
-                digitalWrite(LED_AMARELO_PIN,  LOW);
-                digitalWrite(LED_VERMELHO_PIN, LOW);
-                delay(150);
-            }
+            logSerial("RESET: botao azul segurado 5s -> reiniciando...");
+            // Animação de confirmação de reset manual
+            playManualResetConfirmation();
             ESP.restart();
         }
     } else {
@@ -1069,19 +1193,21 @@ void initializeGPIOs() {
     pinMode(BTN_VERDE,    INPUT_PULLUP);
     pinMode(BTN_AMARELO,  INPUT_PULLUP);
     pinMode(BTN_VERMELHO, INPUT_PULLUP);
-    pinMode(BTN_PAUSE,    INPUT_PULLUP);
+    pinMode(BTN_AZUL,     INPUT_PULLUP);
 
-    const uint8_t leds[] = {LED_VERMELHO_PIN, LED_AMARELO_PIN, LED_VERDE_PIN, LED_ONBOARD_PIN};
+    const uint8_t leds[] = {LED_VERMELHO_PIN, LED_AMARELO_PIN, LED_VERDE_PIN, LED_AZUL_PIN, LED_ONBOARD_PIN};
     for (uint8_t p : leds) { pinMode(p, OUTPUT); digitalWrite(p, LOW); }
 
-    logSerial("GPIO: inicializados");
+    logSerial("GPIO: inicializados (4 botoes + 5 LEDs)");
 }
 
 void initializeWatchdog() {
     esp_task_wdt_init(WATCHDOG_TIMEOUT_S, true);
     esp_task_wdt_add(NULL);
-    if (esp_reset_reason() == ESP_RST_TASK_WDT)
+    if (esp_reset_reason() == ESP_RST_TASK_WDT) {
         logSerial("AVISO: Reset por watchdog detectado");
+        playWatchdogResetWarning(); // Mostra erro de watchdog
+    }
     logSerial("WDT: inicializado (" + String(WATCHDOG_TIMEOUT_S) + "s)");
 }
 

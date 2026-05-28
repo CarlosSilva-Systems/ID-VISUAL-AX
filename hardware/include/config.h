@@ -5,7 +5,7 @@
 // ═══════════════════════════════════════════════════════════
 
 // ─── Versão ────────────────────────────────────────────────
-#define FIRMWARE_VERSION    "2.4.1"
+#define FIRMWARE_VERSION    "2.5.0"
 #define FIRMWARE_BUILD_DATE __DATE__
 
 // ─── WiFi ──────────────────────────────────────────────────
@@ -46,13 +46,14 @@
 #define BTN_VERDE           12
 #define BTN_AMARELO         13
 #define BTN_VERMELHO        32
-#define BTN_PAUSE           33      // Toggle pause/resume fabricação
+#define BTN_AZUL            33      // Botão azul (pause/resume fabricação)
 
-// ─── Pinos — LEDs de status Andon ──────────────────────────
-#define LED_VERDE_PIN       19
-#define LED_AMARELO_PIN     18
-#define LED_VERMELHO_PIN    17
-#define LED_ONBOARD_PIN     2       // LED azul onboard
+// ─── Pinos — LEDs retroiluminados dos botões ───────────────
+#define LED_VERDE_PIN       19      // LED retroiluminado do botão verde
+#define LED_AMARELO_PIN     18      // LED retroiluminado do botão amarelo
+#define LED_VERMELHO_PIN    17      // LED retroiluminado do botão vermelho
+#define LED_AZUL_PIN        16      // LED retroiluminado do botão azul
+#define LED_ONBOARD_PIN     2       // LED azul onboard (indicador de conectividade)
 
 // ─── Debounce ──────────────────────────────────────────────
 #define DEBOUNCE_MS              50UL   // ms de estabilidade para confirmar pressionamento

@@ -2,6 +2,7 @@
 
 ## Versão do Firmware: 2.4.1
 ## Placa: ESP32 DevKit v1
+## Arquitetura: Botões Retroiluminados
 
 ---
 
@@ -12,7 +13,7 @@
 | Botão Verde      | 12   | Sinaliza status OK/Normal          | GPIO 12 → Botão → GND |
 | Botão Amarelo    | 13   | Sinaliza atenção/alerta            | GPIO 13 → Botão → GND |
 | Botão Vermelho   | 32   | Sinaliza problema/parada           | GPIO 32 → Botão → GND |
-| Botão Pause      | 33   | Toggle pause/resume da fabricação  | GPIO 33 → Botão → GND |
+| Botão Azul       | 33   | Toggle pause/resume da fabricação  | GPIO 33 → Botão → GND |
 
 **Lógica:** 
 - Botão **solto** = HIGH (3.3V) - Pull-up interno ativo
@@ -22,14 +23,15 @@
 
 ---
 
-## 💡 LEDs DE STATUS ANDON (OUTPUT)
+## 💡 LEDs RETROILUMINADOS DOS BOTÕES (OUTPUT)
 
-| Componente       | GPIO | Cor      | Descrição                    | Conexão Física                      |
-|------------------|------|----------|------------------------------|-------------------------------------|
-| LED Verde        | 19   | Verde    | Status OK/Normal             | GPIO 19 → R220Ω → LED Verde → GND   |
-| LED Amarelo      | 18   | Amarelo  | Status Atenção/Alerta        | GPIO 18 → R220Ω → LED Amarelo → GND |
-| LED Vermelho     | 17   | Vermelho | Status Problema/Parada       | GPIO 17 → R220Ω → LED Vermelho → GND|
-| LED Onboard      | 2    | Azul     | Indicador de conectividade   | Interno (LED azul da placa)         |
+| Componente            | GPIO | Cor      | Descrição                           | Conexão Física                      |
+|-----------------------|------|----------|-------------------------------------|-------------------------------------|
+| LED Verde (Botão)     | 19   | Verde    | Retroiluminação do botão verde      | GPIO 19 → R220Ω → LED Verde → GND   |
+| LED Amarelo (Botão)   | 18   | Amarelo  | Retroiluminação do botão amarelo    | GPIO 18 → R220Ω → LED Amarelo → GND |
+| LED Vermelho (Botão)  | 17   | Vermelho | Retroiluminação do botão vermelho   | GPIO 17 → R220Ω → LED Vermelho → GND|
+| LED Azul (Botão)      | 16   | Azul     | Retroiluminação do botão azul       | GPIO 16 → R220Ω → LED Azul → GND    |
+| LED Onboard           | 2    | Azul     | Indicador de conectividade (placa)  | Interno (LED azul da placa)         |
 
 **Lógica:**
 - HIGH = LED **aceso**
@@ -44,52 +46,75 @@
 
 ```
 ESP32 DevKit v1
-┌─────────────────────────────────┐
-│                                 │
-│  GPIO 2  ──→ LED Onboard (Azul) │
-│  GPIO 12 ──→ Botão Verde        │
-│  GPIO 13 ──→ Botão Amarelo      │
-│  GPIO 17 ──→ LED Vermelho       │
-│  GPIO 18 ──→ LED Amarelo        │
-│  GPIO 19 ──→ LED Verde          │
-│  GPIO 32 ──→ Botão Vermelho     │
-│  GPIO 33 ──→ Botão Pause        │
-│                                 │
-│  GND     ──→ Comum (Botões/LEDs)│
-│  3V3     ──→ Alimentação        │
-│                                 │
-└─────────────────────────────────┘
+┌─────────────────────────────────────────┐
+│                                         │
+│  GPIO 2  ──→ LED Onboard (Azul)        │
+│  GPIO 12 ──→ Botão Verde               │
+│  GPIO 13 ──→ Botão Amarelo             │
+│  GPIO 16 ──→ LED Azul (Retroiluminado) │
+│  GPIO 17 ──→ LED Vermelho (Retroilum.) │
+│  GPIO 18 ──→ LED Amarelo (Retroilum.)  │
+│  GPIO 19 ──→ LED Verde (Retroilum.)    │
+│  GPIO 32 ──→ Botão Vermelho            │
+│  GPIO 33 ──→ Botão Azul                │
+│                                         │
+│  GND     ──→ Comum (Botões/LEDs)       │
+│  3V3     ──→ Alimentação               │
+│                                         │
+└─────────────────────────────────────────┘
 ```
 
 ---
 
-## 📊 ESTADOS VISUAIS DOS LEDS
+## 🎨 CONCEITO: BOTÕES RETROILUMINADOS
+
+Cada botão possui seu próprio LED retroiluminado integrado:
+
+| Botão      | GPIO Botão | GPIO LED | Cor LED  | Função                           |
+|------------|------------|----------|----------|----------------------------------|
+| Verde      | 12         | 19       | Verde    | Indica status OK/Normal          |
+| Amarelo    | 13         | 18       | Amarelo  | Indica atenção/alerta            |
+| Vermelho   | 32         | 17       | Vermelho | Indica problema/parada           |
+| Azul       | 33         | 16       | Azul     | Pause/Resume (controle especial) |
+
+**Vantagens:**
+- Feedback visual direto no botão
+- Operador sabe qual botão está ativo
+- Interface mais intuitiva e profissional
+- Reduz erros de operação
+
+---
+
+## 📊 ESTADOS VISUAIS DOS LEDS RETROILUMINADOS
 
 ### Estados Andon (Recebidos do Backend)
 
-| Estado      | LED Verde | LED Amarelo | LED Vermelho | Descrição                    |
-|-------------|-----------|-------------|--------------|------------------------------|
-| GREEN       | ✅ ACESO  | ⚫ APAGADO  | ⚫ APAGADO   | Operação normal              |
-| YELLOW      | ⚫ APAGADO | ⚠️ ACESO   | ⚫ APAGADO   | Atenção necessária           |
-| RED         | ⚫ APAGADO | ⚫ APAGADO  | 🔴 ACESO    | Problema/Parada              |
-| GRAY        | 🔄 PISCA  | 🔄 PISCA   | 🔄 PISCA    | Pausado (~70 BPM, 428ms)     |
-| UNASSIGNED  | ⚫ APAGADO | ⚡ PISCA   | ⚫ APAGADO   | Não vinculado (200ms rápido) |
+Os LEDs retroiluminados dos botões indicam o estado atual do sistema Andon:
+
+| Estado      | LED Verde | LED Amarelo | LED Vermelho | LED Azul    | Descrição                    |
+|-------------|-----------|-------------|--------------|-------------|------------------------------|
+| GREEN       | ✅ ACESO  | ⚫ APAGADO  | ⚫ APAGADO   | ⚫ APAGADO  | Operação normal              |
+| YELLOW      | ⚫ APAGADO | ⚠️ ACESO   | ⚫ APAGADO   | ⚫ APAGADO  | Atenção necessária           |
+| RED         | ⚫ APAGADO | ⚫ APAGADO  | 🔴 ACESO    | ⚫ APAGADO  | Problema/Parada              |
+| GRAY        | 🔄 PISCA  | 🔄 PISCA   | 🔄 PISCA    | 🔄 PISCA   | Pausado (~70 BPM, 428ms)     |
+| UNASSIGNED  | ⚫ APAGADO | ⚡ PISCA   | ⚫ APAGADO   | ⚫ APAGADO  | Não vinculado (200ms rápido) |
 
 ### Estados de Conectividade
 
-| Estado           | LED Verde | LED Amarelo | LED Vermelho | LED Onboard      |
-|------------------|-----------|-------------|--------------|------------------|
-| WIFI_CONNECTING  | 🌊 ONDA   | 🌊 ONDA     | 🌊 ONDA      | Pisca 500ms      |
-| MQTT_CONNECTING  | ⚫ APAGADO | 🔄 ALTERNA  | 🔄 ALTERNA   | Pisca 1000ms     |
-| OPERATIONAL      | (Andon)   | (Andon)     | (Andon)      | ✅ ACESO FIXO    |
-| MESH_NODE        | ⚫ APAGADO | 🔄 PISCA    | ⚫ APAGADO    | Duplo pulso 2s   |
+| Estado           | LED Verde | LED Amarelo | LED Vermelho | LED Azul    | LED Onboard      |
+|------------------|-----------|-------------|--------------|-------------|------------------|
+| WIFI_CONNECTING  | 🌊 ONDA   | 🌊 ONDA     | 🌊 ONDA      | 🌊 ONDA     | Pisca 500ms      |
+| MQTT_CONNECTING  | ⚫ APAGADO | 🔄 ALTERNA  | 🔄 ALTERNA   | ⚫ APAGADO  | Pisca 1000ms     |
+| OPERATIONAL      | (Andon)   | (Andon)     | (Andon)      | (Andon)     | ✅ ACESO FIXO    |
+| MESH_NODE        | ⚫ APAGADO | 🔄 PISCA    | ⚫ APAGADO   | ⚫ APAGADO  | Duplo pulso 2s   |
 
 ### Erros e Alertas
 
-| Situação     | LED Verde | LED Amarelo | LED Vermelho | Duração |
-|--------------|-----------|-------------|--------------|---------|
-| Erro Odoo    | ⚫ APAGADO | ⚫ APAGADO  | ⚡ PISCA     | 5s      |
-| Desconectado | ⚫ APAGADO | ⚫ APAGADO  | 🔄 PISCA 3x  | 600ms   |
+| Situação     | LED Verde | LED Amarelo | LED Vermelho | LED Azul    | Duração |
+|--------------|-----------|-------------|--------------|-------------|---------|
+| Erro Odoo    | ⚫ APAGADO | ⚫ APAGADO  | ⚡ PISCA     | ⚫ APAGADO  | 5s      |
+| Desconectado | ⚫ APAGADO | ⚫ APAGADO  | 🔄 PISCA 3x  | ⚫ APAGADO  | 600ms   |
+| Reset (5s)   | 🔄 PISCA  | 🔄 PISCA   | 🔄 PISCA    | 🔄 PISCA   | 450ms   |
 
 **Legenda:**
 - ✅ = Aceso fixo
@@ -139,11 +164,11 @@ Para alterar um pino, edite `config.h` e recompile:
 ### Teste rápido de GPIO
 Adicione no `loop()` temporariamente:
 ```cpp
-Serial.printf("Verde:%d Amarelo:%d Vermelho:%d Pause:%d\n",
+Serial.printf("Verde:%d Amarelo:%d Vermelho:%d Azul:%d\n",
               digitalRead(BTN_VERDE),
               digitalRead(BTN_AMARELO),
               digitalRead(BTN_VERMELHO),
-              digitalRead(BTN_PAUSE));
+              digitalRead(BTN_AZUL));
 delay(500);
 ```
 
@@ -151,14 +176,17 @@ delay(500);
 
 ## 📝 NOTAS IMPORTANTES
 
-1. **Pull-up interno:** Todos os botões usam resistor pull-up interno do ESP32
-2. **Corrente máxima:** Cada GPIO do ESP32 suporta até 40mA (LEDs usam ~15mA)
-3. **Tensão:** GPIOs operam em 3.3V (não são 5V tolerant!)
-4. **Pinos reservados:** Evite usar GPIO 0, 6-11 (flash), 34-39 (input only)
-5. **Reset por botão:** Segurar Pause por 5s reinicia o ESP32
+1. **Botões retroiluminados:** Cada botão possui LED integrado para feedback visual direto
+2. **Pull-up interno:** Todos os botões usam resistor pull-up interno do ESP32
+3. **Corrente máxima:** Cada GPIO do ESP32 suporta até 40mA (LEDs usam ~15mA)
+4. **Tensão:** GPIOs operam em 3.3V (não são 5V tolerant!)
+5. **Pinos reservados:** Evite usar GPIO 0, 6-11 (flash), 34-39 (input only)
+6. **Reset por botão:** Segurar botão azul por 5s reinicia o ESP32
+7. **LED Azul:** GPIO 16 dedicado ao LED retroiluminado do botão azul (pause)
+8. **Evento MQTT:** Botão azul publica em `andon/button/{mac}/blue` quando pressionado
 
 ---
 
 **Última atualização:** 2026-05-27  
 **Autor:** Sistema ID Visual AX  
-**Versão do documento:** 1.0
+**Versão do documento:** 2.0 (Botões Retroiluminados)
