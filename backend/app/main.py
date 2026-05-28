@@ -51,8 +51,17 @@ async def lifespan(app: FastAPI):
     # Import all models so SQLModel metadata knows about them
     import app.models  # noqa: F401
     from app.db.session import init_db
-    await init_db()
-    logger.info("Database tables created/verified.")
+    try:
+        await init_db()
+        logger.info("Database tables created/verified.")
+    except Exception as db_err:
+        # Banco indisponível no startup: logar e continuar.
+        # O servidor sobe, mas requests que dependem do banco retornarão 503.
+        # Isso permite que o processo não morra e se recupere quando o banco voltar.
+        logger.error(
+            f"⚠️  Database unavailable at startup: {type(db_err).__name__}. "
+            f"Server will start but DB-dependent endpoints will fail until the database is reachable."
+        )
 
     # Iniciar serviço MQTT
     from app.services.mqtt_service import start_mqtt_service
@@ -135,6 +144,17 @@ async def db_session_middleware(request: Request, call_next):
     try:
         response = await call_next(request)
         return response
+    except (ConnectionRefusedError, OSError) as e:
+        # Banco de dados inacessível
+        request_id = str(uuid.uuid4())[:8]
+        logger.error(f"Database connection refused [{request_id}]: {e}")
+        return JSONResponse(
+            status_code=503,
+            content={
+                "detail": "Serviço de banco de dados indisponível. Verifique se o PostgreSQL está rodando.",
+                "request_id": request_id
+            }
+        )
     except Exception as e:
         request_id = str(uuid.uuid4())[:8]
         logger.exception(f"Unhandled error [{request_id}]")
