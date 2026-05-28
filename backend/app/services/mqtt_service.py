@@ -27,6 +27,9 @@ _mqtt_task: asyncio.Task | None = None
 _button_dedup: dict[str, dict[str, float]] = {}
 _BUTTON_DEDUP_WINDOW_S = 10.0  # Aumentado de 3s para 10s para evitar duplicatas
 
+# Lock assíncrono para prevenir processamento paralelo da mesma mensagem MQTT
+_mqtt_processing_lock = asyncio.Lock()
+
 
 def _get_mqtt_client_kwargs() -> dict:
     """
@@ -339,16 +342,20 @@ async def _handle_button(mac: str, color: str, payload_raw: bytes):
     """
     Processa eventos de botões publicados pelo ESP32 em andon/button/{mac}/{color}.
     Deduplicação em memória de _BUTTON_DEDUP_WINDOW_S segundos.
+    
+    CRÍTICO: Usa lock assíncrono para prevenir race conditions que causam duplicatas no banco.
     """
     import time
 
-    now_ts = time.monotonic()
-    color_lower = color.lower()
-    last_ts = _button_dedup.get(mac, {}).get(color_lower, 0.0)
-    if (now_ts - last_ts) < _BUTTON_DEDUP_WINDOW_S:
-        logger.debug(f"MQTT button: evento {mac}/{color_lower} duplicado, ignorado.")
-        return
-    _button_dedup.setdefault(mac, {})[color_lower] = now_ts
+    # ── LOCK ASSÍNCRONO: Previne processamento paralelo da mesma mensagem ──
+    async with _mqtt_processing_lock:
+        now_ts = time.monotonic()
+        color_lower = color.lower()
+        last_ts = _button_dedup.get(mac, {}).get(color_lower, 0.0)
+        if (now_ts - last_ts) < _BUTTON_DEDUP_WINDOW_S:
+            logger.debug(f"MQTT button: evento {mac}/{color_lower} duplicado, ignorado.")
+            return
+        _button_dedup.setdefault(mac, {})[color_lower] = now_ts
 
     try:
         action = payload_raw.decode().strip()
@@ -541,15 +548,19 @@ async def _handle_pause(mac: str, payload_raw: bytes):
       - Restaura o status anterior salvo (verde, amarelo, etc.)
       - Chama resume_workorder no Odoo (retoma o timer)
       - Acende LED correspondente ao status restaurado
+      
+    CRÍTICO: Usa lock assíncrono para prevenir race conditions.
     """
     import time
 
-    now_ts = time.monotonic()
-    last_ts = _button_dedup.get(mac, {}).get("pause", 0.0)
-    if (now_ts - last_ts) < 5.0:
-        logger.debug(f"MQTT pause: evento {mac}/pause duplicado, ignorado.")
-        return
-    _button_dedup.setdefault(mac, {})["pause"] = now_ts
+    # ── LOCK ASSÍNCRONO: Previne processamento paralelo ──
+    async with _mqtt_processing_lock:
+        now_ts = time.monotonic()
+        last_ts = _button_dedup.get(mac, {}).get("pause", 0.0)
+        if (now_ts - last_ts) < 5.0:
+            logger.debug(f"MQTT pause: evento {mac}/pause duplicado, ignorado.")
+            return
+        _button_dedup.setdefault(mac, {})["pause"] = now_ts
 
     # ── 1. Buscar dispositivo e status atual ──────────────────────────────────
     from app.models.andon import AndonStatus
