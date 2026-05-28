@@ -101,29 +101,66 @@ async def reset_database(
         "mpr_analytics_snapshot",
     ]
 
+    cleaned_tables = []
+    failed_tables = []
+
     try:
         # Limpar tabelas principais
         for table in core_tables:
             try:
                 await session.execute(text(f'TRUNCATE TABLE "{table}" RESTART IDENTITY CASCADE'))
-                logger.info(f"Tabela {table} limpa com sucesso")
+                cleaned_tables.append(table)
+                logger.info(f"✓ Tabela {table} limpa com sucesso")
             except Exception as e:
-                logger.warning(f"Erro ao limpar tabela {table}: {e}")
-                # Continua mesmo se falhar - pode não existir
+                failed_tables.append(f"{table}: {str(e)}")
+                logger.error(f"✗ Erro ao limpar tabela {table}: {e}")
         
         # Limpar tabelas opcionais
         for table in optional_tables:
             try:
                 await session.execute(text(f'TRUNCATE TABLE "{table}" RESTART IDENTITY CASCADE'))
-                logger.info(f"Tabela opcional {table} limpa com sucesso")
-            except Exception:
-                pass  # tabela pode não existir
+                cleaned_tables.append(table)
+                logger.info(f"✓ Tabela opcional {table} limpa com sucesso")
+            except Exception as e:
+                # Tabelas opcionais podem não existir — não é erro crítico
+                logger.debug(f"Tabela opcional {table} não limpa (pode não existir): {e}")
         
         await session.commit()
-        logger.info("Reset de banco de dados concluído com sucesso")
-        return {"status": "success", "message": "Dados operacionais resetados com sucesso."}
+        
+        # Verificar se as tabelas principais foram realmente limpas
+        from app.models.andon import AndonCall
+        from sqlmodel import select
+        
+        stmt = select(AndonCall)
+        result = await session.execute(stmt)
+        remaining_calls = result.scalars().all()
+        
+        if remaining_calls:
+            # TRUNCATE falhou silenciosamente — forçar DELETE
+            logger.warning(f"TRUNCATE não limpou andon_call ({len(remaining_calls)} registros restantes) — usando DELETE")
+            await session.execute(text('DELETE FROM "andon_call"'))
+            await session.execute(text('DELETE FROM "andon_status"'))
+            await session.execute(text('DELETE FROM "sync_queue"'))
+            await session.commit()
+            
+            # Verificar novamente
+            result2 = await session.execute(stmt)
+            remaining_calls2 = result2.scalars().all()
+            if remaining_calls2:
+                raise Exception(f"Falha ao limpar andon_call: {len(remaining_calls2)} registros ainda presentes após DELETE")
+        
+        logger.info(f"✓ Reset de banco de dados concluído: {len(cleaned_tables)} tabelas limpas")
+        return {
+            "status": "success",
+            "message": "Dados operacionais resetados com sucesso.",
+            "cleaned_tables": cleaned_tables,
+            "failed_tables": failed_tables if failed_tables else None
+        }
     except Exception as e:
         await session.rollback()
         request_id = str(uuid.uuid4())[:8]
         logger.exception(f"Erro ao resetar banco [ref:{request_id}]: {e}")
-        raise HTTPException(status_code=500, detail=f"Erro ao resetar banco [ref: {request_id}]")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erro ao resetar banco [ref: {request_id}]: {str(e)}"
+        )
