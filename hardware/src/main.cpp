@@ -1269,10 +1269,10 @@ void loop() {
 
     // Blink de aguardando broker: vermelho e amarelo alternados quando sem MQTT
     // Ao sair do estado MQTT_CONNECTING, força resincronização dos pinos com as structs
-    // (updateMQTTWaitBlink escreve direto nos pinos sem atualizar as structs LEDState)
+    // (updateMQTTConnectingBlink escreve direto nos pinos sem atualizar as structs LEDState)
     static SystemState prevState = BOOT;
     if (currentState == MQTT_CONNECTING) {
-        updateMQTTWaitBlink();
+        updateMQTTConnectingBlink();
     } else if (prevState == MQTT_CONNECTING) {
         // Acabou de sair do MQTT_CONNECTING — limpa os pinos e aplica status Andon
         digitalWrite(LED_VERMELHO_PIN, LOW);
