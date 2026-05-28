@@ -15,6 +15,7 @@ from app.api.deps import get_session, get_odoo_client, get_current_user
 from app.models.id_request import IDRequest, IDRequestStatus
 from app.models.manufacturing import ManufacturingOrder
 from app.services.status_mappers import map_product_category
+from app.services.odoo_utils import PRODUCTION_DB_NAME
 
 import logging
 
@@ -436,7 +437,7 @@ async def select_odoo_database(
     normalized_name = normalize_database_name(database_name)
     
     # 3. Proteção do banco de produção
-    if normalized_name == "axengenharia1":
+    if normalize_database_name(database_name) == PRODUCTION_DB_NAME:
         logger.warning(f"🚫 Production database selection attempt blocked: {normalized_name}")
         raise HTTPException(
             status_code=403,

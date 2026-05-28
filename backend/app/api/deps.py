@@ -132,3 +132,51 @@ async def verify_webhook_secret(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid webhook secret"
         )
+
+
+async def validate_production_write_protection(
+    session: AsyncSession = Depends(get_session),
+    current_user: Optional[User] = Depends(get_current_user)
+):
+    """
+    Dependência que valida se operações de escrita em produção estão permitidas.
+    
+    REGRA DE PROTEÇÃO:
+    - Se o banco ativo NÃO é produção, BLOQUEIA qualquer escrita que possa afetar produção
+    - Se o banco ativo É produção, PERMITE escritas normalmente
+    
+    Esta dependência deve ser usada em TODOS os endpoints que realizam operações
+    de escrita (POST, PUT, PATCH, DELETE) que possam afetar dados do Odoo.
+    
+    Raises:
+        HTTPException 403: Quando tentativa de escrita em produção é bloqueada
+        
+    Examples:
+        @router.post("/batches")
+        async def create_batch(
+            ...,
+            _: None = Depends(validate_production_write_protection)
+        ):
+            # Código do endpoint
+    """
+    from app.services.odoo_utils import is_production_write_blocked, get_active_odoo_db
+    
+    # Verificar se escritas em produção estão bloqueadas
+    if await is_production_write_blocked(session):
+        active_db = await get_active_odoo_db(session)
+        logger.warning(
+            f"🚫 PRODUCTION WRITE BLOCKED: User '{current_user.username if current_user else 'anonymous'}' "
+            f"attempted write operation while active database is '{active_db}' (not production)"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                f"Operação bloqueada: O banco ativo é '{active_db}' (ambiente de teste). "
+                f"Não é permitido modificar o banco de produção quando outro banco está selecionado. "
+                f"Para realizar operações em produção, selecione o banco de produção nas configurações."
+            )
+        )
+    
+    # Se chegou aqui, está em produção e pode escrever
+    logger.debug(f"✓ Production write allowed for user '{current_user.username if current_user else 'anonymous'}'")
+

@@ -13,6 +13,13 @@ from sqlmodel import select
 
 logger = logging.getLogger(__name__)
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# CONSTANTES DE PROTEÇÃO DE PRODUÇÃO
+# ═══════════════════════════════════════════════════════════════════════════════
+
+PRODUCTION_DB_NAME = "axengenharia1"
+"""Nome do banco de dados de produção que deve ser protegido contra modificações acidentais."""
+
 
 async def get_active_odoo_db(session: AsyncSession) -> str:
     """
@@ -145,7 +152,52 @@ def classify_database(db_name: str) -> str:
         >>> classify_database("teste-dres")
         'test'
     """
-    return "production" if db_name == "axengenharia1" else "test"
+    return "production" if db_name == PRODUCTION_DB_NAME else "test"
+
+
+def is_production_environment(db_name: str) -> bool:
+    """
+    Verifica se um banco de dados é o ambiente de produção.
+    
+    Args:
+        db_name: Nome do banco de dados a verificar
+        
+    Returns:
+        bool: True se for o banco de produção, False caso contrário
+        
+    Examples:
+        >>> is_production_environment("axengenharia1")
+        True
+        >>> is_production_environment("teste-22-03")
+        False
+    """
+    return db_name == PRODUCTION_DB_NAME
+
+
+async def is_production_write_blocked(session: AsyncSession) -> bool:
+    """
+    Verifica se operações de escrita no banco de produção estão bloqueadas.
+    
+    Retorna True quando o banco ativo NÃO é produção, indicando que qualquer
+    tentativa de escrita em produção deve ser bloqueada.
+    
+    Args:
+        session: AsyncSession do SQLModel
+        
+    Returns:
+        bool: True se escritas em produção devem ser bloqueadas, False caso contrário
+        
+    Examples:
+        >>> # Quando banco ativo é "teste-22-03"
+        >>> await is_production_write_blocked(session)
+        True  # Bloquear escritas em produção
+        
+        >>> # Quando banco ativo é "axengenharia1"
+        >>> await is_production_write_blocked(session)
+        False  # Permitir escritas em produção
+    """
+    active_db = await get_active_odoo_db(session)
+    return not is_production_environment(active_db)
 
 
 def is_selectable(db_type: str) -> bool:
