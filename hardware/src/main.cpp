@@ -97,6 +97,9 @@ unsigned long g_wifiLostAt = 0;   // 0 = WiFi está ok
 unsigned long g_pauseHeldSince = 0;
 #define RESET_HOLD_MS 5000UL
 
+// Pause local: estado anterior ao GRAY para restaurar ao despausar
+String g_preGrayStatus = "UNKNOWN";
+
 // Retry WiFi em MESH_NODE: tenta reconectar periodicamente
 Timer wifiRetryTimer = {WIFI_RETRY_INTERVAL_MS, 0};
 
@@ -1044,7 +1047,29 @@ void handleOperational() {
     if (greenButton.pressed)  { publishButtonEvent("green");  greenButton.pressed  = false; }
     if (yellowButton.pressed) { publishButtonEvent("yellow"); yellowButton.pressed = false; }
     if (redButton.pressed)    { publishButtonEvent("red");    redButton.pressed    = false; }
-    if (blueButton.pressed)   { publishButtonEvent("blue");   blueButton.pressed   = false; }
+    if (blueButton.pressed) {
+        // Toggle pause local imediato — não espera resposta do backend
+        if (g_andonStatus == "GRAY") {
+            // Despausar: restaura estado anterior
+            g_andonStatus = (g_preGrayStatus != "UNKNOWN" && g_preGrayStatus != "GRAY")
+                            ? g_preGrayStatus : "GREEN";
+            g_preGrayStatus = "UNKNOWN";
+            updateAndonLEDs();
+            logSerial("PAUSE: desativado -> " + g_andonStatus);
+        } else {
+            // Pausar: salva estado atual e vai para GRAY
+            g_preGrayStatus = g_andonStatus;
+            g_andonStatus   = "GRAY";
+            // LEDs apagados — o blink GRAY no loop() assume o controle
+            digitalWrite(LED_VERDE_PIN,    LOW);
+            digitalWrite(LED_AMARELO_PIN,  LOW);
+            digitalWrite(LED_VERMELHO_PIN, LOW);
+            digitalWrite(LED_AZUL_PIN,     LOW);
+            logSerial("PAUSE: ativado (era " + g_preGrayStatus + ")");
+        }
+        publishButtonEvent("blue");
+        blueButton.pressed = false;
+    }
 
     if (checkTimer(&heartbeatTimer)) {
         StaticJsonDocument<128> hb;
@@ -1080,7 +1105,26 @@ void handleMeshNode() {
     if (greenButton.pressed)  { publishButtonEvent("green");  greenButton.pressed  = false; }
     if (yellowButton.pressed) { publishButtonEvent("yellow"); yellowButton.pressed = false; }
     if (redButton.pressed)    { publishButtonEvent("red");    redButton.pressed    = false; }
-    if (blueButton.pressed)   { publishButtonEvent("blue");   blueButton.pressed   = false; }
+    if (blueButton.pressed) {
+        // Toggle pause local imediato — mesmo comportamento do nó raiz
+        if (g_andonStatus == "GRAY") {
+            g_andonStatus = (g_preGrayStatus != "UNKNOWN" && g_preGrayStatus != "GRAY")
+                            ? g_preGrayStatus : "GREEN";
+            g_preGrayStatus = "UNKNOWN";
+            updateAndonLEDs();
+            logSerial("PAUSE: desativado -> " + g_andonStatus);
+        } else {
+            g_preGrayStatus = g_andonStatus;
+            g_andonStatus   = "GRAY";
+            digitalWrite(LED_VERDE_PIN,    LOW);
+            digitalWrite(LED_AMARELO_PIN,  LOW);
+            digitalWrite(LED_VERMELHO_PIN, LOW);
+            digitalWrite(LED_AZUL_PIN,     LOW);
+            logSerial("PAUSE: ativado (era " + g_preGrayStatus + ")");
+        }
+        publishButtonEvent("blue");
+        blueButton.pressed = false;
+    }
 
     // Heartbeat + discovery periódico via mesh para o backend ver a folha
     if (checkTimer(&heartbeatTimer)) {
