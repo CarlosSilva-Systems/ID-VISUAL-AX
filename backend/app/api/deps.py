@@ -100,17 +100,19 @@ async def get_odoo_client(
 ):
     from app.services.odoo_client import OdooClient
     from app.services.odoo_utils import get_active_odoo_db
-    
+
     # Obter banco ativo dinamicamente
     active_db = await get_active_odoo_db(session)
-    
-    # URL Dinâmica: Staging vs Produção
-    # Se o usuário está em modo teste e tem uma URL configurada, usamos ela.
-    # Caso contrário, fallback para a URL padrão dos settings.
+
+    # URL Dinâmica: prioridade para modo teste do usuário, depois SaaS/self-hosted.
     odoo_url = settings.ODOO_URL
     if current_user and current_user.is_odoo_test_mode and current_user.odoo_test_url:
         odoo_url = current_user.odoo_test_url
         logger.info(f"Usuário {current_user.username} operando em MODO TESTE: {odoo_url}")
+    elif "odoo.com" in settings.ODOO_URL and active_db != settings.ODOO_DB:
+        # SaaS: cada banco tem seu próprio subdomínio — ajusta URL automaticamente
+        odoo_url = f"https://{active_db}.odoo.com"
+        logger.info(f"SaaS URL ajustada para banco ativo '{active_db}': {odoo_url}")
 
     client = OdooClient(
         url=odoo_url,

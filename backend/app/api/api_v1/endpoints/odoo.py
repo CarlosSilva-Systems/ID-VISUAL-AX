@@ -311,16 +311,16 @@ async def list_odoo_databases(
     current_user: Any = Depends(get_current_user)
 ) -> Any:
     """
-    Lista todos os bancos de dados disponíveis no servidor Odoo.
-    
-    Classifica cada banco como 'production' ou 'test' e marca o banco ativo atual.
-    O banco de produção (axengenharia1) é marcado como não selecionável.
-    
+    Lista os bancos de dados disponíveis no servidor Odoo.
+
+    Em instâncias SaaS do Odoo.com, o endpoint /web/database/list é desabilitado
+    por segurança. Nesses casos, o sistema retorna o banco configurado no .env
+    (ODOO_DB) como fallback estático, garantindo que a UI funcione corretamente.
+
     Returns:
         List[DatabaseInfo]: Lista de bancos com metadados
-        
+
     Raises:
-        HTTPException 502: Falha ao conectar com servidor Odoo
         HTTPException 504: Timeout na conexão com Odoo
     """
     import httpx
@@ -329,9 +329,16 @@ async def list_odoo_databases(
         classify_database,
         is_selectable
     )
-    
+
+    # 2. Obter banco ativo atual (independente da listagem remota)
+    active_db = await get_active_odoo_db(session)
+
+    database_names: list[str] = []
+    saas_fallback = False
+
     try:
-        # 1. Consultar lista de bancos no servidor Odoo
+        # 1. Tentar consultar lista de bancos no servidor Odoo
+        # Nota: instâncias SaaS (.odoo.com) desabilitam este endpoint — tratado abaixo.
         async with httpx.AsyncClient(timeout=10.0) as http_client:
             response = await http_client.post(
                 f"{settings.ODOO_URL}/web/database/list",
@@ -339,35 +346,14 @@ async def list_odoo_databases(
             )
             response.raise_for_status()
             data = response.json()
-            
+
             # Odoo retorna {"jsonrpc": "2.0", "result": ["db1", "db2", ...]}
             database_names = data.get("result", [])
-            
+
             if not database_names:
-                logger.warning("Odoo returned empty database list")
-                return []
-        
-        # 2. Obter banco ativo atual
-        active_db = await get_active_odoo_db(session)
-        
-        # 3. Processar cada banco
-        databases = []
-        for db_name in database_names:
-            db_type = classify_database(db_name)
-            
-            databases.append({
-                "name": db_name,
-                "type": db_type,
-                "selectable": is_selectable(db_type),
-                "is_active": db_name == active_db
-            })
-        
-        # 4. Ordenar: production primeiro, depois test alfabético
-        databases.sort(key=lambda x: (x["type"] != "production", x["name"]))
-        
-        logger.info(f"Listed {len(databases)} Odoo databases. Active: {active_db}")
-        return databases
-        
+                logger.warning("Odoo returned empty database list — using ODOO_DB fallback")
+                saas_fallback = True
+
     except httpx.TimeoutException as e:
         request_id = str(uuid.uuid4())[:8]
         logger.error(f"Timeout listing Odoo databases [ref:{request_id}]: {e}")
@@ -375,21 +361,41 @@ async def list_odoo_databases(
             status_code=504,
             detail="O servidor Odoo demorou muito para responder. Tente novamente."
         )
-    except httpx.HTTPStatusError as e:
-        request_id = str(uuid.uuid4())[:8]
-        logger.error(f"HTTP error listing Odoo databases [ref:{request_id}]: {e}")
-        raise HTTPException(
-            status_code=502,
-            detail=f"Erro ao conectar com servidor Odoo [ref: {request_id}]"
-        )
-    except Exception as e:
-        request_id = str(uuid.uuid4())[:8]
+    except (httpx.HTTPStatusError, httpx.RequestError, Exception) as e:
+        # SaaS Odoo.com retorna 404 ou 403 neste endpoint — fallback gracioso.
         safe_msg = str(e).replace(settings.ODOO_SERVICE_PASSWORD or "", "***")
-        logger.exception(f"Failed to list Odoo databases [ref:{request_id}]: {safe_msg}")
-        raise HTTPException(
-            status_code=502,
-            detail=f"Erro ao listar bancos de dados Odoo [ref: {request_id}]"
+        logger.warning(
+            f"Não foi possível listar bancos via /web/database/list "
+            f"(provável instância SaaS): {safe_msg}. "
+            f"Usando ODOO_DB='{settings.ODOO_DB}' como fallback."
         )
+        saas_fallback = True
+
+    # Fallback: usar o banco configurado no .env quando a listagem remota não está disponível
+    if saas_fallback or not database_names:
+        # Garante que o banco ativo também aparece na lista, mesmo que seja diferente do ODOO_DB
+        known_dbs = list({settings.ODOO_DB, active_db} - {""})
+        database_names = sorted(known_dbs)
+
+    # 3. Processar cada banco
+    databases = []
+    for db_name in database_names:
+        db_type = classify_database(db_name)
+        databases.append({
+            "name": db_name,
+            "type": db_type,
+            "selectable": is_selectable(db_type),
+            "is_active": db_name == active_db
+        })
+
+    # 4. Ordenar: production primeiro, depois test alfabético
+    databases.sort(key=lambda x: (x["type"] != "production", x["name"]))
+
+    logger.info(
+        f"Listed {len(databases)} Odoo databases "
+        f"({'SaaS fallback' if saas_fallback else 'remote list'}). Active: {active_db}"
+    )
+    return databases
 
 
 @router.post("/databases/select", response_model=dict)
@@ -446,8 +452,18 @@ async def select_odoo_database(
     
     # 4. Testar conexão com Service Account
     try:
+        # Para instâncias SaaS do Odoo.com, cada banco tem seu próprio subdomínio.
+        # Construímos a URL correta: https://<database>.odoo.com
+        # Para instâncias self-hosted, usamos settings.ODOO_URL diretamente.
+        if "odoo.com" in settings.ODOO_URL:
+            # SaaS: URL baseada no nome do banco
+            test_url = f"https://{normalized_name}.odoo.com"
+        else:
+            # Self-hosted: mesma URL base
+            test_url = settings.ODOO_URL
+
         test_client = OdooClient(
-            url=settings.ODOO_URL,
+            url=test_url,
             db=normalized_name,
             auth_type=settings.ODOO_AUTH_TYPE,
             login=settings.ODOO_SERVICE_LOGIN,

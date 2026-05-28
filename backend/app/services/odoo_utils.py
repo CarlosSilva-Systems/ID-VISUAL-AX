@@ -18,7 +18,12 @@ logger = logging.getLogger(__name__)
 # ═══════════════════════════════════════════════════════════════════════════════
 
 PRODUCTION_DB_NAME = "axengenharia1"
-"""Nome do banco de dados de produção que deve ser protegido contra modificações acidentais."""
+"""
+Nome do banco de dados de produção que deve ser protegido contra modificações acidentais.
+
+Este valor é usado para classificar bancos como 'production' vs 'test' e para
+bloquear seleção acidental do banco de produção via UI.
+"""
 
 
 async def get_active_odoo_db(session: AsyncSession) -> str:
