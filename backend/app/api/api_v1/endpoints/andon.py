@@ -471,6 +471,26 @@ async def create_andon_call(
     from app.api.api_v1.endpoints.sync import update_sync_version
 
     try:
+        # ── DEDUPLICAÇÃO: Verificar se já existe chamado idêntico recente (últimos 10s) ──
+        # Evita duplicatas causadas por double-click, race conditions MQTT+HTTP, ou polling agressivo
+        recent_threshold = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(seconds=10)
+        stmt_recent = select(AndonCall).where(
+            AndonCall.workcenter_id == req.workcenter_id,
+            AndonCall.color == req.color,
+            AndonCall.created_at >= recent_threshold,
+            AndonCall.status != "RESOLVED"
+        )
+        res_recent = await session.execute(stmt_recent)
+        recent_duplicate = res_recent.scalars().first()
+        
+        if recent_duplicate:
+            logger.warning(
+                f"[Andon Dedup] Chamado duplicado detectado: workcenter={req.workcenter_id} "
+                f"color={req.color} — ignorando (chamado existente: #{recent_duplicate.id})"
+            )
+            # Retornar o chamado existente em vez de criar duplicata
+            return recent_duplicate
+        
         # Resolver chamados anteriores do mesmo workcenter antes de criar novo
         # Garante que app e ESP32 ficam sempre sincronizados — sem estados conflitantes
         stmt_prev = select(AndonCall).where(

@@ -8,7 +8,7 @@ Tópicos:
 import asyncio
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -25,7 +25,7 @@ _mqtt_task: asyncio.Task | None = None
 # Deduplicação de eventos de botão em memória
 # Estrutura: { mac: { color: last_processed_timestamp } }
 _button_dedup: dict[str, dict[str, float]] = {}
-_BUTTON_DEDUP_WINDOW_S = 3.0
+_BUTTON_DEDUP_WINDOW_S = 10.0  # Aumentado de 3s para 10s para evitar duplicatas
 
 
 def _get_mqtt_client_kwargs() -> dict:
@@ -455,6 +455,29 @@ async def _handle_button(mac: str, color: str, payload_raw: bytes):
             prev_call.resolved_note = f"Substituído por novo acionamento {button_config['call_color']} via ESP32 ({device.device_name})"
             prev_call.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
             session.add(prev_call)
+
+        # ── DEDUPLICAÇÃO NO BANCO: Verificar se já existe chamado idêntico recente (últimos 10s) ──
+        # Proteção adicional contra duplicatas no banco de dados
+        recent_threshold = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(seconds=10)
+        stmt_recent = select(AndonCall).where(
+            AndonCall.workcenter_id == device.workcenter_id,
+            AndonCall.color == button_config["call_color"],
+            AndonCall.created_at >= recent_threshold
+        )
+        res_recent = await session.execute(stmt_recent)
+        recent_duplicate = res_recent.scalars().first()
+        
+        if recent_duplicate:
+            logger.warning(
+                f"[MQTT Dedup] Chamado duplicado detectado no banco: workcenter={device.workcenter_id} "
+                f"color={button_config['call_color']} mac={mac} — ignorando (chamado existente: #{recent_duplicate.id})"
+            )
+            # Não criar novo chamado, apenas atualizar estado e notificar
+            await session.commit()
+            from app.api.api_v1.endpoints.sync import update_sync_version
+            update_sync_version("andon_version")
+            await _send_andon_state(mac, button_config["call_color"])
+            return
 
         call = AndonCall(
             color=button_config["call_color"],
