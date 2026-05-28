@@ -346,15 +346,24 @@ async def _handle_button(mac: str, color: str, payload_raw: bytes):
     CRÍTICO: Usa lock assíncrono para prevenir race conditions que causam duplicatas no banco.
     """
     import time
+    import traceback
+    
+    # LOG DETALHADO TEMPORÁRIO - REMOVER APÓS DEBUG
+    logger.warning(f"[DEBUG] _handle_button CHAMADO: mac={mac} color={color} thread={id(asyncio.current_task())} stack_trace={''.join(traceback.format_stack()[-3:-1])}")
 
     # ── LOCK ASSÍNCRONO: Previne processamento paralelo da mesma mensagem ──
     async with _mqtt_processing_lock:
         now_ts = time.monotonic()
         color_lower = color.lower()
         last_ts = _button_dedup.get(mac, {}).get(color_lower, 0.0)
+        
+        logger.warning(f"[DEBUG] Dentro do lock: now={now_ts:.3f} last={last_ts:.3f} diff={(now_ts - last_ts):.3f}s")
+        
         if (now_ts - last_ts) < _BUTTON_DEDUP_WINDOW_S:
-            logger.debug(f"MQTT button: evento {mac}/{color_lower} duplicado, ignorado.")
+            logger.warning(f"[DEBUG] BLOQUEADO POR DEBOUNCE: {mac}/{color_lower}")
             return
+        
+        logger.warning(f"[DEBUG] PASSOU DEBOUNCE - vai processar: {mac}/{color_lower}")
         _button_dedup.setdefault(mac, {})[color_lower] = now_ts
 
     try:
