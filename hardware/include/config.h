@@ -9,8 +9,8 @@
 #define FIRMWARE_BUILD_DATE __DATE__
 
 // ─── WiFi ──────────────────────────────────────────────────
-#define WIFI_SSID           "AX-CORPORATIVO"
-#define WIFI_PASSWORD       "auto@bacia"
+#define WIFI_SSID           "AX AUTOMACAO"
+#define WIFI_PASSWORD       "axautomacao123"
 // Tempo máximo aguardando WL_CONNECTED antes de cair para mesh.
 // Sem scan prévio — WiFi.begin() direto evita conflito com painlessMesh.
 #define WIFI_TIMEOUT_MS     15000UL     // 15s
