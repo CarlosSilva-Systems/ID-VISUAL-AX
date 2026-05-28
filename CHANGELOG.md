@@ -10,6 +10,16 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 ### Adicionado
 
 #### Backend
+- **Sistema de Proteção de Banco de Dados de Produção** 🛡️
+  - Constante `PRODUCTION_DB_NAME` para identificar banco de produção
+  - Função `is_production_environment()` para detectar ambiente de produção
+  - Função `is_production_write_blocked()` para validar proteção de escritas
+  - Dependência `validate_production_write_protection()` para endpoints de escrita
+  - Bloqueio automático de operações de escrita em produção quando banco ativo é de teste
+  - Logs de auditoria para todas as tentativas de escrita bloqueadas
+  - Proteção em 4 camadas: UI → API → Dependência → Validação
+  - Testes unitários completos com cobertura de casos extremos e invariantes de segurança
+
 - **Seleção Dinâmica de Banco de Dados Odoo**
   - Endpoint `GET /api/v1/odoo/databases` para listar bancos disponíveis
   - Endpoint `POST /api/v1/odoo/databases/select` para selecionar banco ativo
@@ -65,6 +75,19 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
   - Tratamento robusto de erros sem interromper funcionalidade principal
 
 #### Frontend
+- **Sistema de Proteção de Banco de Dados de Produção** 🛡️
+  - Constante `PRODUCTION_DB_NAME` para identificar banco de produção
+  - Funções `isProductionEnvironment()` e `isCurrentlyInProduction()` para detecção de ambiente
+  - Componente `EnvironmentBadge` com indicador visual de ambiente:
+    - 🟢 PRODUÇÃO ATIVA (verde) quando em produção
+    - 🔵 AMBIENTE DE TESTE (azul) quando em teste
+    - ✅ Mensagem "Banco de produção está protegido" em modo teste
+  - Confirmação dupla ao sair de produção com diálogo nativo
+  - Ícone de cadeado (🔒) no banco de produção no dropdown
+  - Aviso de proteção ativa no topo do componente
+  - Mensagem de erro específica quando banco de produção está protegido
+  - UI redesenhada com espaçamento e hierarquia visual melhorados
+
 - **Componente DatabaseSelector**
   - Dropdown para seleção de banco de dados na tela de Configurações
   - Ícones visuais: 🟢 (production), 🟡 (test)
@@ -148,6 +171,17 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
   - Constante `FIRMWARE_VERSION` para identificação de versão
 
 #### Documentação
+- **Sistema de Proteção de Banco de Dados** (`docs/DATABASE_PROTECTION_SYSTEM.md`)
+  - Arquitetura completa de 4 camadas de segurança
+  - Implementação técnica detalhada (backend e frontend)
+  - Exemplos de código e uso em endpoints
+  - Fluxos de uso documentados (produção, teste, bloqueios)
+  - Casos de teste e invariantes de segurança
+  - Checklist de segurança completo
+  - Lista de endpoints que devem usar proteção
+  - Guia de troubleshooting
+  - Logs de auditoria documentados
+
 - README.md do backend atualizado com:
   - Documentação de novos endpoints
   - Arquitetura de banco de dados ativo
@@ -209,6 +243,15 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
   - Nova aba "Atualizações" com componente `OTASettings`
 
 ### Segurança
+
+- **Sistema de Proteção de Banco de Dados de Produção** 🛡️
+  - Proteção em 4 camadas (UI → API → Dependência → Validação)
+  - Banco de produção NUNCA pode ser selecionado quando sistema está em teste
+  - Bloqueio automático de TODAS as operações de escrita em produção quando banco ativo é de teste
+  - Logs de auditoria para todas as tentativas de acesso bloqueadas
+  - Confirmação dupla ao sair de produção
+  - Testes unitários garantindo invariantes de segurança
+  - Documentação completa do sistema de proteção
 
 - Credenciais sensíveis nunca expostas em logs ou respostas HTTP
 - Validação de input no backend para todos os endpoints
