@@ -83,3 +83,28 @@ async def debug_andon_duplicates(
         "duplicates": duplicates,
         "all_calls": all_calls
     }
+
+
+@router.get("/debug/mqtt-logs")
+async def debug_mqtt_logs() -> Dict[str, Any]:
+    """
+    Endpoint temporário para ver logs MQTT recentes.
+    
+    Retorna os últimos logs do handler MQTT para debug.
+    """
+    import logging
+    
+    # Capturar logs do logger mqtt_service
+    mqtt_logger = logging.getLogger("app.services.mqtt_service")
+    
+    # Retornar informações sobre o estado atual
+    from app.services.mqtt_service import _button_dedup, _BUTTON_DEDUP_WINDOW_S
+    
+    return {
+        "debounce_window_seconds": _BUTTON_DEDUP_WINDOW_S,
+        "current_dedup_state": {
+            mac: {color: f"{ts:.3f}" for color, ts in colors.items()}
+            for mac, colors in _button_dedup.items()
+        },
+        "message": "Aperte o botão e chame este endpoint novamente para ver o estado atualizado"
+    }
