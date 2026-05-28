@@ -1091,7 +1091,7 @@ void handleOperational() {
             digitalWrite(LED_AZUL_PIN,     LOW);
             logSerial("PAUSE: ativado (era " + g_preGrayStatus + ")");
         }
-        publishButtonEvent("blue");
+        publishButtonEvent("pause");  // Backend espera "pause" não "blue"
         blueButton.pressed = false;
     }
 
@@ -1147,7 +1147,7 @@ void handleMeshNode() {
             digitalWrite(LED_AZUL_PIN,     LOW);
             logSerial("PAUSE: ativado (era " + g_preGrayStatus + ")");
         }
-        publishButtonEvent("blue");
+        publishButtonEvent("pause");  // Backend espera "pause" não "blue"
         blueButton.pressed = false;
     }
 
