@@ -867,15 +867,40 @@ async def _send_andon_state(mac: str, state: str):
     try:
         import aiomqtt
 
-        host = getattr(settings, "MQTT_BROKER_HOST", "localhost")
-        port = int(getattr(settings, "MQTT_BROKER_PORT", 1883))
+        client_kwargs = _get_mqtt_client_kwargs()
         topic = f"andon/state/{mac}"
 
-        async with aiomqtt.Client(hostname=host, port=port) as client:
+        async with aiomqtt.Client(**client_kwargs) as client:
             await client.publish(topic, state, qos=1)
             logger.info(f"MQTT: Estado {state} enviado para {mac}")
     except Exception as e:
         logger.error(f"MQTT: Erro ao enviar estado para {mac} — {e}")
+
+
+async def send_andon_state_by_workcenter(workcenter_id: int, state: str):
+    """
+    Busca o dispositivo ESP32 vinculado ao workcenter e envia o estado via MQTT.
+    
+    Usado para sincronizar o ESP32 quando o estado muda no Odoo ou no backend.
+    
+    Args:
+        workcenter_id: ID do workcenter no Odoo
+        state: Estado Andon (GREEN, YELLOW, RED, GRAY, UNASSIGNED)
+    """
+    try:
+        async with async_session_factory() as session:
+            stmt = select(ESPDevice).where(ESPDevice.workcenter_id == workcenter_id)
+            result = await session.execute(stmt)
+            device = result.scalars().first()
+            
+            if not device:
+                logger.debug(f"send_andon_state_by_workcenter: nenhum dispositivo vinculado ao workcenter {workcenter_id}")
+                return
+            
+            await _send_andon_state(device.mac_address, state)
+            logger.info(f"send_andon_state_by_workcenter: estado {state} enviado para workcenter {workcenter_id} (device {device.mac_address})")
+    except Exception as e:
+        logger.error(f"send_andon_state_by_workcenter: erro ao enviar estado para workcenter {workcenter_id} — {e}")
 
 
 async def notify_odoo_error(mac: str):
