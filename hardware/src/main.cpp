@@ -1109,7 +1109,7 @@ void handleOperational() {
     // Botão azul (pause): sempre funciona, SEM intertravamento
     // É ele que tira o estado GRAY, então não pode ser bloqueado
     if (blueButton.pressed) {
-        publishButtonEvent("blue");
+        publishButtonEvent("pause");  // Backend espera "pause" não "blue"
         g_lastButtonPress = now;  // Atualiza para bloquear outros botões
         logSerial("PAUSE: solicitacao enviada ao Odoo (estado atual: " + g_andonStatus + ")");
         blueButton.pressed = false;
@@ -1187,7 +1187,7 @@ void handleMeshNode() {
     }
     
     if (blueButton.pressed) {
-        publishButtonEvent("blue");
+        publishButtonEvent("pause");  // Backend espera "pause" não "blue"
         g_lastButtonPress = now;  // Atualiza para bloquear outros botões
         logSerial("PAUSE: solicitacao enviada ao Odoo (estado atual: " + g_andonStatus + ")");
         blueButton.pressed = false;
