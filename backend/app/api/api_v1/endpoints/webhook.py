@@ -13,11 +13,27 @@ from app.api.api_v1.endpoints.sync import update_sync_version
 router = APIRouter()
 
 class OdooWorkorderWebhook(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    wo_id: int
-    new_state: str
-    timestamp: float
-    company_id: int
+    """
+    Schema flexível para webhooks do Odoo.
+    
+    Suporta dois formatos:
+    1. Formato legado (manual): {"wo_id": 123, "new_state": "progress", "timestamp": 123.0, "company_id": 1}
+    2. Formato Odoo 19 nativo: {"_id": 429, "_model": "mrp.workorder", "id": 429, "state": "done"}
+    """
+    model_config = ConfigDict(extra="allow")  # Permite campos extras do Odoo
+    
+    # Formato legado (manual)
+    wo_id: Optional[int] = None
+    new_state: Optional[str] = None
+    timestamp: Optional[float] = None
+    company_id: Optional[int] = None
+    
+    # Formato Odoo 19 nativo
+    id: Optional[int] = None
+    _id: Optional[int] = None
+    state: Optional[str] = None
+    _model: Optional[str] = None
+    _action: Optional[str] = None
 
 @router.post("/odoo/workorder", dependencies=[Depends(verify_webhook_secret)])
 async def odoo_workorder_webhook(
@@ -31,26 +47,52 @@ async def odoo_workorder_webhook(
     
     CRÍTICO: Sincroniza estado com ESP32 via MQTT para garantir que
     pausas/retomadas no Odoo sejam refletidas no botão físico.
+    
+    Suporta dois formatos de payload:
+    - Formato legado (manual): {"wo_id": 123, "new_state": "progress", ...}
+    - Formato Odoo 19 nativo: {"id": 429, "state": "done", "_model": "mrp.workorder", ...}
     """
-    # 0. Replay protection — rejeita timestamps expirados OU no futuro
-    now = time.time()
-    if payload.timestamp > now or abs(now - payload.timestamp) > 300:
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    # ── 0. Normalizar payload (detectar formato) ──────────────────────────────
+    # Formato Odoo 19 nativo usa "id" e "state", formato legado usa "wo_id" e "new_state"
+    if payload.id is not None and payload.state is not None:
+        # Formato Odoo 19 nativo
+        wo_id = payload.id
+        new_state = payload.state
+        logger.info(f"[Webhook] Formato Odoo 19 detectado: wo_id={wo_id} state={new_state}")
+    elif payload.wo_id is not None and payload.new_state is not None:
+        # Formato legado (manual)
+        wo_id = payload.wo_id
+        new_state = payload.new_state
+        logger.info(f"[Webhook] Formato legado detectado: wo_id={wo_id} new_state={new_state}")
+    else:
         raise HTTPException(
             status_code=400,
-            detail="Webhook timestamp inválido ou expirado"
+            detail="Payload inválido: esperado 'id'+'state' (Odoo 19) ou 'wo_id'+'new_state' (legado)"
         )
+    
+    # ── 1. Replay protection (apenas para formato legado com timestamp) ───────
+    if payload.timestamp is not None:
+        now = time.time()
+        if payload.timestamp > now or abs(now - payload.timestamp) > 300:
+            raise HTTPException(
+                status_code=400,
+                detail="Webhook timestamp inválido ou expirado"
+            )
         
     # 1. Buscar a WO para identificar o workcenter
     # Nota: No futuro, o Odoo pode enviar o wc_id diretamente no payload
     wo_data = await odoo.search_read(
         "mrp.workorder",
-        domain=[["id", "=", payload.wo_id]],
+        domain=[["id", "=", wo_id]],
         fields=["workcenter_id"],
         limit=1
     )
     
     if not wo_data:
-        raise HTTPException(status_code=404, detail="Workorder not found in Odoo")
+        raise HTTPException(status_code=404, detail=f"Workorder {wo_id} not found in Odoo")
     
     wc_id = wo_data[0]["workcenter_id"][0]
     wc_name = wo_data[0]["workcenter_id"][1]
@@ -60,9 +102,13 @@ async def odoo_workorder_webhook(
     res_status = await session.execute(stmt_status)
     andon_status = res_status.scalars().first()
     
-    # Mapeamento simples de estado Odoo para Cor Andon
-    new_color = "verde" if payload.new_state == "progress" else "cinza"
-    mqtt_state = "GREEN" if payload.new_state == "progress" else "GRAY"
+    # Mapeamento de estado Odoo para Cor Andon
+    # Estados Odoo: ready, progress, done, cancel, pending, pause
+    # Estados Andon: verde (progress), cinza (pause/pending/done/cancel)
+    new_color = "verde" if new_state == "progress" else "cinza"
+    mqtt_state = "GREEN" if new_state == "progress" else "GRAY"
+    
+    logger.info(f"[Webhook] WO {wo_id} → workcenter {wc_id} ({wc_name}) | state={new_state} → andon={new_color} mqtt={mqtt_state}")
     
     if andon_status:
         # Idempotência simples: só atualiza se o estado do Odoo for 'progress' 
@@ -71,7 +117,7 @@ async def odoo_workorder_webhook(
         # a cor visual no dashboard, mas o estado de *referência* operacional muda.
         
         # Se mudou para progress, resolvemos chamados
-        if payload.new_state == "progress":
+        if new_state == "progress":
             andon_status.status = "verde"
             
             # Autorresolução de chamados bloqueantes
@@ -97,9 +143,9 @@ async def odoo_workorder_webhook(
                         )
                     except Exception as e:
                         # Não falhar o webhook se o chatter falhar
-                        pass
+                        logger.warning(f"[Webhook] Falha ao postar chatter para MO {call.mo_id}: {e}")
 
-        elif payload.new_state in ["pause", "pending"]:
+        elif new_state in ["pause", "pending"]:
             # Se pausou no Odoo e não temos chamado vermelho/amarelo bloqueante,
             # o status de referência vai para cinza.
             # Salvar estado anterior para permitir retomada correta
@@ -107,6 +153,12 @@ async def odoo_workorder_webhook(
                 # Salvar estado anterior no campo updated_by com prefixo "prev:"
                 andon_status.updated_by = f"prev:{andon_status.status}"
             andon_status.status = "cinza"
+        
+        elif new_state in ["done", "cancel"]:
+            # WO finalizada ou cancelada → mesa fica disponível (cinza)
+            andon_status.status = "cinza"
+            if not andon_status.updated_by or not andon_status.updated_by.startswith("prev:"):
+                andon_status.updated_by = "Odoo Sync (WO finalizada)"
 
         andon_status.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
         if not andon_status.updated_by or not andon_status.updated_by.startswith("prev:"):
@@ -121,4 +173,6 @@ async def odoo_workorder_webhook(
     from app.services.mqtt_service import send_andon_state_by_workcenter
     await send_andon_state_by_workcenter(wc_id, mqtt_state)
     
-    return {"status": "ok", "processed": True, "workcenter_id": wc_id, "new_state": mqtt_state}
+    logger.info(f"[Webhook] Processado com sucesso: WO {wo_id} → workcenter {wc_id} → MQTT {mqtt_state}")
+    
+    return {"status": "ok", "processed": True, "workcenter_id": wc_id, "new_state": mqtt_state, "wo_id": wo_id}
