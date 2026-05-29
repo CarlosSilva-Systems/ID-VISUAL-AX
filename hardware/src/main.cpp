@@ -97,8 +97,9 @@ unsigned long g_wifiLostAt = 0;   // 0 = WiFi está ok
 unsigned long g_pauseHeldSince = 0;
 #define RESET_HOLD_MS 5000UL
 
-// Pause local: estado anterior ao GRAY para restaurar ao despausar
-String g_preGrayStatus = "UNKNOWN";
+// Intertravamento de botões: tempo mínimo entre acionamentos
+unsigned long g_lastButtonPress = 0;
+#define BUTTON_INTERLOCK_MS 2000UL  // 2 segundos entre botões
 
 // Flag para resetar o blink GRAY ao entrar no estado — evita azul contínuo
 bool g_pauseBlinkReset = false;
@@ -897,12 +898,10 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
             payloadStr == "UNASSIGNED") {
             g_andonStatus = payloadStr;
             g_lastAndonUpdate = millis();
-            if (payloadStr == "GRAY") {
-                // Sinaliza reset do blink para garantir que começa apagado e sincronizado
-                g_pauseBlinkReset = true;
-            }
             updateAndonLEDs();
-            logSerial("ANDON STATE: " + payloadStr);
+            logSerial("ANDON STATE: " + payloadStr + " (fonte: Odoo via MQTT)");
+            // Se GRAY, o blink azul no loop() ativa automaticamente
+            // Se outro estado durante GRAY, o blink para e LEDs fixos assumem
         }
     } else if (String(topic) == "andon/ota/trigger") {
         // Comando de atualização OTA recebido via broadcast
@@ -1067,31 +1066,55 @@ void handleOperational() {
     processButton(&redButton);
     processButton(&blueButton);
 
-    if (greenButton.pressed)  { publishButtonEvent("green");  greenButton.pressed  = false; }
-    if (yellowButton.pressed) { publishButtonEvent("yellow"); yellowButton.pressed = false; }
-    if (redButton.pressed)    { publishButtonEvent("red");    redButton.pressed    = false; }
-    if (blueButton.pressed) {
-        // Toggle pause local imediato — não espera resposta do backend
-        if (g_andonStatus == "GRAY") {
-            // Despausar: restaura estado anterior
-            g_andonStatus = (g_preGrayStatus != "UNKNOWN" && g_preGrayStatus != "GRAY")
-                            ? g_preGrayStatus : "GREEN";
-            g_preGrayStatus = "UNKNOWN";
-            updateAndonLEDs();
-            logSerial("PAUSE: desativado -> " + g_andonStatus);
+    unsigned long now = millis();
+    bool interlockActive = (now - g_lastButtonPress) < BUTTON_INTERLOCK_MS;
+    
+    // Botões coloridos: bloqueados durante GRAY (pause) e com intertravamento
+    if (greenButton.pressed) {
+        if (interlockActive) {
+            logSerial("BUTTON: verde ignorado (intertravamento ativo)");
+        } else if (g_andonStatus == "GRAY") {
+            logSerial("BUTTON: verde ignorado (fabricacao pausada)");
         } else {
-            // Pausar: salva estado atual e vai para GRAY
-            g_preGrayStatus   = g_andonStatus;
-            g_andonStatus     = "GRAY";
-            g_pauseBlinkReset = true;  // Garante que o blink começa apagado e sincronizado
-            // LEDs apagados — o blink GRAY no loop() assume o controle
-            digitalWrite(LED_VERDE_PIN,    LOW);
-            digitalWrite(LED_AMARELO_PIN,  LOW);
-            digitalWrite(LED_VERMELHO_PIN, LOW);
-            digitalWrite(LED_AZUL_PIN,     LOW);
-            logSerial("PAUSE: ativado (era " + g_preGrayStatus + ")");
+            publishButtonEvent("green");
+            g_lastButtonPress = now;
         }
-        publishButtonEvent("pause");  // Backend espera "pause" não "blue"
+        greenButton.pressed = false;
+    }
+    
+    if (yellowButton.pressed) {
+        if (interlockActive) {
+            logSerial("BUTTON: amarelo ignorado (intertravamento ativo)");
+        } else if (g_andonStatus == "GRAY") {
+            logSerial("BUTTON: amarelo ignorado (fabricacao pausada)");
+        } else {
+            publishButtonEvent("yellow");
+            g_lastButtonPress = now;
+        }
+        yellowButton.pressed = false;
+    }
+    
+    if (redButton.pressed) {
+        if (interlockActive) {
+            logSerial("BUTTON: vermelho ignorado (intertravamento ativo)");
+        } else if (g_andonStatus == "GRAY") {
+            logSerial("BUTTON: vermelho ignorado (fabricacao pausada)");
+        } else {
+            publishButtonEvent("red");
+            g_lastButtonPress = now;
+        }
+        redButton.pressed = false;
+    }
+    
+    // Botão azul (pause): sempre funciona, mas com intertravamento
+    if (blueButton.pressed) {
+        if (interlockActive) {
+            logSerial("BUTTON: azul ignorado (intertravamento ativo)");
+        } else {
+            publishButtonEvent("blue");
+            g_lastButtonPress = now;
+            logSerial("PAUSE: solicitacao enviada ao Odoo (estado atual: " + g_andonStatus + ")");
+        }
         blueButton.pressed = false;
     }
 
@@ -1126,28 +1149,54 @@ void handleMeshNode() {
     processButton(&redButton);
     processButton(&blueButton);
 
-    if (greenButton.pressed)  { publishButtonEvent("green");  greenButton.pressed  = false; }
-    if (yellowButton.pressed) { publishButtonEvent("yellow"); yellowButton.pressed = false; }
-    if (redButton.pressed)    { publishButtonEvent("red");    redButton.pressed    = false; }
-    if (blueButton.pressed) {
-        // Toggle pause local imediato — mesmo comportamento do nó raiz
-        if (g_andonStatus == "GRAY") {
-            g_andonStatus = (g_preGrayStatus != "UNKNOWN" && g_preGrayStatus != "GRAY")
-                            ? g_preGrayStatus : "GREEN";
-            g_preGrayStatus = "UNKNOWN";
-            updateAndonLEDs();
-            logSerial("PAUSE: desativado -> " + g_andonStatus);
+    unsigned long now = millis();
+    bool interlockActive = (now - g_lastButtonPress) < BUTTON_INTERLOCK_MS;
+    
+    // Mesma lógica do nó raiz: bloqueio durante GRAY e intertravamento
+    if (greenButton.pressed) {
+        if (interlockActive) {
+            logSerial("BUTTON: verde ignorado (intertravamento ativo)");
+        } else if (g_andonStatus == "GRAY") {
+            logSerial("BUTTON: verde ignorado (fabricacao pausada)");
         } else {
-            g_preGrayStatus   = g_andonStatus;
-            g_andonStatus     = "GRAY";
-            g_pauseBlinkReset = true;  // Garante que o blink começa apagado e sincronizado
-            digitalWrite(LED_VERDE_PIN,    LOW);
-            digitalWrite(LED_AMARELO_PIN,  LOW);
-            digitalWrite(LED_VERMELHO_PIN, LOW);
-            digitalWrite(LED_AZUL_PIN,     LOW);
-            logSerial("PAUSE: ativado (era " + g_preGrayStatus + ")");
+            publishButtonEvent("green");
+            g_lastButtonPress = now;
         }
-        publishButtonEvent("pause");  // Backend espera "pause" não "blue"
+        greenButton.pressed = false;
+    }
+    
+    if (yellowButton.pressed) {
+        if (interlockActive) {
+            logSerial("BUTTON: amarelo ignorado (intertravamento ativo)");
+        } else if (g_andonStatus == "GRAY") {
+            logSerial("BUTTON: amarelo ignorado (fabricacao pausada)");
+        } else {
+            publishButtonEvent("yellow");
+            g_lastButtonPress = now;
+        }
+        yellowButton.pressed = false;
+    }
+    
+    if (redButton.pressed) {
+        if (interlockActive) {
+            logSerial("BUTTON: vermelho ignorado (intertravamento ativo)");
+        } else if (g_andonStatus == "GRAY") {
+            logSerial("BUTTON: vermelho ignorado (fabricacao pausada)");
+        } else {
+            publishButtonEvent("red");
+            g_lastButtonPress = now;
+        }
+        redButton.pressed = false;
+    }
+    
+    if (blueButton.pressed) {
+        if (interlockActive) {
+            logSerial("BUTTON: azul ignorado (intertravamento ativo)");
+        } else {
+            publishButtonEvent("blue");
+            g_lastButtonPress = now;
+            logSerial("PAUSE: solicitacao enviada ao Odoo (estado atual: " + g_andonStatus + ")");
+        }
         blueButton.pressed = false;
     }
 
