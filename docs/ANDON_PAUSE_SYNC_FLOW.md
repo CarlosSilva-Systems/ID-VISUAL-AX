@@ -216,21 +216,142 @@ if (String(topic) == stateTopic) {
    - LED verde acende no ESP32 ✅ (NOVO)
    - Dashboard mostra "Produção em andamento"
 
-## Configuração do Webhook no Odoo
+## Configuração do Webhook no Odoo 19
 
-Para que o Odoo notifique o backend quando pausar/retomar:
+O Odoo 19 possui suporte nativo para webhooks via **Ações Automatizadas**. Siga os passos:
 
-1. Criar **Automated Action** no modelo `mrp.workorder`
-2. **Trigger:** On Update
-3. **Apply on:** `state` in `['progress', 'pause', 'pending']`
-4. **Action:** Execute Python Code:
+### 1. Criar Ação Automatizada
+
+1. Acesse **Configurações** → **Técnico** → **Automação** → **Ações Automatizadas**
+2. Clique em **Criar**
+3. Preencha os campos:
+
+**Configuração Básica:**
+- **Nome:** `Andon - Sincronizar Estado de Workorder`
+- **Modelo:** `Ordem de Trabalho de Fabricação` (`mrp.workorder`)
+- **Gatilho:** `Ao atualizar`
+- **Aplicar em:** Adicione domínio (filtro):
+  ```
+  [('state', 'in', ['ready', 'progress', 'pause', 'pending', 'done', 'cancel'])]
+  ```
+
+**Campos Gatilho:**
+- Adicione o campo: `Status` (`state`)
+  - Isso garante que o webhook só dispara quando o estado mudar
+
+**Ação:**
+- **Tipo de Ação:** `Enviar notificação de Webhook`
+- **URL:** `http://SEU_BACKEND_IP:8000/api/v1/webhook/odoo/workorder`
+  - Exemplo: `http://192.168.1.28/api/v1/webhook/odoo/workorder`
+  - **IMPORTANTE:** Use o IP/domínio acessível pelo servidor Odoo
+- **Cabeçalhos HTTP:**
+  ```json
+  {
+    "Content-Type": "application/json",
+    "X-Andon-Webhook-Secret": "SEU_SECRET_AQUI"
+  }
+  ```
+  - Substitua `SEU_SECRET_AQUI` pelo valor de `ODOO_WEBHOOK_SECRET` do seu `.env`
+
+### 2. Formato do Payload (Automático)
+
+O Odoo 19 envia automaticamente este payload:
+
+```json
+{
+  "_action": "Enviar notificação de Webhook(#NewId_0x70eca8654680)",
+  "_id": 429,
+  "_model": "mrp.workorder",
+  "id": 429,
+  "state": "done"
+}
+```
+
+**Campos importantes:**
+- `id`: ID da workorder
+- `state`: Estado atual (`ready`, `progress`, `pause`, `pending`, `done`, `cancel`)
+- `_model`: Sempre `mrp.workorder`
+
+### 3. Mapeamento de Estados
+
+| Estado Odoo | Estado Andon | LED ESP32 | Descrição |
+|-------------|--------------|-----------|-----------|
+| `progress` | `verde` | 🟢 Verde | Produção em andamento |
+| `pause` | `cinza` | 🔵 Azul piscando | Pausado manualmente |
+| `pending` | `cinza` | 🔵 Azul piscando | Aguardando componentes |
+| `ready` | `cinza` | 🔵 Azul piscando | Pronto para iniciar |
+| `done` | `cinza` | 🔵 Azul piscando | Concluído |
+| `cancel` | `cinza` | 🔵 Azul piscando | Cancelado |
+
+### 4. Testar o Webhook
+
+1. **Criar uma workorder de teste** no Odoo
+2. **Iniciar a workorder** (botão "Iniciar")
+   - ✅ ESP32 deve acender LED verde
+   - ✅ Dashboard deve mostrar "Produção em andamento"
+3. **Pausar a workorder** (botão "Pausar")
+   - ✅ ESP32 deve apagar LEDs e piscar azul
+   - ✅ Dashboard deve mostrar "Produção pausada"
+4. **Retomar a workorder** (botão "Retomar")
+   - ✅ ESP32 deve acender LED verde novamente
+   - ✅ Dashboard deve mostrar "Produção em andamento"
+
+### 5. Verificar Logs
+
+**Backend (FastAPI):**
+```bash
+# Ver logs do webhook
+docker compose logs -f api | grep Webhook
+```
+
+**Odoo:**
+- Acesse a ação automatizada criada
+- Clique em **Ação** → **Ver Logs de Execução**
+- Verifique se há erros de conexão ou autenticação
+
+### 6. Troubleshooting
+
+**Webhook não dispara:**
+- ✅ Verificar se o campo `Status` está em **Campos Gatilho**
+- ✅ Verificar se o domínio (filtro) está correto
+- ✅ Verificar se a ação está **Ativa** (checkbox marcado)
+
+**Erro 401 Unauthorized:**
+- ✅ Verificar se `X-Andon-Webhook-Secret` no cabeçalho está correto
+- ✅ Verificar se `ODOO_WEBHOOK_SECRET` no `.env` do backend está correto
+
+**Erro 404 Not Found:**
+- ✅ Verificar se a URL está correta (incluir `/api/v1/webhook/odoo/workorder`)
+- ✅ Verificar se o backend está acessível pelo servidor Odoo
+
+**ESP32 não recebe estado:**
+- ✅ Verificar se o dispositivo ESP32 está vinculado ao workcenter no banco
+- ✅ Verificar se o broker MQTT está acessível pelo backend
+- ✅ Verificar logs do backend: `docker compose logs -f api | grep "send_andon_state_by_workcenter"`
+
+---
+
+## Configuração Alternativa (Odoo < 19 ou Customizado)
+
+Se você estiver usando Odoo < 19 ou precisar de mais controle, use código Python:
+
+### Criar Ação Automatizada com Código Python
+
+1. **Modelo:** `mrp.workorder`
+2. **Gatilho:** `Ao atualizar`
+3. **Aplicar em:** `[('state', 'in', ['progress', 'pause', 'pending'])]`
+4. **Ação:** `Executar código Python`
+5. **Código:**
 
 ```python
 import requests
 import time
 import json
+import logging
 
-url = "https://seu-backend.com/api/v1/webhook/odoo/workorder"
+_logger = logging.getLogger(__name__)
+
+url = "http://SEU_BACKEND_IP:8000/api/v1/webhook/odoo/workorder"
 headers = {
     "Content-Type": "application/json",
     "X-Andon-Webhook-Secret": "SEU_SECRET_AQUI"
@@ -245,9 +366,10 @@ payload = {
 try:
     response = requests.post(url, json=payload, headers=headers, timeout=5)
     response.raise_for_status()
+    _logger.info(f"[Andon Webhook] WO {record.id} → {record.state} enviado com sucesso")
 except Exception as e:
     # Log silencioso — não bloquear operação do Odoo
-    pass
+    _logger.warning(f"[Andon Webhook] Falha ao enviar WO {record.id}: {e}")
 ```
 
 ## Troubleshooting
