@@ -40,7 +40,7 @@
 #define MQTT_BUFFER_SIZE    512
 #define MQTT_BLINK_MS       1000UL
 #define MQTT_MAX_RETRIES    10
-#define MQTT_KEEPALIVE_S    60
+#define MQTT_KEEPALIVE_S    15
 
 // ─── Pinos — Botões (INPUT_PULLUP, ativo em LOW) ───────────
 #define BTN_VERDE           12

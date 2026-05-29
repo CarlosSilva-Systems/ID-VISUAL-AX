@@ -1055,7 +1055,9 @@ void handleOperational() {
     }
 
     if (!mqttClient.connected()) {
-        logSerial("OPERATIONAL: MQTT perdido -> MQTT_CONNECTING");
+        logSerial("OPERATIONAL: MQTT perdido -> MQTT_CONNECTING (WiFi=" + 
+                  String(WiFi.status() == WL_CONNECTED ? "OK" : "FALHA") + 
+                  " RSSI=" + String(WiFi.RSSI()) + "dBm)");
         // Limpa LEDs Andon — não deve mostrar estado Andon sem conexão ativa
         g_andonStatus = "UNKNOWN";
         digitalWrite(LED_VERDE_PIN,    LOW);
@@ -1128,8 +1130,9 @@ void handleOperational() {
         hb["mesh_children"] = g_directChildren;
         hb["is_root"]       = true;
         String s; serializeJson(hb, s);
-        mqttClient.publish(("andon/status/" + macAddress).c_str(), s.c_str(), false);
-        logSerial("HEARTBEAT: " + s);
+        bool published = mqttClient.publish(("andon/status/" + macAddress).c_str(), s.c_str(), false);
+        logSerial("HEARTBEAT: " + s + " (pub=" + String(published ? "OK" : "FALHA") + 
+                  " mqtt=" + String(mqttClient.connected() ? "CONN" : "DISC") + ")");
     }
 
     if (checkTimer(&heapMonitorTimer)) {
@@ -1371,8 +1374,10 @@ void setup() {
 
     mqttClient.setServer(MQTT_BROKER, MQTT_PORT);
     mqttClient.setBufferSize(MQTT_BUFFER_SIZE);
+    mqttClient.setKeepAlive(MQTT_KEEPALIVE_S);
     mqttClient.setCallback(mqttCallback);
-    logSerial("MQTT: broker=" + String(MQTT_BROKER) + ":" + String(MQTT_PORT));
+    logSerial("MQTT: broker=" + String(MQTT_BROKER) + ":" + String(MQTT_PORT) + 
+              " keepalive=" + String(MQTT_KEEPALIVE_S) + "s");
 
     // Tenta WiFi direto — sem scan (scan conflita com mesh)
     beginWiFiConnect();
