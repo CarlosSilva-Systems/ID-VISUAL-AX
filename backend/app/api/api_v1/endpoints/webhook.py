@@ -28,6 +28,9 @@ async def odoo_workorder_webhook(
     """
     Recebe atualizações de estado do Odoo via Webhook.
     Implementa idempotência via timestamp e autorresolução de chamados.
+    
+    CRÍTICO: Sincroniza estado com ESP32 via MQTT para garantir que
+    pausas/retomadas no Odoo sejam refletidas no botão físico.
     """
     # 0. Replay protection — rejeita timestamps expirados OU no futuro
     now = time.time()
@@ -59,6 +62,7 @@ async def odoo_workorder_webhook(
     
     # Mapeamento simples de estado Odoo para Cor Andon
     new_color = "verde" if payload.new_state == "progress" else "cinza"
+    mqtt_state = "GREEN" if payload.new_state == "progress" else "GRAY"
     
     if andon_status:
         # Idempotência simples: só atualiza se o estado do Odoo for 'progress' 
@@ -81,25 +85,40 @@ async def odoo_workorder_webhook(
             for call in active_calls:
                 call.status = "RESOLVED"
                 call.resolved_note = "Chamado resolvido automaticamente: Produção retomada no Odoo."
-                call.updated_at = datetime.now(timezone.utc)
+                call.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
                 session.add(call)
                 
                 # Opcional: Log no Odoo Chatter via BackgroundTask ou direto
-                await odoo.post_chatter_message(
-                    call.mo_id, 
-                    f"✅ <b>Andon</b>: Chamado #{call.id} resolvido automaticamente pelo sistema (Início de Produção)."
-                ) if call.mo_id else None
+                if call.mo_id:
+                    try:
+                        await odoo.post_chatter_message(
+                            call.mo_id, 
+                            f"✅ <b>Andon</b>: Chamado #{call.id} resolvido automaticamente pelo sistema (Início de Produção)."
+                        )
+                    except Exception as e:
+                        # Não falhar o webhook se o chatter falhar
+                        pass
 
         elif payload.new_state in ["pause", "pending"]:
             # Se pausou no Odoo e não temos chamado vermelho/amarelo bloqueante,
             # o status de referência vai para cinza.
+            # Salvar estado anterior para permitir retomada correta
+            if andon_status.status != "cinza":
+                # Salvar estado anterior no campo updated_by com prefixo "prev:"
+                andon_status.updated_by = f"prev:{andon_status.status}"
             andon_status.status = "cinza"
 
-        andon_status.updated_at = datetime.now(timezone.utc)
-        andon_status.updated_by = "Odoo Sync"
+        andon_status.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
+        if not andon_status.updated_by or not andon_status.updated_by.startswith("prev:"):
+            andon_status.updated_by = "Odoo Sync"
         session.add(andon_status)
 
     await session.commit()
     update_sync_version("andon_version")
     
-    return {"status": "ok", "processed": True}
+    # 3. CRÍTICO: Sincronizar estado com ESP32 via MQTT
+    # Garante que o botão físico reflete o estado atual do Odoo
+    from app.services.mqtt_service import send_andon_state_by_workcenter
+    await send_andon_state_by_workcenter(wc_id, mqtt_state)
+    
+    return {"status": "ok", "processed": True, "workcenter_id": wc_id, "new_state": mqtt_state}
