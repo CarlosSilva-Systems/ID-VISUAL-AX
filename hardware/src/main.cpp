@@ -886,6 +886,9 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
     String payloadStr;
     for (unsigned int i = 0; i < length; i++) payloadStr += (char)payload[i];
 
+    // Log de debug: mostra TODAS as mensagens MQTT recebidas
+    logSerial("MQTT RX: topic=" + String(topic) + " payload=" + payloadStr);
+
     String stateTopic    = "andon/state/"     + macAddress;
     String restartTopic  = "andon/restart/"   + macAddress;
     String odooErrTopic  = "andon/odoo_error/" + macAddress;
@@ -902,6 +905,8 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
             logSerial("ANDON STATE: " + payloadStr + " (fonte: Odoo via MQTT)");
             // Se GRAY, o blink azul no loop() ativa automaticamente
             // Se outro estado durante GRAY, o blink para e LEDs fixos assumem
+        } else {
+            logSerial("MQTT: estado invalido recebido: " + payloadStr);
         }
     } else if (String(topic) == "andon/ota/trigger") {
         // Comando de atualização OTA recebido via broadcast
