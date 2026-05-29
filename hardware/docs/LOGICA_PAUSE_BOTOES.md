@@ -50,7 +50,7 @@ ESP32 → recebe "GRAY" via andon/state/{mac}
 
 ## Intertravamento de Botões
 
-### Regra: 2 segundos entre acionamentos
+### Regra: 2 segundos entre acionamentos (botões coloridos apenas)
 
 ```cpp
 #define BUTTON_INTERLOCK_MS 2000UL  // 2 segundos
@@ -60,6 +60,7 @@ ESP32 → recebe "GRAY" via andon/state/{mac}
 - Evita acionamentos acidentais duplos
 - Protege contra operador apertando múltiplos botões simultaneamente
 - Dá tempo para o Odoo processar e responder
+- **IMPORTANTE**: Botão azul NÃO tem intertravamento (é ele que tira o GRAY)
 
 ### Comportamento
 
@@ -85,12 +86,13 @@ t=2.1s → Intertravamento liberado
 - ❌ Verde bloqueado
 - ❌ Amarelo bloqueado  
 - ❌ Vermelho bloqueado
-- ✅ Azul (pause) funciona normalmente
+- ✅ Azul (pause) funciona SEMPRE (sem intertravamento - é ele que despausa)
 
 **Por quê?**
 - Fabricação pausada = timer parado no Odoo
 - Acionamentos durante pause não devem contar tempo
 - Operador deve despausar antes de acionar problemas
+- **CRÍTICO**: Azul não pode ter intertravamento, senão não consegue despausar
 
 ### Comportamento
 
