@@ -1,357 +1,285 @@
-# ⚡ Guia Rápido - Firmware ESP32 Andon
+# Guia Rápido — Firmware ESP32 Andon
 
-## 🎯 Referência Rápida para Desenvolvedores
-
-Este é um guia de consulta rápida. Para documentação completa, veja **[docs/README.md](docs/README.md)**
+Referência rápida para consulta diária. Para documentação completa, veja os outros arquivos em `docs/`.
 
 ---
 
-## 📋 Informações Básicas
+## Informações Básicas
 
 | Item | Valor |
 |------|-------|
-| **Versão** | 2.4.1 |
-| **Plataforma** | ESP32-WROOM-32 |
-| **Framework** | Arduino |
+| **Versão atual** | 2.5.0 |
+| **Plataforma** | ESP32 DevKit v1 |
+| **Framework** | Arduino (via PlatformIO) |
 | **Linguagem** | C++ |
-| **IDE** | PlatformIO + VS Code |
 | **Serial** | 115200 baud |
+| **WiFi** | 2.4 GHz apenas |
 
 ---
 
-## 🔌 Pinout Rápido
+## Pinout Rápido
 
-### Botões (INPUT_PULLUP)
+### Botões (INPUT_PULLUP — ativo em LOW)
 ```
-GPIO 12  → Botão Verde
-GPIO 13  → Botão Amarelo
-GPIO 32  → Botão Vermelho
-GPIO 33  → Botão Pause
+GPIO 12  → Botão Verde    (OK / Normal)
+GPIO 13  → Botão Amarelo  (Atenção)
+GPIO 32  → Botão Vermelho (Problema / Parada)
+GPIO 33  → Botão Azul     (Pause/Resume + Reset ao segurar 5s)
 ```
 
-### LEDs (OUTPUT)
+### LEDs (OUTPUT — ativo em HIGH)
 ```
-GPIO 19  → LED Verde
-GPIO 18  → LED Amarelo
-GPIO 17  → LED Vermelho
-GPIO 2   → LED Onboard (azul)
+GPIO 19  → LED Verde     (retroiluminação do botão verde)
+GPIO 18  → LED Amarelo   (retroiluminação do botão amarelo)
+GPIO 17  → LED Vermelho  (retroiluminação do botão vermelho)
+GPIO 16  → LED Azul      (retroiluminação do botão azul)
+GPIO 2   → LED Onboard   (indicador de conectividade — azul na placa)
 ```
+
+> Resistor 220Ω em série com cada LED. Corrente ~15mA por LED.
 
 ---
 
-## 🔄 Estados do Sistema
+## Máquina de Estados
 
 ```
-BOOT → WIFI_CONNECTING → MQTT_CONNECTING → OPERATIONAL
-                       ↘ MESH_NODE ↗
+BOOT → WIFI_CONNECTING → MQTT_CONNECTING → OPERATIONAL (nó raiz)
+                       ↘ MESH_NODE (nó folha) → retry WiFi 60s → WIFI_CONNECTING
 ```
 
-| Estado | LED Onboard | LEDs Andon |
-|--------|-------------|------------|
-| WIFI_CONNECTING | Pisca 500ms | Onda verde→amarelo→vermelho |
-| MQTT_CONNECTING | Pisca 1000ms | Vermelho/amarelo alternados |
-| OPERATIONAL | Aceso fixo | Conforme estado Andon |
-| MESH_NODE | Duplo pulso | Amarelo piscando lento |
+| Estado | LED Onboard | LEDs dos Botões |
+|--------|-------------|-----------------|
+| WIFI_CONNECTING | Pisca 500ms | Verde ↔ Amarelo alternados (600ms) |
+| MQTT_CONNECTING | Pisca 1000ms | Amarelo ↔ Vermelho alternados (500ms) |
+| OPERATIONAL | Aceso fixo | Conforme estado Andon recebido |
+| MESH_NODE | Duplo pulso a cada 2s | Azul pisca lento (1s) |
 
 ---
 
-## 📡 Tópicos MQTT Principais
+## Estados Andon
+
+| Estado MQTT | LED Verde | LED Amarelo | LED Vermelho | LED Azul |
+|-------------|-----------|-------------|--------------|----------|
+| `GREEN` | Fixo aceso | Apagado | Apagado | Apagado |
+| `YELLOW` | Apagado | Fixo aceso | Apagado | Apagado |
+| `RED` | Apagado | Apagado | Fixo aceso | Apagado |
+| `GRAY` | Apagado | Apagado | Apagado | Pisca ~70 BPM |
+| `UNASSIGNED` | Apagado | Pisca 200ms | Apagado | Apagado |
+
+---
+
+## Tópicos MQTT
 
 ### Publicados pelo ESP32
+
 ```
-andon/discovery                    → Info do dispositivo (ao conectar)
-andon/status/{mac}                 → Status online/offline (LWT)
-andon/button/{mac}/green           → Botão verde pressionado
-andon/button/{mac}/yellow          → Botão amarelo pressionado
-andon/button/{mac}/red             → Botão vermelho pressionado
-andon/button/{mac}/pause           → Botão pause pressionado
-andon/logs/{mac}                   → Logs de diagnóstico
+andon/discovery                     → JSON com info do dispositivo (ao conectar)
+andon/status/{mac}                  → "online" / "offline" (LWT) + heartbeat JSON
+andon/logs/{mac}                    → Logs de diagnóstico em texto
+andon/button/{mac}/green            → "PRESSED"
+andon/button/{mac}/yellow           → "PRESSED"
+andon/button/{mac}/red              → "PRESSED"
+andon/button/{mac}/pause            → "PRESSED"  ← botão azul usa "pause", não "blue"
+andon/ota/progress/{mac}            → JSON {status, progress, error}
 ```
 
 ### Subscritos pelo ESP32
+
 ```
-andon/state/{mac}                  → Estado Andon (GREEN/YELLOW/RED/GRAY/UNASSIGNED)
-andon/restart/{mac}                → Comando de restart
-andon/odoo_error/{mac}             → Erro de integração Odoo
-andon/ota/trigger                  → Comando de atualização OTA
+andon/state/{mac}                   → "GREEN" / "YELLOW" / "RED" / "GRAY" / "UNASSIGNED"
+andon/restart/{mac}                 → "RESTART"
+andon/odoo_error/{mac}              → qualquer payload (dispara blink vermelho 5s)
+andon/ota/trigger                   → JSON {version, url, size}
+andon/ota/cancel                    → qualquer payload
 ```
 
 ---
 
-## 🛠️ Comandos Úteis
+## Comandos Úteis
 
-### Compilar e Upload
+### PlatformIO
 ```bash
-# Compilar
-pio run
-
-# Upload via USB
-pio run --target upload
-
-# Monitor Serial
-pio device monitor
-
-# Tudo de uma vez
-pio run --target upload && pio device monitor
+pio run                             # Compilar
+pio run --target upload             # Upload via USB
+pio device monitor                  # Abrir Serial Monitor
+pio run --target upload && pio device monitor   # Tudo de uma vez
 ```
 
-### MQTT (Mosquitto)
+### MQTT (Mosquitto CLI)
 ```bash
-# Subscrever todos os tópicos
+# Monitorar todos os tópicos
 mosquitto_sub -h 192.168.1.28 -t "andon/#" -v
 
-# Enviar comando de estado
+# Enviar estado Andon
 mosquitto_pub -h 192.168.1.28 -t "andon/state/AA:BB:CC:DD:EE:FF" -m "GREEN"
 
-# Comando OTA
-mosquitto_pub -h 192.168.1.28 -t "andon/ota/trigger" -m '{
-  "version": "2.5.0",
-  "url": "http://192.168.1.28:8000/static/ota/firmware-2.5.0.bin",
-  "size": 1234567
-}'
-```
+# Reiniciar dispositivo remotamente
+mosquitto_pub -h 192.168.1.28 -t "andon/restart/AA:BB:CC:DD:EE:FF" -m "RESTART"
 
-### Git
-```bash
-# Status
-git status
+# Disparar OTA
+mosquitto_pub -h 192.168.1.28 -t "andon/ota/trigger" -m \
+  '{"version":"2.5.0","url":"http://192.168.1.28:8000/static/ota/firmware-2.5.0.bin","size":1234567}'
 
-# Adicionar arquivos
-git add .
-
-# Commit (Conventional Commits)
-git commit -m "tipo(escopo): descricao"
-
-# Tipos: feat, fix, refactor, docs, chore, style, test
+# Monitorar progresso OTA
+mosquitto_sub -h 192.168.1.28 -t "andon/ota/progress/#" -v
 ```
 
 ---
 
-## 🐛 Troubleshooting Rápido
+## Configurações Principais (`include/config.h`)
 
-### WiFi não conecta
-```
-1. Verificar SSID/senha em config.h
-2. Verificar se rede é 2.4 GHz
-3. Verificar sinal WiFi (RSSI > -70 dBm)
-4. Após 15s, entra em modo mesh automaticamente
-```
-
-### MQTT não conecta
-```
-1. Verificar se broker está rodando: sudo systemctl status mosquitto
-2. Verificar IP do broker em config.h
-3. Pingar o broker: ping 192.168.1.28
-4. Testar porta: telnet 192.168.1.28 1883
-```
-
-### Botão não responde
-```
-1. Verificar conexão física
-2. Testar com multímetro (solto=HIGH, pressionado=LOW)
-3. Verificar se ESP32 está em OPERATIONAL ou MESH_NODE
-4. Verificar logs no Serial Monitor
-```
-
-### LED não acende
-```
-1. Verificar conexão física e polaridade
-2. Verificar resistor (220Ω)
-3. Testar LED com bateria 3V
-4. Verificar pino em config.h
-```
-
-**Documentação completa**: [docs/14_TROUBLESHOOTING.md](docs/14_TROUBLESHOOTING.md)
-
----
-
-## 📁 Arquivos Importantes
-
-### Configuração
-```
-include/config.h          → Todas as configurações
-platformio.ini            → Configuração do PlatformIO
-```
-
-### Código Principal
-```
-src/main.cpp              → Arquivo principal (1190 linhas)
-  - setup()               → Inicialização
-  - loop()                → Loop principal
-  - handleXxx()           → Handlers de estados
-```
-
-### Módulos
-```
-src/ota.cpp               → Atualização OTA
-src/provisioning.cpp      → Provisionamento viral
-src/crypto.cpp            → Criptografia AES-GCM
-src/nvs_storage.cpp       → Armazenamento NVS
-src/espnow_comm.cpp       → Comunicação ESP-NOW
-src/rtc_sync.cpp          → Sincronização NTP
+```cpp
+FIRMWARE_VERSION     = "2.5.0"
+WIFI_SSID            = "AX AUTOMACAO"
+MQTT_BROKER          = "192.168.1.28"      // servidor ax-producao
+MQTT_PORT            = 1883
+WIFI_TIMEOUT_MS      = 15000               // 15s antes de cair para mesh
+WIFI_LOSS_FALLBACK_MS = 60000              // 60s de WiFi caído antes de rebaixar
+WIFI_RETRY_INTERVAL_MS = 60000            // retry WiFi em MESH_NODE
+MESH_ID              = "IDVISUAL_ANDON"
+MESH_CHANNEL         = 6
+MESH_MAX_CHILDREN    = 4
+DEBOUNCE_MS          = 50                 // debounce dos botões
+HEARTBEAT_INTERVAL_MS = 300000            // heartbeat a cada 5 min
+WATCHDOG_TIMEOUT_S   = 60
+BUTTON_INTERLOCK_MS  = 2000               // 2s entre acionamentos
 ```
 
 ---
 
-## 🔧 Modificações Comuns
+## Modificações Comuns
 
-### Mudar Credenciais WiFi
+### Mudar credenciais WiFi
 ```cpp
 // include/config.h
-#define WIFI_SSID "NOVO_SSID"
+#define WIFI_SSID "NOVA_REDE"
 #define WIFI_PASSWORD "nova_senha"
 ```
 
-### Mudar IP do Broker MQTT
+### Atualizar versão do firmware
 ```cpp
-// include/config.h
-#define MQTT_BROKER "192.168.1.100"
+// 1. include/config.h
+#define FIRMWARE_VERSION "2.6.0"
+
+// 2. Cabeçalho de src/main.cpp
+// Versão: 2.6.0
+// Data: YYYY-MM-DD
 ```
 
-### Adicionar Novo Botão
+### Adicionar novo botão
 ```cpp
 // 1. include/config.h
 #define BTN_NOVO 14
 
-// 2. src/main.cpp - Variáveis globais
+// 2. src/main.cpp — variáveis globais
 ButtonState novoButton = {BTN_NOVO, HIGH, 0, false};
 
-// 3. src/main.cpp - initializeGPIOs()
+// 3. src/main.cpp — initializeGPIOs()
 pinMode(BTN_NOVO, INPUT_PULLUP);
 
-// 4. src/main.cpp - handleOperational() e handleMeshNode()
+// 4. src/main.cpp — handleOperational() e handleMeshNode()
 processButton(&novoButton);
-if (novoButton.pressed) { 
-    publishButtonEvent("novo"); 
-    novoButton.pressed = false; 
+if (novoButton.pressed) {
+    publishButtonEvent("novo");
+    novoButton.pressed = false;
 }
 ```
 
-### Adicionar Novo LED
+### Adicionar novo LED
 ```cpp
 // 1. include/config.h
-#define LED_NOVO_PIN 16
+#define LED_NOVO_PIN 4
 
-// 2. src/main.cpp - Variáveis globais
+// 2. src/main.cpp — variáveis globais
 LEDState novoLED = {LED_NOVO_PIN, false};
 
-// 3. src/main.cpp - initializeGPIOs()
+// 3. src/main.cpp — initializeGPIOs()
 pinMode(LED_NOVO_PIN, OUTPUT);
 digitalWrite(LED_NOVO_PIN, LOW);
 
-// 4. src/main.cpp - updateAndonLEDs()
+// 4. src/main.cpp — updateAndonLEDs()
 // Adicionar lógica de controle
 ```
 
-### Mudar Versão do Firmware
-```cpp
-// include/config.h
-#define FIRMWARE_VERSION "2.5.0"
+---
 
-// src/main.cpp - Cabeçalho
-/**
- * Versão: 2.5.0
- * Data: 2026-05-08
- */
+## Troubleshooting Rápido
+
+| Sintoma | Causa Provável | Solução |
+|---------|----------------|---------|
+| WiFi não conecta | SSID/senha errados ou rede 5GHz | Verificar `config.h`, rede deve ser 2.4GHz |
+| MQTT não conecta | Broker offline ou IP errado | `ping 192.168.1.28`, `systemctl status mosquitto` |
+| Botão não responde | Conexão física, pino errado | Testar GPIO direto, verificar `config.h` |
+| LED não acende | Polaridade invertida, resistor faltando | Verificar circuito, 220Ω em série |
+| Watchdog reset | Loop bloqueado >60s | Remover `delay()` longos, usar timers |
+| Heap baixo | Vazamento de memória | Usar `StaticJsonDocument`, monitorar heap |
+
+Para diagnóstico detalhado: `docs/14_TROUBLESHOOTING.md`
+
+---
+
+## Logs Esperados — Boot Normal
+
+```
+═══════════════════════════════════════════════════════
+  Firmware ESP32 Andon v2.5.0 - ID Visual AX
+  WiFi Direto + Fallback ESP-MESH
+═══════════════════════════════════════════════════════
+
+[0] GPIO: inicializados (4 botoes + 5 LEDs)
+[5400] WDT: inicializado (60s)
+[5450] MAC: AA:BB:CC:DD:EE:FF  Nome: ESP32-Andon-EEFF
+[5460] MQTT: broker=192.168.1.28:1883
+[5465] WIFI: conectando a AX AUTOMACAO (timeout=15s)...
+[8200] WIFI: Conectado! IP=192.168.1.87 RSSI=-45dBm
+[8210] MESH: iniciada como RAIZ | ID=IDVISUAL_ANDON canal=6 max_filhos=4
+[8250] MQTT: conectando a 192.168.1.28:1883...
+[8320] MQTT: conectado -> OPERATIONAL (raiz, IP=192.168.1.87 RSSI=-45dBm)
 ```
 
 ---
 
-## 📊 Valores de Configuração Padrão
+## Arquivos do Projeto
 
-```cpp
-// WiFi
-WIFI_TIMEOUT_MS = 15000              // 15 segundos
-WIFI_LOSS_FALLBACK_MS = 60000        // 60 segundos
-
-// MQTT
-MQTT_PORT = 1883
-MQTT_BUFFER_SIZE = 512
-MQTT_KEEPALIVE_S = 60
-MQTT_MAX_RETRIES = 10
-
-// Mesh
-MESH_ID = "IDVISUAL_ANDON"
-MESH_CHANNEL = 6
-MESH_MAX_CHILDREN = 4
-WIFI_RETRY_INTERVAL_MS = 60000       // 60 segundos
-
-// Timers
-DEBOUNCE_MS = 50                     // 50 milissegundos
-HEARTBEAT_INTERVAL_MS = 300000       // 5 minutos
-HEAP_MONITOR_INTERVAL_MS = 30000     // 30 segundos
-WATCHDOG_TIMEOUT_S = 60              // 60 segundos
-
-// Backoff
-INITIAL_BACKOFF_MS = 5000            // 5 segundos
-MAX_BACKOFF_MS = 60000               // 60 segundos
+```
+hardware/
+├── platformio.ini          ← configuração de build e dependências
+├── include/
+│   ├── config.h            ← TODAS as constantes e pinos (edite aqui)
+│   ├── ota.h               ← interface OTA
+│   ├── espnow_comm.h       ← interface ESP-NOW
+│   ├── provisioning.h      ← interface provisionamento viral
+│   ├── crypto.h            ← interface AES-256-GCM
+│   ├── nvs_storage.h       ← interface NVS (Preferences)
+│   ├── rtc_sync.h          ← interface NTP/timestamp
+│   ├── serial_parser.h     ← interface comandos Serial
+│   └── setup_server.h      ← interface AP HTTP de config
+├── src/
+│   ├── main.cpp            ← lógica principal (~1190 linhas)
+│   ├── ota.cpp             ← OTA over-the-air
+│   ├── espnow_comm.cpp     ← comunicação ESP-NOW
+│   ├── provisioning.cpp    ← provisionamento viral
+│   ├── crypto.cpp          ← criptografia AES-GCM
+│   ├── nvs_storage.cpp     ← armazenamento persistente
+│   ├── rtc_sync.cpp        ← sincronização NTP
+│   ├── serial_parser.cpp   ← comandos via Serial
+│   └── setup_server.cpp    ← servidor HTTP de configuração
+└── docs/                   ← documentação completa
+    ├── 00_INDICE.md
+    ├── 01_VISAO_GERAL.md
+    ├── 02_ARQUITETURA.md
+    ├── 03_ESTRUTURA_CODIGO.md
+    ├── 14_TROUBLESHOOTING.md
+    ├── GUIA_COMPILACAO.md
+    ├── GUIA_LED_VISUAL.md
+    ├── INSTRUCOES_ATUALIZACAO_OTA.md
+    ├── LOGICA_BOTOES.md
+    ├── LOGICA_PAUSE_BOTOES.md
+    ├── PINOUT.md
+    └── PRODUCAO.md
 ```
 
 ---
 
-## 🎨 Estados Visuais dos LEDs
-
-| Estado Andon | Verde | Amarelo | Vermelho |
-|--------------|-------|---------|----------|
-| GREEN | ✅ Aceso | ❌ Apagado | ❌ Apagado |
-| YELLOW | ❌ Apagado | ✅ Aceso | ❌ Apagado |
-| RED | ❌ Apagado | ❌ Apagado | ✅ Aceso |
-| GRAY | 💓 Piscando | 💓 Piscando | 💓 Piscando |
-| UNASSIGNED | ❌ Apagado | 💓 Rápido | ❌ Apagado |
-
----
-
-## 🔍 Logs Importantes
-
-### Boot Normal
-```
-[0] BOOT: Iniciando firmware ID Visual AX v2.4.1
-[150] GPIO: inicializados
-[250] MAC: AA:BB:CC:DD:EE:FF
-[3500] WIFI: Conectado! IP=192.168.1.87 RSSI=-45dBm
-[4000] MQTT: Conectado ao broker!
-[4040] MQTT: Transição para OPERATIONAL
-```
-
-### Erro WiFi
-```
-[15000] WIFI: timeout (15s) sem conectar -> MESH_NODE (fallback)
-```
-
-### Erro MQTT
-```
-[4000] MQTT: falha rc=-2 retry 5s
-```
-
-### Watchdog
-```
-[0] AVISO: Reset por watchdog detectado
-```
-
----
-
-## 📚 Documentação Completa
-
-Para informações detalhadas, consulte:
-
-- **[docs/README.md](docs/README.md)** - Entrada principal da documentação
-- **[docs/00_INDICE.md](docs/00_INDICE.md)** - Índice completo
-- **[docs/01_VISAO_GERAL.md](docs/01_VISAO_GERAL.md)** - Visão geral do sistema
-- **[docs/02_ARQUITETURA.md](docs/02_ARQUITETURA.md)** - Arquitetura detalhada
-- **[docs/03_ESTRUTURA_CODIGO.md](docs/03_ESTRUTURA_CODIGO.md)** - Estrutura do código
-- **[docs/14_TROUBLESHOOTING.md](docs/14_TROUBLESHOOTING.md)** - Troubleshooting completo
-- **[docs/RESUMO_DOCUMENTACAO.md](docs/RESUMO_DOCUMENTACAO.md)** - Resumo executivo
-
----
-
-## 🆘 Suporte
-
-1. **Consulte a documentação** em `docs/`
-2. **Verifique logs** no Serial Monitor
-3. **Teste com MQTT Explorer** para debug de comunicação
-4. **Contate a equipe** se problema persistir
-
----
-
-**Última atualização**: 2026-05-07  
-**Versão**: 2.4.1
+**Última atualização:** 2026-06-02
+**Versão do firmware:** 2.5.0

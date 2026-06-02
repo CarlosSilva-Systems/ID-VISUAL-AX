@@ -17,8 +17,8 @@ Este guia fornece instruções passo-a-passo para compilar e fazer upload do fir
 
 - **ESP32 DevKit** (qualquer modelo compatível)
 - **Cabo USB** (USB-A para Micro-USB ou USB-C, dependendo do modelo)
-- **3 Botões** (push-button normalmente aberto)
-- **3 LEDs** (vermelho, amarelo, verde) + resistores 220Ω
+- **4 Botões** (push-button normalmente aberto — verde, amarelo, vermelho, azul)
+- **4 LEDs** (verde, amarelo, vermelho, azul) + resistores 220Ω
 - **Protoboard e jumpers** para montagem
 
 ### 3. Configuração de Rede
@@ -51,6 +51,7 @@ Antes de compilar, você DEVE configurar as credenciais WiFi e o endereço do br
 | Verde    | 12   | Pull-up interno habilitado          |
 | Amarelo  | 13   | Pull-up interno habilitado          |
 | Vermelho | 32   | Pull-up interno habilitado          |
+| Azul     | 33   | Pull-up interno habilitado — pause/resume + reset (segurar 5s) |
 
 **Conexão dos botões:**
 - Um terminal do botão → GPIO correspondente
@@ -61,10 +62,13 @@ Antes de compilar, você DEVE configurar as credenciais WiFi e o endereço do br
 
 | LED      | GPIO | Observação                    |
 |----------|------|-------------------------------|
-| Vermelho | 25   | Adicionar resistor 220Ω      |
-| Amarelo  | 26   | Adicionar resistor 220Ω      |
-| Verde    | 33   | Adicionar resistor 220Ω      |
+| Vermelho | 17   | Resistor 220Ω em série       |
+| Amarelo  | 18   | Resistor 220Ω em série       |
+| Verde    | 19   | Resistor 220Ω em série       |
+| Azul     | 16   | Resistor 220Ω em série       |
 | Onboard  | 2    | LED integrado na placa       |
+
+> Estes LEDs retroiluminam os botões correspondentes. Veja o esquema completo em `docs/PINOUT.md`.
 
 **Conexão dos LEDs:**
 - Anodo (+) do LED → GPIO correspondente

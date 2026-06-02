@@ -1,416 +1,386 @@
-# Firmware ESP32 Andon - Sistema ID Visual AX
+# Firmware ESP32 Andon — ID Visual AX
 
-Firmware para dispositivo ESP32 que atua como interface física do sistema Andon, capturando eventos de botões e controlando LEDs de status através de comunicação MQTT bidirecional com o backend FastAPI.
+Firmware embarcado para ESP32 que atua como interface física de um sistema Andon industrial. Operadores acionam botões retroiluminados para comunicar status ao chão de fábrica; o ESP32 publica eventos via MQTT e exibe o estado atual através dos LEDs dos próprios botões.
 
-## Visão Geral
+Desenvolvido pela equipe de hardware da **AX Automação**.
 
-O ESP32 funciona como um botão de acionamento do sistema Andon (sistema de alertas de chão de fábrica) e como indicador de status da mesa de trabalho. Ele se comunica com o backend via protocolo MQTT, reportando eventos de botões e recebendo comandos para controlar LEDs.
+---
 
-### Características Principais
+## O que é este projeto
 
-- ✅ Máquina de estados robusta (BOOT → WIFI_CONNECTING → MQTT_CONNECTING → OPERATIONAL)
-- ✅ Reconexão automática WiFi/MQTT com backoff exponencial
-- ✅ Debounce de botões não-bloqueante (50ms)
-- ✅ Watchdog timer para resiliência (30s timeout)
-- ✅ Heartbeat periódico (5 minutos)
-- ✅ Monitoramento de memória heap
-- ✅ Last Will and Testament (LWT) para detecção de desconexão
-- ✅ Discovery automático no backend
-- ✅ **OTA (Over-The-Air) Updates** - Atualização remota de firmware via MQTT
-- ✅ **Rollback Automático** - Reverte para firmware anterior se atualização falhar
-- ✅ **Validação de Boot** - Confirma firmware válido após atualização
+Um dispositivo de mesa com 4 botões retroiluminados (verde, amarelo, vermelho, azul) conectado a um backend via MQTT. O backend — integrado ao Odoo — é a fonte de verdade: o ESP32 nunca toma decisões de negócio, apenas captura entradas físicas e exibe o estado recebido.
 
-## Pré-requisitos
+O firmware implementa uma arquitetura híbrida WiFi + ESP-MESH: dispositivos com acesso ao WiFi viram nós raiz e fazem ponte para o broker MQTT; dispositivos sem WiFi entram como nós folha e roteiam eventos pela mesh automaticamente.
 
-### Software
+---
 
-- [PlatformIO](https://platformio.org/) instalado (via VS Code ou CLI)
-- Python 3.7+ (para PlatformIO)
-- Driver USB-Serial para ESP32 (geralmente CH340 ou CP2102)
+## Hardware
 
-### Hardware
+**Microcontrolador:** ESP32 DevKit v1 (ESP32-WROOM-32)
 
-- ESP32 DevKit (qualquer variante com WiFi)
-- 3 botões (verde, amarelo, vermelho) com resistores pull-up externos para GPIOs 34 e 35
-- 3 LEDs de status (verde, amarelo, vermelho) com resistores limitadores de corrente
-- Fonte de alimentação 5V via USB ou externa
-
-## Mapa de GPIOs
-
-### Botões (Input)
-
-| Botão    | GPIO | Configuração      | Observação                                    |
-|----------|------|-------------------|-----------------------------------------------|
-| Verde    | 12   | INPUT_PULLUP      | Pull-up interno habilitado                    |
-| Amarelo  | 13   | INPUT_PULLUP      | Pull-up interno habilitado                    |
-| Vermelho | 32   | INPUT_PULLUP      | Pull-up interno habilitado                    |
-
-**IMPORTANTE**: GPIOs 34 e 35 são input-only no ESP32 e não possuem resistor de pull-up interno. O circuito externo DEVE fornecer pull-up ou pull-down.
-
-### LEDs (Output)
-
-| LED      | GPIO | Função                                        |
-|----------|------|-----------------------------------------------|
-| Vermelho | 25   | Indicador de status (controlado via MQTT)     |
-| Amarelo  | 26   | Indicador de status (controlado via MQTT)     |
-| Verde    | 33   | Indicador de status (controlado via MQTT)     |
-| Onboard  | 2    | Indicador de conectividade WiFi/MQTT          |
-
-### Padrões do LED Onboard
-
-| Estado           | Padrão                    |
-|------------------|---------------------------|
-| WIFI_CONNECTING  | Pisca a cada 500ms        |
-| MQTT_CONNECTING  | Pisca a cada 1000ms       |
-| OPERATIONAL      | Aceso continuamente       |
-
-## Instalação
-
-### 1. Clonar o Repositório
-
-```bash
-git clone <url-do-repositorio>
-cd <repositorio>/hardware
+**Layout dos botões:**
+```
+┌────────────────────────────┐
+│   🟢 VERDE    🟡 AMARELO   │
+│   🔴 VERMELHO   🔵 AZUL    │
+└────────────────────────────┘
 ```
 
-### 2. Instalar Dependências
+**Pinout resumido:**
 
-PlatformIO instalará automaticamente as bibliotecas necessárias:
-- `knolleary/PubSubClient@^2.8` - Cliente MQTT
-- `bblanchon/ArduinoJson@^6.21.0` - Serialização JSON
+| Componente | GPIO | Tipo |
+|-----------|------|------|
+| Botão Verde | 12 | INPUT_PULLUP |
+| Botão Amarelo | 13 | INPUT_PULLUP |
+| Botão Vermelho | 32 | INPUT_PULLUP |
+| Botão Azul | 33 | INPUT_PULLUP |
+| LED Verde | 19 | OUTPUT |
+| LED Amarelo | 18 | OUTPUT |
+| LED Vermelho | 17 | OUTPUT |
+| LED Azul | 16 | OUTPUT |
+| LED Onboard | 2 | OUTPUT |
 
-### 3. Configurar Credenciais
+> Resistor 220Ω em série com cada LED externo. Todos os botões são ligados entre o GPIO e o GND (pull-up interno do ESP32 ativo).
 
-Edite o arquivo `include/config.h` e ajuste as seguintes constantes:
+Documentação completa de hardware: [`docs/PINOUT.md`](docs/PINOUT.md)
+
+---
+
+## Arquitetura do Firmware
+
+### Máquina de estados
+
+```
+BOOT → WIFI_CONNECTING → MQTT_CONNECTING → OPERATIONAL (nó raiz)
+                       ↘ MESH_NODE (nó folha) ──→ retry WiFi 60s ──┘
+```
+
+- **BOOT** — inicializa GPIO, watchdog, MAC, animação de boot
+- **WIFI_CONNECTING** — `WiFi.begin()` direto sem scan (scan conflita com painlessMesh); timeout 15s
+- **MQTT_CONNECTING** — conecta ao broker, publica LWT + discovery, subscreve tópicos
+- **OPERATIONAL** — nó raiz com MQTT ativo; WiFi caído por 60s faz fallback para MESH_NODE
+- **MESH_NODE** — nó folha sem WiFi; eventos vão via mesh broadcast para o raiz republicar no MQTT; retenta WiFi a cada 60s
+
+### Princípio fundamental
+
+O backend é a fonte de verdade. O ESP32:
+- **Faz:** detecta botões → publica eventos MQTT; recebe estado → controla LEDs
+- **Não faz:** lógica de negócio, regras de produção, validação de chamados
+
+### Módulos
+
+| Módulo | Arquivo | Responsabilidade |
+|--------|---------|-----------------|
+| Principal | `src/main.cpp` | Máquina de estados, WiFi, MQTT, mesh, botões, LEDs |
+| OTA | `src/ota.cpp` | Atualização over-the-air via MQTT + HTTP |
+| ESP-NOW | `src/espnow_comm.cpp` | Transmissão broadcast criptografada |
+| Provisioning | `src/provisioning.cpp` | Propagação viral de credenciais WiFi |
+| Criptografia | `src/crypto.cpp` | AES-256-GCM com mbedTLS |
+| NVS | `src/nvs_storage.cpp` | Armazenamento persistente (Preferences) |
+| RTC/NTP | `src/rtc_sync.cpp` | Sincronização de tempo, anti-replay |
+| Serial Parser | `src/serial_parser.cpp` | Comandos via Serial (`PROVISION`, `RESET_PROVISION`) |
+| Setup Server | `src/setup_server.cpp` | AP WiFi + página HTTP para configuração inicial |
+
+Documentação detalhada: [`docs/02_ARQUITETURA.md`](docs/02_ARQUITETURA.md) e [`docs/03_ESTRUTURA_CODIGO.md`](docs/03_ESTRUTURA_CODIGO.md)
+
+---
+
+## Configuração
+
+Todas as configurações ficam em **`include/config.h`** — é o único arquivo que você precisa editar antes de compilar.
 
 ```cpp
-// WiFi
-#define WIFI_SSID "SUA_REDE_WIFI"
-#define WIFI_PASSWORD "SUA_SENHA_WIFI"
+// Versão
+#define FIRMWARE_VERSION    "2.5.0"
 
-// MQTT Broker
-#define MQTT_BROKER "IP_DO_BROKER"  // Ex: "192.168.10.55"
-#define MQTT_PORT 1883
+// WiFi
+#define WIFI_SSID           "AX AUTOMACAO"
+#define WIFI_PASSWORD       "axautomacao123"
+#define WIFI_TIMEOUT_MS     15000UL         // 15s antes de cair para mesh
+
+// MQTT
+#define MQTT_BROKER         "192.168.1.28"  // servidor ax-producao
+#define MQTT_PORT           1883
+
+// ESP-MESH (todos os nós devem ter os mesmos valores)
+#define MESH_ID             "IDVISUAL_ANDON"
+#define MESH_PASSWORD       "andon@mesh2024"
+#define MESH_CHANNEL        6               // deve bater com o canal do AP
+#define MESH_MAX_CHILDREN   4
+
+// Pinos — Botões
+#define BTN_VERDE           12
+#define BTN_AMARELO         13
+#define BTN_VERMELHO        32
+#define BTN_AZUL            33
+
+// Pinos — LEDs
+#define LED_VERDE_PIN       19
+#define LED_AMARELO_PIN     18
+#define LED_VERMELHO_PIN    17
+#define LED_AZUL_PIN        16
+#define LED_ONBOARD_PIN     2
 ```
+
+> ⚠️ `MESH_CHANNEL` deve ser igual ao canal WiFi do roteador. Use um analisador de espectro para confirmar.
+
+---
 
 ## Compilação e Upload
 
-### Via PlatformIO CLI
+### Pré-requisitos
+
+- [VS Code](https://code.visualstudio.com/) com a extensão [PlatformIO IDE](https://platformio.org/install/ide?install=vscode)
+- Driver USB-Serial para ESP32 (geralmente CH340 ou CP2102)
+- Python 3.8+ (usado internamente pelo PlatformIO)
+
+### Dependências (instaladas automaticamente pelo PlatformIO)
+
+```ini
+lib_deps =
+    knolleary/PubSubClient@^2.8
+    bblanchon/ArduinoJson@^6.21.0
+    painlessMesh@^1.5.0
+    https://github.com/me-no-dev/AsyncTCP.git
+```
+
+### Comandos
 
 ```bash
-# Compilar o projeto
+# Abrir o projeto: abra a pasta hardware/ no VS Code
+
+# Compilar
 pio run
 
-# Fazer upload para o ESP32 (conectado via USB)
+# Upload via USB
 pio run --target upload
 
-# Monitorar Serial Monitor
+# Abrir Serial Monitor (115200 baud)
 pio device monitor
 
-# Compilar + Upload + Monitor (tudo de uma vez)
+# Compilar + upload + monitor (mais comum no dia a dia)
 pio run --target upload && pio device monitor
 ```
 
-### Via VS Code (PlatformIO IDE)
+Guia de instalação detalhado: [`docs/GUIA_COMPILACAO.md`](docs/GUIA_COMPILACAO.md)
 
-1. Abrir a pasta `hardware/` no VS Code
-2. Clicar no ícone do PlatformIO na barra lateral
-3. Selecionar:
-   - **Build** para compilar
-   - **Upload** para fazer upload
-   - **Monitor** para abrir o Serial Monitor
+---
 
 ## Protocolo MQTT
 
-### Tópicos Publicados pelo ESP32
+### Tópicos publicados pelo ESP32
 
-| Tópico                          | QoS | Retain | Payload                                      | Descrição                    |
-|---------------------------------|-----|--------|----------------------------------------------|------------------------------|
-| `andon/discovery`               | 1   | false  | JSON (ver abaixo)                            | Registro inicial             |
-| `andon/status/{mac}`            | 1   | true   | `"online"` / `"offline"` / `"heartbeat"`     | Status de conectividade      |
-| `andon/logs/{mac}`              | 1   | false  | String de texto                              | Logs de diagnóstico          |
-| `andon/button/{mac}/green`      | 1   | false  | `"PRESSED"`                                  | Evento botão verde           |
-| `andon/button/{mac}/yellow`     | 1   | false  | `"PRESSED"`                                  | Evento botão amarelo         |
-| `andon/button/{mac}/red`        | 1   | false  | `"PRESSED"`                                  | Evento botão vermelho        |
+| Tópico | QoS | Retain | Payload |
+|--------|-----|--------|---------|
+| `andon/discovery` | 1 | false | JSON com info do dispositivo |
+| `andon/status/{mac}` | 1 | true | `"online"` / `"offline"` (LWT) / JSON heartbeat |
+| `andon/logs/{mac}` | 1 | false | String de texto |
+| `andon/button/{mac}/green` | 1 | false | `"PRESSED"` |
+| `andon/button/{mac}/yellow` | 1 | false | `"PRESSED"` |
+| `andon/button/{mac}/red` | 1 | false | `"PRESSED"` |
+| `andon/button/{mac}/pause` | 1 | false | `"PRESSED"` — botão azul usa `pause`, não `blue` |
+| `andon/ota/progress/{mac}` | 0 | false | JSON `{status, progress, error}` |
 
-#### Discovery Message (JSON)
+### Tópicos subscritos pelo ESP32
+
+| Tópico | QoS | Ação |
+|--------|-----|------|
+| `andon/state/{mac}` | 1 | Atualiza LEDs: `GREEN` / `YELLOW` / `RED` / `GRAY` / `UNASSIGNED` |
+| `andon/restart/{mac}` | 1 | Reinicia o ESP32 quando payload = `"RESTART"` |
+| `andon/odoo_error/{mac}` | 1 | Ativa blink vermelho urgente por 5s |
+| `andon/ota/trigger` | 1 | Inicia download OTA: `{version, url, size}` |
+| `andon/ota/cancel` | 1 | Cancela download OTA em andamento |
+
+### Payload de discovery
 
 ```json
 {
   "mac_address": "AA:BB:CC:DD:EE:FF",
   "device_name": "ESP32-Andon-EEFF",
-  "firmware_version": "1.0.0"
+  "firmware_version": "2.5.0",
+  "is_root": true,
+  "mesh_node_id": "123456789",
+  "mesh_node_count": 3,
+  "mesh_children": 2,
+  "rssi": -45,
+  "ip_address": "192.168.1.87",
+  "connection_type": "wifi"
 }
 ```
 
-### Tópicos Subscritos pelo ESP32
-
-| Tópico                          | QoS | Payload Esperado                             | Descrição                    |
-|---------------------------------|-----|----------------------------------------------|------------------------------|
-| `andon/led/{mac}/command`       | 1   | JSON (ver abaixo)                            | Comando para controlar LEDs  |
-| `andon/ota/trigger`             | 1   | JSON (ver abaixo)                            | Comando de atualização OTA   |
-
-#### LED Command Message (JSON)
+### Payload de heartbeat (publicado em `andon/status/{mac}` a cada 5 min)
 
 ```json
 {
-  "red": true,
-  "yellow": false,
-  "green": false
+  "heap": 245632,
+  "rssi": -45,
+  "mesh_nodes": 3,
+  "mesh_children": 2,
+  "is_root": true
 }
 ```
 
-**Campos**:
-- `red`: Boolean - Estado do LED vermelho (true = aceso, false = apagado)
-- `yellow`: Boolean - Estado do LED amarelo
-- `green`: Boolean - Estado do LED verde
+---
 
-#### OTA Trigger Message (JSON)
+## Estados Visuais dos LEDs
 
-```json
-{
-  "version": "2.3.0",
-  "url": "http://192.168.10.55:8000/static/ota/firmware-2.3.0.bin",
-  "size": 1234567
-}
-```
+### Estados Andon (recebidos do backend)
 
-**Campos**:
-- `version`: String - Versão do firmware no formato semântico (ex: "2.3.0")
-- `url`: String - URL HTTP do arquivo .bin do firmware
-- `size`: Integer - Tamanho do arquivo em bytes
+| Estado | Verde | Amarelo | Vermelho | Azul |
+|--------|-------|---------|----------|------|
+| `GREEN` | Fixo | Apagado | Apagado | Apagado |
+| `YELLOW` | Apagado | Fixo | Apagado | Apagado |
+| `RED` | Apagado | Apagado | Fixo | Apagado |
+| `GRAY` | Apagado | Apagado | Apagado | Pisca ~70 BPM — fabricação pausada |
+| `UNASSIGNED` | Apagado | Pisca 200ms | Apagado | Apagado — dispositivo não vinculado |
 
-**Comportamento**:
-- ESP32 valida que versão é diferente da atual
-- Aguarda delay aleatório de 0-60s (evita sobrecarga em rede Mesh)
-- Baixa firmware via HTTP com progresso reportado a cada 10%
-- Instala firmware e reinicia automaticamente
-- Valida boot bem-sucedido ou executa rollback automático
+### Estados de conectividade
 
-### Tópicos Publicados pelo ESP32 (OTA)
+| Estado | LEDs |
+|--------|------|
+| WIFI_CONNECTING | Verde ↔ Amarelo oscilam alternados |
+| MQTT_CONNECTING | Amarelo ↔ Vermelho oscilam alternados |
+| MESH_NODE | Azul pisca lento (1s) |
+| Erro Odoo | Vermelho pisca rápido (150ms) por 5s |
 
-| Tópico                          | QoS | Retain | Payload                                      | Descrição                    |
-|---------------------------------|-----|--------|----------------------------------------------|------------------------------|
-| `andon/ota/progress/{mac}`      | 0   | false  | JSON (ver abaixo)                            | Progresso de atualização OTA |
+Referência visual completa: [`docs/GUIA_LED_VISUAL.md`](docs/GUIA_LED_VISUAL.md)
 
-#### OTA Progress Message (JSON)
+---
 
-```json
-{
-  "status": "downloading",
-  "progress": 45,
-  "error": null
-}
-```
+## Atualização de Firmware (OTA)
 
-**Campos**:
-- `status`: String - Estado atual: `"downloading"`, `"installing"`, `"success"`, `"failed"`
-- `progress`: Integer - Porcentagem de progresso (0-100)
-- `error`: String ou null - Mensagem de erro (null se não houver erro)
-
-## Saída Serial Esperada
-
-```
-═══════════════════════════════════════════════════════
-  Firmware ESP32 Andon - Sistema ID Visual AX
-  Versão: 1.0.0
-═══════════════════════════════════════════════════════
-
-[0] BOOT: Iniciando firmware ID Visual AX v1.0.0
-[150] GPIOs inicializados
-[200] Watchdog Timer inicializado (30s timeout)
-[250] MAC Address: AA:BB:CC:DD:EE:FF
-[260] Device Name: ESP32-Andon-EEFF
-[270] MQTT: Cliente configurado
-[280] BOOT: Transição para WIFI_CONNECTING
-[300] WIFI: Conectando a AX-CORPORATIVO...
-[3500] WIFI: Conectado! IP: 192.168.10.87
-[3510] WIFI: Transição para MQTT_CONNECTING
-[3520] MQTT: Conectando ao broker 192.168.10.55:1883...
-[4000] MQTT: Conectado ao broker!
-[4010] MQTT: Status 'online' publicado
-[4020] MQTT: Discovery publicado: {"mac_address":"AA:BB:CC:DD:EE:FF","device_name":"ESP32-Andon-EEFF","firmware_version":"1.0.0"}
-[4030] MQTT: Subscrito em andon/led/AA:BB:CC:DD:EE:FF/command
-[4040] MQTT: Transição para OPERATIONAL
-[10000] BUTTON: verde pressionado → publicado andon/button/AA:BB:CC:DD:EE:FF/green
-[15000] MQTT: Mensagem recebida no tópico: andon/led/AA:BB:CC:DD:EE:FF/command
-[15010] LED: Comando aplicado - red=false yellow=true green=false
-[300000] HEARTBEAT: operacional, heap livre: 245632 bytes
-```
-
-## Atualização OTA (Over-The-Air)
-
-O firmware suporta atualização remota via MQTT sem necessidade de acesso físico ao dispositivo.
-
-### Como Funciona
-
-1. **Backend** publica comando OTA no tópico `andon/ota/trigger`
-2. **ESP32** recebe comando, valida versão e URL
-3. **ESP32** aguarda delay aleatório (0-60s) para evitar sobrecarga
-4. **ESP32** baixa firmware via HTTP com progresso reportado a cada 10%
-5. **ESP32** instala firmware na partição OTA
-6. **ESP32** reinicia automaticamente
-7. **Bootloader** valida novo firmware
-8. **ESP32** confirma boot bem-sucedido ou executa rollback
-
-### Segurança e Resiliência
-
-- ✅ **Validação de Versão**: Ignora comando se já está na versão solicitada
-- ✅ **Validação de Payload**: Rejeita JSON malformado ou campos ausentes
-- ✅ **Timeout de Download**: 5 minutos máximo para download completo
-- ✅ **Checksum Automático**: HTTPUpdate valida integridade do firmware
-- ✅ **Rollback Automático**: Bootloader reverte se novo firmware crashar
-- ✅ **Validação de Boot**: Firmware confirma boot bem-sucedido
-- ✅ **Delay Aleatório**: Evita sobrecarga quando múltiplos dispositivos atualizam
-
-### Exemplo de Uso
+O firmware suporta atualização remota sem acesso físico ao dispositivo.
 
 ```bash
-# Publicar comando OTA via mosquitto
-mosquitto_pub -h localhost -t "andon/ota/trigger" -m '{
-  "version": "2.3.0",
-  "url": "http://192.168.10.55:8000/static/ota/firmware-2.3.0.bin",
-  "size": 1234567
-}'
+# Publicar comando OTA (substitua a URL e versão)
+mosquitto_pub -h 192.168.1.28 -t "andon/ota/trigger" -m \
+  '{"version":"2.5.0","url":"http://192.168.1.28:8000/static/ota/firmware-2.5.0.bin","size":1234567}'
 
 # Monitorar progresso
-mosquitto_sub -h localhost -t "andon/ota/progress/#" -v
+mosquitto_sub -h 192.168.1.28 -t "andon/ota/progress/#" -v
 ```
 
-### Logs Esperados
+O bootloader do ESP32 valida o novo firmware após o reboot. Se o firmware crashar, o rollback é automático. Instruções completas: [`docs/INSTRUCOES_ATUALIZACAO_OTA.md`](docs/INSTRUCOES_ATUALIZACAO_OTA.md)
 
+---
+
+## Provisionamento de Credenciais WiFi
+
+Dispositivos novos podem receber credenciais WiFi de dois jeitos:
+
+**Via Serial** (mais simples, requer cabo USB):
 ```
-[OTA] Comando de atualização OTA recebido
-[OTA] Versão alvo: 2.3.0
-[OTA] Aguardando 42 segundos antes de iniciar download...
-[OTA] Iniciando download do firmware...
-[OTA] Download: 10% (123456 / 1234567 bytes)
-[OTA] Download: 20% (246912 / 1234567 bytes)
-...
-[OTA] Download: 100% (1234567 / 1234567 bytes)
-[OTA] Atualização concluída com sucesso!
-[OTA] Reiniciando em 3 segundos...
-
-# Após reboot
-[OTA] Versão atual do firmware: 2.3.0
-[OTA] Primeiro boot após atualização - validando...
-[OTA] Firmware validado com sucesso!
+PROVISION AX AUTOMACAO axautomacao123
 ```
 
-### Guia de Teste
+**Via provisionamento viral (ESP-NOW + AES-256-GCM):**
+Um dispositivo já configurado transmite credenciais criptografadas por 10 minutos após ser provisionado. Dispositivos próximos recebem automaticamente e também entram em modo de transmissão — propagação em cadeia. Anti-replay por timestamp NTP (janela ±5 min).
 
-Para instruções detalhadas de teste OTA, consulte: **[TESTE_OTA.md](TESTE_OTA.md)**
+---
 
-## Atualização de Versão
+## Rede Mesh
 
-Antes de cada release, atualizar a versão do firmware:
-
-1. Editar `include/config.h`:
-   ```cpp
-   #define FIRMWARE_VERSION "X.Y.Z"
-   ```
-
-2. Atualizar o cabeçalho de `src/main.cpp`:
-   ```cpp
-   /**
-    * Versão: X.Y.Z
-    * Data: YYYY-MM-DD
-    */
-   ```
-
-3. Compilar e testar antes de fazer upload em produção
-
-## Troubleshooting
-
-### ESP32 não conecta ao WiFi
-
-- ✅ Verificar SSID e senha em `config.h`
-- ✅ Verificar se a rede WiFi está no alcance
-- ✅ Verificar se a rede é 2.4GHz (ESP32 não suporta 5GHz)
-- ✅ Observar LED onboard piscando a cada 500ms (tentando conectar)
-
-### ESP32 não conecta ao MQTT
-
-- ✅ Verificar IP e porta do broker em `config.h`
-- ✅ Verificar se o broker MQTT está rodando (`mosquitto -v`)
-- ✅ Verificar firewall/rede permitindo porta 1883
-- ✅ Observar LED onboard piscando a cada 1000ms (tentando conectar)
-- ✅ Verificar logs no Serial Monitor para código de erro MQTT
-
-### Botões não respondem
-
-- ✅ Verificar conexões físicas dos botões
-- ✅ Verificar se botões estão conectados corretamente (comum no GND, retorno no GPIO)
-- ✅ Verificar se ESP32 está no estado OPERATIONAL (LED onboard aceso fixo)
-- ✅ Observar Serial Monitor para mensagens de botão pressionado
-
-### LEDs não acendem via comando MQTT
-
-- ✅ Verificar conexões físicas dos LEDs e resistores
-- ✅ Verificar se ESP32 está subscrito no tópico correto
-- ✅ Verificar formato do JSON enviado (deve ter campos red, yellow, green)
-- ✅ Observar Serial Monitor para mensagens de comando LED recebido
-
-### Watchdog reset detectado
-
-- ⚠️ Indica que o firmware travou por mais de 30 segundos
-- ✅ Verificar logs anteriores ao reset para identificar causa
-- ✅ Verificar se há operações bloqueantes (delay() no loop)
-- ✅ Verificar memória heap disponível
-
-### Heap baixo
-
-- ⚠️ Indica possível vazamento de memória
-- ✅ Observar heap livre no heartbeat (deve estar acima de 10KB)
-- ✅ Verificar se há alocações dinâmicas não liberadas
-- ✅ Considerar reduzir tamanho de buffers JSON se necessário
-
-## Testes
-
-### Teste Manual
-
-1. **Boot**: Observar LED onboard piscar 3x ao ligar
-2. **WiFi**: Observar LED onboard piscar 500ms até conectar
-3. **MQTT**: Observar LED onboard piscar 1000ms até conectar
-4. **Operational**: LED onboard aceso fixo
-5. **Botões**: Pressionar cada botão e verificar mensagem no Serial
-6. **LEDs**: Enviar comando MQTT e verificar LEDs acendendo
-
-### Teste de Reconexão
-
-1. Desconectar WiFi → ESP32 deve retornar para WIFI_CONNECTING
-2. Parar broker MQTT → ESP32 deve retornar para MQTT_CONNECTING
-3. Reconectar → ESP32 deve republicar discovery e status online
-
-### Teste de Longa Duração
-
-Deixar ESP32 rodando por 24h e verificar:
-- Heap livre permanece estável
-- Heartbeat é enviado a cada 5 minutos
-- Nenhum watchdog reset ocorre
-
-## Arquitetura
-
-### Máquina de Estados
+Quando o WiFi não está disponível, o dispositivo entra em modo `MESH_NODE` e se conecta à mesh ESP-MESH criada pelos nós raiz.
 
 ```
-BOOT → WIFI_CONNECTING → MQTT_CONNECTING → OPERATIONAL
-                ↑                ↑                ↓
-                └────────────────┴────────────────┘
-                    (reconexão automática)
+Router WiFi
+    │
+    ├─ ESP32-A (RAIZ — MQTT ativo)
+    │     ├─ ESP32-C (FOLHA)
+    │     └─ ESP32-D (FOLHA)
+    └─ ESP32-B (RAIZ — MQTT ativo)
+          └─ ESP32-E (FOLHA)
 ```
 
-### Fluxo de Dados
+- Máximo 4 filhos diretos por nó (limitação do SoftAP do ESP32)
+- Latência adicional: ~50–100ms por hop
+- Nós folha tentam voltar para WiFi direto a cada 60s
+
+---
+
+## Lógica de Botões
+
+### Intertravamento
+2 segundos mínimo entre acionamentos de botões diferentes. Evita múltiplos eventos por erro.
+
+### Bloqueio durante pause (GRAY)
+Quando o backend envia `GRAY` (fabricação pausada), os botões verde, amarelo e vermelho são ignorados. O botão azul (pause/resume) funciona sempre — é ele que despausa.
+
+### Reset por hardware
+Segurar o botão azul por 5 segundos reinicia o ESP32. Uma animação de confirmação é exibida antes do reboot.
+
+Documentação detalhada: [`docs/LOGICA_PAUSE_BOTOES.md`](docs/LOGICA_PAUSE_BOTOES.md)
+
+---
+
+## Troubleshooting Rápido
+
+**WiFi não conecta**
+- Verificar SSID/senha em `config.h` (case-sensitive)
+- Rede deve ser 2.4 GHz (ESP32 não suporta 5 GHz)
+- Após 15s, o dispositivo cai automaticamente para modo mesh
+
+**MQTT não conecta**
+```bash
+systemctl status mosquitto       # verificar se broker está rodando
+ping 192.168.1.28                # verificar conectividade
+telnet 192.168.1.28 1883         # testar porta MQTT
+```
+
+**Botão não responde**
+- Verificar se o dispositivo está em OPERATIONAL ou MESH_NODE (LED onboard aceso ou duplo pulso)
+- Testar GPIO no Serial: solto = HIGH (1), pressionado = LOW (0)
+
+**LED não acende**
+- Verificar polaridade: ânodo no GPIO, cátodo no GND via resistor 220Ω
+- Testar LED com bateria 3V antes de desconfiar do firmware
+
+Guia completo: [`docs/14_TROUBLESHOOTING.md`](docs/14_TROUBLESHOOTING.md)
+
+---
+
+## Estrutura do Repositório
 
 ```
-Botão Pressionado → Debounce (50ms) → Publish MQTT → Backend processa
-Backend decide → Publish LED Command → ESP32 recebe → Atualiza GPIOs
+hardware/
+├── platformio.ini          ← configuração de build e dependências
+├── include/
+│   ├── config.h            ← TODAS as constantes (edite aqui)
+│   └── *.h                 ← headers dos módulos
+├── src/
+│   ├── main.cpp            ← lógica principal (~1190 linhas)
+│   └── *.cpp               ← implementações dos módulos
+└── docs/
+    ├── 00_INDICE.md        ← índice da documentação
+    ├── 01_VISAO_GERAL.md   ← contexto e objetivos
+    ├── 02_ARQUITETURA.md   ← design, estados, mesh, MQTT
+    ├── 03_ESTRUTURA_CODIGO.md  ← como navegar no código
+    ├── 14_TROUBLESHOOTING.md   ← problemas e soluções
+    ├── GUIA_RAPIDO.md      ← referência rápida
+    ├── GUIA_COMPILACAO.md  ← como compilar e subir
+    ├── GUIA_LED_VISUAL.md  ← referência de animações de LED
+    ├── PINOUT.md           ← mapeamento completo de GPIOs
+    ├── LOGICA_BOTOES.md    ← validação de ações por estado
+    ├── LOGICA_PAUSE_BOTOES.md  ← intertravamento e pause
+    ├── INSTRUCOES_ATUALIZACAO_OTA.md  ← processo OTA
+    └── PRODUCAO.md         ← recomendações para ambiente industrial
 ```
+
+---
+
+## Boas Práticas para Manutenção
+
+Ao modificar o firmware:
+
+1. Atualizar `FIRMWARE_VERSION` em `config.h` e o cabeçalho de `main.cpp`
+2. Testar localmente com um dispositivo antes de fazer OTA em produção
+3. Documentar qualquer mudança de comportamento nos arquivos relevantes em `docs/`
+4. Usar Conventional Commits: `feat(firmware): adiciona suporte a botão extra`
+
+Tipos de commit: `feat`, `fix`, `refactor`, `docs`, `chore`, `style`, `test`
+
+---
 
 ## Licença
 
-Este firmware faz parte do sistema ID Visual AX.
-
-## Suporte
-
-Para problemas ou dúvidas, consultar a documentação do sistema ID Visual AX ou contatar a equipe de desenvolvimento.
+Propriedade da **AX Automação**. Repositório privado — uso interno.
